@@ -103,12 +103,25 @@ export async function createRefreshJob(rangeKey: string, range: DateRange, trigg
     where coalesce(is_active,true) = true
     order by project, member_name, url`);
   const activeUrls = urls.rows.map(dbContentUrl);
-  if (activeUrls.length === 0) return { jobId: null, itemCount: 0, totalUrls: 0, missingGscPropertyCount: 0, blockedProjects: [] as string[] };
+  if (activeUrls.length === 0) return { jobId: null, itemCount: 0, totalUrls: 0, missingUrlHashCount: 0, missingGscPropertyCount: 0, blockedProjects: [] as string[] };
+
+  const missingHashRows = activeUrls.filter((row) => !row.urlHash);
+  if (missingHashRows.length) {
+    return {
+      jobId: null,
+      itemCount: 0,
+      totalUrls: activeUrls.length,
+      missingUrlHashCount: missingHashRows.length,
+      invalidUrls: missingHashRows.slice(0, 25).map((row) => row.url),
+      missingGscPropertyCount: 0,
+      blockedProjects: [] as string[],
+    };
+  }
 
   const missingGscRows = activeUrls.filter((row) => !row.gscProperty);
   const blockedProjects = Array.from(new Set(missingGscRows.map((row) => row.project).filter(Boolean))).sort();
   if (missingGscRows.length) {
-    return { jobId: null, itemCount: 0, totalUrls: activeUrls.length, missingGscPropertyCount: missingGscRows.length, blockedProjects };
+    return { jobId: null, itemCount: 0, totalUrls: activeUrls.length, missingUrlHashCount: 0, missingGscPropertyCount: missingGscRows.length, blockedProjects };
   }
 
   const job = await query<{ id: string }>(`insert into public.refresh_jobs
@@ -121,7 +134,7 @@ export async function createRefreshJob(rangeKey: string, range: DateRange, trigg
   for (const row of activeUrls) {
     await query("insert into public.refresh_job_items (refresh_job_id, job_id, content_url_id, url_hash, project, url, member_name, member_email, gsc_property, status, attempts, created_at, updated_at) values ($1,$1,$2,$3,$4,$5,$6,$7,$8,'pending',0,now(),now())", [jobId, row.id, row.urlHash, row.project, row.url, row.member_name, row.memberEmail, row.gscProperty]);
   }
-  return { jobId, itemCount: activeUrls.length, totalUrls: activeUrls.length, missingGscPropertyCount: 0, blockedProjects: [] as string[] };
+  return { jobId, itemCount: activeUrls.length, totalUrls: activeUrls.length, missingUrlHashCount: 0, missingGscPropertyCount: 0, blockedProjects: [] as string[] };
 }
 
 const zeroMetrics: UrlMetrics = { clicks: 0, impressions: 0, ctr: 0, position: 0 };
@@ -169,14 +182,14 @@ export async function processRefreshBatch(accessToken: string, limit = 25, jobId
     await query("update refresh_jobs set status='failed', failed_urls=(select count(*) from refresh_job_items where coalesce(refresh_job_id, job_id)=$1 and status='failed'), error_message=$2, finished_at=now(), updated_at=now() where id=$1", [job.id, message]);
     return { jobId: job.id, processed: 0, remaining: 0, urlsWithGscData: 0, urlsWithNoData: rows.length, failedUrls: rows.length, errorMessage: message };
   }
-  for (const item of items.rows) await query("update refresh_job_items set status='complete', updated_at=now() where id=$1", [item.item_id]);
+  for (const item of items.rows) await query("update refresh_job_items set status='complete', processed_at=now(), updated_at=now() where id=$1", [item.item_id]);
   const remaining = await query<any>("select count(*)::int count from refresh_job_items where coalesce(refresh_job_id, job_id)=$1 and status='pending'", [job.id]);
   if (remaining.rows[0].count === 0) {
     const compared = await getDbPerformance(job.range_key, range);
     await upsertMemberSnapshots(compared, job.range_key, range);
-    await query("update refresh_jobs set status='complete', processed_urls=(select count(*) from refresh_job_items where coalesce(refresh_job_id, job_id)=$1 and status='complete'), failed_urls=(select count(*) from refresh_job_items where coalesce(refresh_job_id, job_id)=$1 and status='failed'), finished_at=now(), updated_at=now() where id=$1", [job.id]);
+    await query("update refresh_jobs set status='complete', processed_urls=(select count(*) from refresh_job_items where coalesce(refresh_job_id, job_id)=$1 and status='complete'), failed_urls=(select count(*) from refresh_job_items where coalesce(refresh_job_id, job_id)=$1 and status='failed'), finished_at=now(), last_processed_at=now(), updated_at=now() where id=$1", [job.id]);
   }
-  await query("update refresh_jobs set processed_urls=(select count(*) from refresh_job_items where coalesce(refresh_job_id, job_id)=$1 and status='complete'), failed_urls=(select count(*) from refresh_job_items where coalesce(refresh_job_id, job_id)=$1 and status='failed'), updated_at=now() where id=$1", [job.id]);
+  await query("update refresh_jobs set processed_urls=(select count(*) from refresh_job_items where coalesce(refresh_job_id, job_id)=$1 and status='complete'), failed_urls=(select count(*) from refresh_job_items where coalesce(refresh_job_id, job_id)=$1 and status='failed'), urls_with_data=coalesce(urls_with_data,0)+$2, no_data_urls=coalesce(no_data_urls,0)+$3, last_processed_at=now(), updated_at=now() where id=$1", [job.id, currentResult.withData, currentResult.withoutData]);
   const latest = await query<any>("select total_urls, processed_urls, failed_urls, error_message from refresh_jobs where id=$1", [job.id]);
   return { jobId: job.id, processed: rows.length, remaining: remaining.rows[0].count, totalUrls: Number(latest.rows[0]?.total_urls ?? 0), processedUrls: Number(latest.rows[0]?.processed_urls ?? 0), failedUrls: Number(latest.rows[0]?.failed_urls ?? 0), urlsWithGscData: currentResult.withData, urlsWithNoData: currentResult.withoutData, errorMessage: latest.rows[0]?.error_message ?? null };
 }
