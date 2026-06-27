@@ -51,7 +51,7 @@ async function searchAnalytics(accessToken: string, siteUrl: string, dimensions:
   const filters = page ? [{ dimension: "page", operator: "equals", expression: page }] : undefined;
   const res = await webmasters.searchanalytics.query({
     siteUrl,
-    requestBody: { startDate: range.startDate, endDate: range.endDate, dimensions, dimensionFilterGroups: filters ? [{ groupType: "and", filters }] : undefined, type: "web", aggregationType: "byPage", rowLimit }
+    requestBody: { startDate: range.startDate, endDate: range.endDate, dimensions, dimensionFilterGroups: filters ? [{ groupType: "and", filters }] : undefined, type: "web", aggregationType: dimensions.includes("page") ? "byPage" : undefined, rowLimit }
   });
   return res.data.rows ?? [];
 }
@@ -72,23 +72,28 @@ export async function getUrlPerformance(rows: ContentUrl[], accessToken: string,
 
 export async function getUrlDetail(row: ContentUrl, accessToken: string, range = getDateRange()) {
   if (!row.gscProperty) return { overview: { ...row, clicks: 0, impressions: 0, ctr: 0, position: 0, opportunity: "no_data" as const }, daily: [], queries: [], range, hasData: false, warning: row.warning };
-  const [overviewRows, dailyRows, queryRows] = await Promise.all([
-    searchAnalytics(accessToken, row.gscProperty, ["page"], range, row.url, 1),
-    searchAnalytics(accessToken, row.gscProperty, ["date"], range, row.url, 500),
-    searchAnalytics(accessToken, row.gscProperty, ["query"], range, row.url, 250)
-  ]);
-  const overviewMetrics = normalize(overviewRows[0] ?? {});
-  const queries = queryRows.map((r) => { const metrics = normalize(r); return { query: String(r.keys?.[0] ?? ""), ...metrics, opportunity: classifyOpportunity(metrics) }; });
-  return {
-    overview: { ...row, ...overviewMetrics, opportunity: classifyOpportunity(overviewMetrics) },
-    daily: dailyRows.map((r) => ({ date: String(r.keys?.[0] ?? ""), ...normalize(r) })),
-    queries,
-    ctrOpportunities: queries.filter((q) => q.opportunity === "ctr_opportunity"),
-    rankingOpportunities: queries.filter((q) => q.opportunity === "ranking_opportunity").sort((a, b) => b.impressions - a.impressions),
-    winningQueries: queries.filter((q) => q.opportunity === "winner").sort((a, b) => b.clicks - a.clicks).slice(0, 10),
-    range,
-    hasData: overviewRows.length > 0
-  };
+  try {
+    const [overviewRows, dailyRows, queryRows] = await Promise.all([
+      searchAnalytics(accessToken, row.gscProperty, ["page"], range, row.url, 1),
+      searchAnalytics(accessToken, row.gscProperty, ["date"], range, row.url, 500),
+      searchAnalytics(accessToken, row.gscProperty, ["query"], range, row.url, 250)
+    ]);
+    const overviewMetrics = normalize(overviewRows[0] ?? {});
+    const queries = queryRows.map((r) => { const metrics = normalize(r); return { query: String(r.keys?.[0] ?? ""), ...metrics, opportunity: classifyOpportunity(metrics) }; });
+    return {
+      overview: { ...row, ...overviewMetrics, opportunity: classifyOpportunity(overviewMetrics) },
+      daily: dailyRows.map((r) => ({ date: String(r.keys?.[0] ?? ""), ...normalize(r) })),
+      queries,
+      ctrOpportunities: queries.filter((q) => q.opportunity === "ctr_opportunity"),
+      rankingOpportunities: queries.filter((q) => q.opportunity === "ranking_opportunity").sort((a, b) => b.impressions - a.impressions),
+      winningQueries: queries.filter((q) => q.opportunity === "winner").sort((a, b) => b.clicks - a.clicks).slice(0, 10),
+      range,
+      hasData: overviewRows.length > 0
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Google Search Console request failed";
+    return { overview: { ...row, clicks: 0, impressions: 0, ctr: 0, position: 0, opportunity: "no_data" as const, warning: message }, daily: [], queries: [], range, hasData: false, warning: message };
+  }
 }
 
 export function aggregate(rows: UrlPerformance[]): UrlMetrics {
