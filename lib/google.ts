@@ -37,7 +37,7 @@ export async function getContentUrls(accessToken: string): Promise<ContentUrl[]>
   }).filter((row) => row.project && row.url && row.member_name);
 }
 
-export function filterRowsForEmail(rows: ContentUrl[], email: string, isAdmin = false): ContentUrl[] {
+export function filterRowsForEmail<T extends ContentUrl>(rows: T[], email: string, isAdmin = false): T[] {
   if (isAdmin) return rows;
   return rows.filter((row) => row.memberEmail === email.toLowerCase());
 }
