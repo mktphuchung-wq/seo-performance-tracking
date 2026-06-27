@@ -98,7 +98,7 @@ export async function syncSheetToDb(accessToken: string): Promise<SheetSyncResul
   }
 }
 export async function createRefreshJob(rangeKey: string, range: DateRange, triggeredBy?: string) {
-  const urls = await query<any>(`select id, project, url, member_name, member_email, gsc_property
+  const urls = await query<any>(`select id, url_hash, project, url, member_name, member_email, gsc_property
     from public.content_urls
     where coalesce(is_active,true) = true
     order by project, member_name, url`);
@@ -119,7 +119,7 @@ export async function createRefreshJob(rangeKey: string, range: DateRange, trigg
   if (!jobId) return { jobId: null, itemCount: 0, totalUrls: activeUrls.length, missingGscPropertyCount: 0, blockedProjects: [] as string[] };
 
   for (const row of activeUrls) {
-    await query("insert into public.refresh_job_items (refresh_job_id, content_url_id, status, created_at, updated_at) values ($1,$2,'pending',now(),now())", [jobId, row.id]);
+    await query("insert into public.refresh_job_items (refresh_job_id, job_id, content_url_id, url_hash, project, url, member_name, member_email, gsc_property, status, attempts, created_at, updated_at) values ($1,$1,$2,$3,$4,$5,$6,$7,$8,'pending',0,now(),now())", [jobId, row.id, row.urlHash, row.project, row.url, row.member_name, row.memberEmail, row.gscProperty]);
   }
   return { jobId, itemCount: activeUrls.length, totalUrls: activeUrls.length, missingGscPropertyCount: 0, blockedProjects: [] as string[] };
 }
@@ -156,7 +156,7 @@ export async function processRefreshBatch(accessToken: string, limit = 25, jobId
   await query("update refresh_jobs set status='running', updated_at=now() where id=$1", [job.id]);
   const items = await query<any>(`select i.id item_id, c.id, c.project, c.url, c.member_name, c.member_email, c.gsc_property
     from refresh_job_items i join content_urls c on c.id=i.content_url_id or (i.content_url_id is null and i.url_hash = c.url_hash)
-    where i.refresh_job_id=$1 and i.status='pending' order by i.created_at limit $2`, [job.id, limit]);
+    where coalesce(i.refresh_job_id, i.job_id)=$1 and i.status='pending' order by i.created_at limit $2`, [job.id, limit]);
   const range = { startDate: String(job.start_date).slice(0,10), endDate: String(job.end_date).slice(0,10), label: String(job.range_key) };
   const rows = items.rows.map((r:any) => ({ id: String(r.id), project: r.project, url: r.url, member_name: r.member_name, memberEmail: String(r.member_email ?? "").toLowerCase(), gscProperty: r.gsc_property }));
   let currentResult = { withData: 0, withoutData: 0 };
@@ -166,24 +166,24 @@ export async function processRefreshBatch(accessToken: string, limit = 25, jobId
   } catch (error) {
     const message = error instanceof Error ? error.message : "Google Search Console refresh failed";
     for (const item of items.rows) await query("update refresh_job_items set status='failed', error_message=$2, updated_at=now() where id=$1", [item.item_id, message]);
-    await query("update refresh_jobs set status='failed', failed_urls=(select count(*) from refresh_job_items where refresh_job_id=$1 and status='failed'), error_message=$2, finished_at=now(), updated_at=now() where id=$1", [job.id, message]);
+    await query("update refresh_jobs set status='failed', failed_urls=(select count(*) from refresh_job_items where coalesce(refresh_job_id, job_id)=$1 and status='failed'), error_message=$2, finished_at=now(), updated_at=now() where id=$1", [job.id, message]);
     return { jobId: job.id, processed: 0, remaining: 0, urlsWithGscData: 0, urlsWithNoData: rows.length, failedUrls: rows.length, errorMessage: message };
   }
   for (const item of items.rows) await query("update refresh_job_items set status='complete', updated_at=now() where id=$1", [item.item_id]);
-  const remaining = await query<any>("select count(*)::int count from refresh_job_items where refresh_job_id=$1 and status='pending'", [job.id]);
+  const remaining = await query<any>("select count(*)::int count from refresh_job_items where coalesce(refresh_job_id, job_id)=$1 and status='pending'", [job.id]);
   if (remaining.rows[0].count === 0) {
     const compared = await getDbPerformance(job.range_key, range);
     await upsertMemberSnapshots(compared, job.range_key, range);
-    await query("update refresh_jobs set status='complete', processed_urls=(select count(*) from refresh_job_items where refresh_job_id=$1 and status='complete'), failed_urls=(select count(*) from refresh_job_items where refresh_job_id=$1 and status='failed'), finished_at=now(), updated_at=now() where id=$1", [job.id]);
+    await query("update refresh_jobs set status='complete', processed_urls=(select count(*) from refresh_job_items where coalesce(refresh_job_id, job_id)=$1 and status='complete'), failed_urls=(select count(*) from refresh_job_items where coalesce(refresh_job_id, job_id)=$1 and status='failed'), finished_at=now(), updated_at=now() where id=$1", [job.id]);
   }
-  await query("update refresh_jobs set processed_urls=(select count(*) from refresh_job_items where refresh_job_id=$1 and status='complete'), failed_urls=(select count(*) from refresh_job_items where refresh_job_id=$1 and status='failed'), updated_at=now() where id=$1", [job.id]);
+  await query("update refresh_jobs set processed_urls=(select count(*) from refresh_job_items where coalesce(refresh_job_id, job_id)=$1 and status='complete'), failed_urls=(select count(*) from refresh_job_items where coalesce(refresh_job_id, job_id)=$1 and status='failed'), updated_at=now() where id=$1", [job.id]);
   const latest = await query<any>("select total_urls, processed_urls, failed_urls, error_message from refresh_jobs where id=$1", [job.id]);
   return { jobId: job.id, processed: rows.length, remaining: remaining.rows[0].count, totalUrls: Number(latest.rows[0]?.total_urls ?? 0), processedUrls: Number(latest.rows[0]?.processed_urls ?? 0), failedUrls: Number(latest.rows[0]?.failed_urls ?? 0), urlsWithGscData: currentResult.withData, urlsWithNoData: currentResult.withoutData, errorMessage: latest.rows[0]?.error_message ?? null };
 }
 
 export async function refreshStatus(jobId?: string) {
   const jobs = await query<any>(`select j.*, count(i.id)::int total_items, count(i.id) filter (where i.status='complete')::int complete_items, count(i.id) filter (where i.status='failed')::int failed_items
-    from refresh_jobs j left join refresh_job_items i on i.refresh_job_id=j.id
+    from refresh_jobs j left join refresh_job_items i on coalesce(i.refresh_job_id, i.job_id)=j.id
     ${jobId ? "where j.id=$1" : ""} group by j.id order by j.created_at desc limit 10`, jobId ? [jobId] : []);
   return jobs.rows;
 }

@@ -3,7 +3,7 @@ import { appConfig, getMemberEmailMap, getProjectGscMap } from "./env";
 import { getDateRange, type DateRange } from "./dates";
 import { classifyOpportunity, type OpportunityLabel } from "./metrics";
 
-export type ContentUrl = { id: string; project: string; url: string; member_name: string; memberEmail: string; gscProperty?: string; warning?: string };
+export type ContentUrl = { id: string; urlHash?: string; project: string; url: string; member_name: string; memberEmail: string; gscProperty?: string; warning?: string };
 export type UrlMetrics = { clicks: number; impressions: number; ctr: number; position: number };
 export type UrlPerformance = ContentUrl & UrlMetrics & { opportunity: OpportunityLabel };
 export type QueryMetric = { query: string; opportunity: OpportunityLabel } & UrlMetrics;

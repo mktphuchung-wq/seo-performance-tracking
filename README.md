@@ -115,3 +115,24 @@ psql "$DATABASE_URL" -f migrations/20260627_neon_content_url_id.sql
 ```
 
 The migration adds `content_url_id` UUID columns to URL snapshot and refresh item tables, backfills them from `content_urls.id` via `url_hash`, recreates the latest performance views with `content_url_id`, and keeps `url_hash` indexes for fallback reads.
+
+## Refresh pipeline Neon schema alignment
+
+Run this migration before starting a GSC refresh if `/api/refresh/start`, `/api/refresh/process`, or `/api/health/db` reports a database schema mismatch such as a missing `refresh_jobs.start_date`, `refresh_job_items.refresh_job_id`, or `refresh_job_items.updated_at` column.
+
+### Exact order to run in Neon
+
+1. Open the Neon Console for the production branch/database.
+2. Open **SQL Editor**.
+3. Paste and run the complete SQL from `migrations/20260627_neon_content_url_id.sql` in one execution.
+4. Confirm Neon reports `COMMIT` / successful execution.
+5. Visit `/api/health/db` while signed in/deployed. It should return `ok: true` with empty `missingTables`, `missingViews`, and `missingColumns` arrays.
+6. Start the refresh from the Admin UI. `/api/refresh/start` now checks the same required tables and columns before creating a job and returns `code: "DB_SCHEMA_MISMATCH"` with the exact missing `table.column` entries if Neon is still out of sync.
+
+### Migration SQL
+
+The canonical migration SQL is stored in `migrations/20260627_neon_content_url_id.sql`. It adds all refresh job columns used by the runtime, keeps `job_id` and `refresh_job_id` backward-compatible, adds refresh item indexes, and installs an `updated_at` trigger for `refresh_job_items`.
+
+```bash
+psql "$DATABASE_URL" -f migrations/20260627_neon_content_url_id.sql
+```

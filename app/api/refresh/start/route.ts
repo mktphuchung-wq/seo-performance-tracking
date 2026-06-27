@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "../../../../lib/auth";
 import { getDateRange } from "../../../../lib/dates";
+import { checkDbSchemaHealth } from "../../../../lib/db-health";
 import { createRefreshJob } from "../../../../lib/refresh";
 
 export async function POST(request: Request) {
@@ -20,6 +21,19 @@ export async function POST(request: Request) {
 
     if (!email || !session?.accessToken || !isAdmin) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    const dbHealth = await checkDbSchemaHealth();
+    if (!dbHealth.ok) {
+      return NextResponse.json({
+        ok: false,
+        code: "DB_SCHEMA_MISMATCH",
+        error: "Database schema is missing required refresh columns. Run the Neon migration before starting refresh.",
+        missingTables: dbHealth.missingTables,
+        missingViews: dbHealth.missingViews,
+        missingColumns: dbHealth.missingColumns,
+        migration: "migrations/20260627_neon_content_url_id.sql",
+      }, { status: 503 });
     }
 
     const body = await request.json().catch(() => ({}));
