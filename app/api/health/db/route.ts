@@ -54,6 +54,11 @@ export async function GET() {
 
     const ok = missingTables.length === 0 && missingViews.length === 0 && missingColumns.length === 0;
 
+    const [latestSyncRuns, latestRefreshJobs] = await Promise.all([
+      query<any>("select * from sync_runs order by created_at desc limit 5").catch(() => ({ rows: [] })),
+      query<any>("select * from refresh_jobs order by created_at desc limit 5").catch(() => ({ rows: [] })),
+    ]);
+
     return NextResponse.json({
       ok,
       checkedAt: new Date().toISOString(),
@@ -61,12 +66,16 @@ export async function GET() {
       missingViews,
       missingColumns,
       migration: "migrations/20260627_neon_content_url_id.sql",
+      latestSyncRuns: latestSyncRuns.rows,
+      latestRefreshJobs: latestRefreshJobs.rows,
     }, { status: ok ? 200 : 503 });
   } catch (error) {
     return NextResponse.json({
       ok: false,
       error: error instanceof Error ? error.message : "Database health check failed",
       migration: "migrations/20260627_neon_content_url_id.sql",
+      latestSyncRuns: [],
+      latestRefreshJobs: [],
     }, { status: 503 });
   }
 }
