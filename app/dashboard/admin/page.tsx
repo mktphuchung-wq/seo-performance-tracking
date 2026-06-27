@@ -9,14 +9,14 @@ function group(rows: UrlPerformance[], key: keyof Pick<UrlPerformance, "member_n
   return Object.entries(rows.reduce<Record<string, UrlPerformance[]>>((acc, row) => { (acc[String(row[key])] ??= []).push(row); return acc; }, {}));
 }
 
-export default async function AdminDashboard({ searchParams }: { searchParams?: { range?: string } }) {
+export default async function AdminDashboard({ searchParams }: { searchParams?: { range?: string; startDate?: string; endDate?: string; sort?: import("../../../components/ui").UrlSortKey } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email || !session.accessToken) redirect("/");
   if (!session.user.isAdmin) redirect("/dashboard");
-  const range = getDateRange({ range: searchParams?.range });
+  const range = getDateRange({ range: searchParams?.range, startDate: searchParams?.startDate, endDate: searchParams?.endDate });
   const performance = await getUrlPerformance(await getContentUrls(session.accessToken), session.accessToken, range);
   const needingOptimization = performance.filter((r) => ["ctr_opportunity", "ranking_opportunity", "no_data"].includes(r.opportunity)).sort((a, b) => b.impressions - a.impressions);
-  return <Shell email={session.user.email} isAdmin={session.user.isAdmin}><h2 className="mb-2 text-2xl font-semibold">Admin dashboard</h2><p className="mb-4 text-sm text-slate-500">{range.label}: {range.startDate} to {range.endDate}</p><DateRangePicker range={searchParams?.range || "28d"} /><WarningList warnings={performance.map((p) => p.warning)} /><MetricGrid metrics={aggregate(performance)} count={performance.length} /><Section title="Performance by member" rows={group(performance, "member_name")} /><Section title="Performance by project" rows={group(performance, "project")} /><h3 className="mb-3 mt-8 text-xl font-semibold">Top URLs</h3><UrlTable rows={[...performance].sort((a, b) => b.clicks - a.clicks).slice(0, 20)} /><h3 className="mb-3 mt-8 text-xl font-semibold">URLs needing optimization</h3><UrlTable rows={needingOptimization.slice(0, 50)} /></Shell>;
+  return <Shell email={session.user.email} isAdmin={session.user.isAdmin}><h2 className="mb-2 text-2xl font-semibold">Admin dashboard</h2><p className="mb-4 text-sm text-slate-500">{range.label}: {range.startDate} to {range.endDate}</p><DateRangePicker range={searchParams?.range || "28d"} startDate={searchParams?.startDate} endDate={searchParams?.endDate} /><WarningList warnings={performance.map((p) => p.warning)} /><MetricGrid metrics={aggregate(performance)} count={performance.length} /><Section title="Performance by member" rows={group(performance, "member_name")} /><Section title="Performance by project" rows={group(performance, "project")} /><h3 className="mb-3 mt-8 text-xl font-semibold">Top URLs</h3><UrlTable rows={[...performance].sort((a, b) => b.clicks - a.clicks).slice(0, 20)} /><h3 className="mb-3 mt-8 text-xl font-semibold">URLs needing optimization</h3><UrlTable rows={needingOptimization.slice(0, 50)} /></Shell>;
 }
 
 function Section({ title, rows }: { title: string; rows: [string, UrlPerformance[]][] }) {
