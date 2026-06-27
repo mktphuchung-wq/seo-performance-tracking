@@ -13,6 +13,12 @@ export async function POST(request: Request) {
   const range = getDateRange({ range: rangeKey, startDate: String(form.get("startDate") || ""), endDate: String(form.get("endDate") || "") });
   const all = await getContentUrls(session.accessToken); const rows = filterRowsForEmail(all, session.user.email, session.user.isAdmin);
   await getComparedPerformance(rows, session.accessToken, rangeKey, range, true);
-  const qs = new URLSearchParams({ range: rangeKey }); if (form.get("startDate")) qs.set("startDate", String(form.get("startDate"))); if (form.get("endDate")) qs.set("endDate", String(form.get("endDate")));
-  redirect(`${session.user.isAdmin ? "/admin" : "/dashboard"}?${qs.toString()}`);
+  const qs = new URLSearchParams({ range: rangeKey });
+  for (const [key, value] of form.entries()) {
+    if (typeof value === "string" && value && !["returnTo", "range"].includes(key)) qs.set(key, value);
+  }
+  const requestedReturnTo = String(form.get("returnTo") || "");
+  const fallback = session.user.isAdmin ? "/admin" : "/dashboard";
+  const returnTo = requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//") ? requestedReturnTo : fallback;
+  redirect(`${returnTo}?${qs.toString()}`);
 }
