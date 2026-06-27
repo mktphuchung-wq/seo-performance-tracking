@@ -9,7 +9,7 @@ const num = (v: unknown) => Number.isFinite(Number(v)) ? Number(v) : 0;
 const normalizeMetric = (r: any): UrlMetrics => ({ clicks: num(r.clicks), impressions: num(r.impressions), ctr: num(r.ctr), position: num(r.position) });
 
 export function dbContentUrl(row: any): ContentUrl {
-  return { id: String(row.id), project: row.project ?? "", url: row.url ?? "", member_name: row.member_name ?? "", memberEmail: String(row.member_email ?? "").toLowerCase(), gscProperty: row.gsc_property ?? undefined };
+  return { id: String(row.id), urlHash: row.url_hash ? String(row.url_hash) : undefined, project: row.project ?? "", url: row.url ?? "", member_name: row.member_name ?? "", memberEmail: String(row.member_email ?? "").toLowerCase(), gscProperty: row.gsc_property ?? undefined };
 }
 
 export async function getDbContentUrls(): Promise<ContentUrl[]> {

@@ -18,10 +18,27 @@ alter table if exists url_query_snapshots
   add column if not exists url_hash text;
 
 alter table if exists refresh_job_items
+  add column if not exists id uuid default gen_random_uuid(),
+  add column if not exists job_id uuid,
+  add column if not exists refresh_job_id uuid,
   add column if not exists content_url_id uuid,
-  add column if not exists url_hash text;
+  add column if not exists url_hash text,
+  add column if not exists project text,
+  add column if not exists url text,
+  add column if not exists member_name text,
+  add column if not exists member_email text,
+  add column if not exists gsc_property text,
+  add column if not exists status text default 'pending',
+  add column if not exists attempts integer default 0,
+  add column if not exists error_message text,
+  add column if not exists processed_at timestamptz,
+  add column if not exists created_at timestamptz default now(),
+  add column if not exists updated_at timestamptz default now();
 
 alter table if exists refresh_jobs
+  add column if not exists start_date date,
+  add column if not exists end_date date,
+  add column if not exists range_key text,
   add column if not exists job_type text,
   add column if not exists triggered_by text,
   add column if not exists scope text,
@@ -66,6 +83,48 @@ from content_urls c
 where i.content_url_id is null
   and i.url_hash is not null
   and c.url_hash = i.url_hash;
+-- Keep legacy job_id and current refresh_job_id populated with the same value.
+update refresh_job_items
+set refresh_job_id = coalesce(refresh_job_id, job_id),
+    job_id = coalesce(job_id, refresh_job_id),
+    attempts = coalesce(attempts, 0),
+    status = coalesce(status, 'pending'),
+    created_at = coalesce(created_at, now()),
+    updated_at = coalesce(updated_at, now())
+where refresh_job_id is distinct from coalesce(refresh_job_id, job_id)
+   or job_id is distinct from coalesce(job_id, refresh_job_id)
+   or attempts is null
+   or status is null
+   or created_at is null
+   or updated_at is null;
+
+update refresh_job_items i
+set project = coalesce(i.project, c.project),
+    url = coalesce(i.url, c.url),
+    member_name = coalesce(i.member_name, c.member_name),
+    member_email = coalesce(i.member_email, c.member_email),
+    gsc_property = coalesce(i.gsc_property, c.gsc_property),
+    url_hash = coalesce(i.url_hash, c.url_hash)
+from content_urls c
+where i.content_url_id = c.id;
+
+create or replace function public.set_refresh_job_items_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  new.refresh_job_id = coalesce(new.refresh_job_id, new.job_id);
+  new.job_id = coalesce(new.job_id, new.refresh_job_id);
+  return new;
+end;
+$$;
+
+drop trigger if exists refresh_job_items_set_updated_at on refresh_job_items;
+create trigger refresh_job_items_set_updated_at
+before insert or update on refresh_job_items
+for each row execute function public.set_refresh_job_items_updated_at();
+
 
 do $$
 begin
@@ -115,6 +174,21 @@ create index if not exists url_query_snapshots_content_url_range_idx
 create index if not exists url_query_snapshots_url_hash_range_idx
   on url_query_snapshots (url_hash, range_key, start_date, end_date, clicks desc)
   where url_hash is not null;
+
+create index if not exists refresh_job_items_refresh_job_id_idx
+  on refresh_job_items (refresh_job_id)
+  where refresh_job_id is not null;
+
+create index if not exists refresh_job_items_job_id_idx
+  on refresh_job_items (job_id)
+  where job_id is not null;
+
+create index if not exists refresh_job_items_status_idx
+  on refresh_job_items (status);
+
+create index if not exists refresh_job_items_refresh_job_id_status_idx
+  on refresh_job_items (refresh_job_id, status)
+  where refresh_job_id is not null;
 
 create index if not exists refresh_job_items_content_url_id_idx
   on refresh_job_items (content_url_id)
