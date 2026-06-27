@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { query } from "./db";
-import { getSheetContentUrlRows, getUrlPerformance, type ContentUrl } from "./google";
+import { getSheetContentUrlRows, searchAnalytics, type ContentUrl, type UrlMetrics } from "./google";
 import type { DateRange } from "./dates";
 import { getPreviousRange } from "./growth";
 import { getDbContentUrls, getDbPerformance, upsertMemberSnapshots, upsertUrlSnapshot } from "./postgres";
@@ -98,24 +98,34 @@ export async function syncSheetToDb(accessToken: string): Promise<SheetSyncResul
   }
 }
 export async function createRefreshJob(rangeKey: string, range: DateRange, requestedBy?: string) {
-  const job = await query<{ id: string }>(`insert into refresh_jobs (range_key, start_date, end_date, status, requested_by, created_at, updated_at)
-    values ($1,$2,$3,'pending',$4,now(),now()) returning id`, [rangeKey, range.startDate, range.endDate, requestedBy ?? null]);
   const urls = await getDbContentUrls();
+  if (urls.length === 0) return { jobId: null, itemCount: 0, totalUrls: 0 };
+  const job = await query<{ id: string }>(`insert into refresh_jobs (range_key, start_date, end_date, status, requested_by, total_urls, processed_urls, failed_urls, created_at, updated_at)
+    values ($1,$2,$3,'pending',$4,$5,0,0,now(),now()) returning id`, [rangeKey, range.startDate, range.endDate, requestedBy ?? null, urls.length]);
   for (const row of urls) await query("insert into refresh_job_items (refresh_job_id, content_url_id, status, created_at, updated_at) values ($1,$2,'pending',now(),now())", [job.rows[0].id, row.id]);
-  return { jobId: job.rows[0].id, itemCount: urls.length };
+  return { jobId: job.rows[0].id, itemCount: urls.length, totalUrls: urls.length };
 }
+
+const zeroMetrics: UrlMetrics = { clicks: 0, impressions: 0, ctr: 0, position: 0 };
 
 async function processRange(rows: ContentUrl[], accessToken: string, rangeKey: string, range: DateRange) {
-  const byProperty = Object.values(rows.reduce<Record<string, ContentUrl[]>>((a,r)=>{ if (r.gscProperty) (a[r.gscProperty]??=[]).push(r); return a; }, {}));
-  for (const group of byProperty) {
-    // getUrlPerformance issues page-dimension Search Console calls; grouping keeps work property-oriented for batch execution.
-    const perf = await getUrlPerformance(group, accessToken, range);
-    for (const row of perf) await upsertUrlSnapshot(row.id, rangeKey, range, row);
+  const byProperty = Object.entries(rows.reduce<Record<string, ContentUrl[]>>((a,r)=>{ if (r.gscProperty) (a[r.gscProperty]??=[]).push(r); return a; }, {}));
+  const processed = new Set<string>();
+  for (const [property, group] of byProperty) {
+    const gscRows = await searchAnalytics(accessToken, property, ["page"], range, undefined, 25000);
+    const byPage = new Map(gscRows.map((r) => [String(r.keys?.[0] ?? ""), r]));
+    for (const row of group) {
+      const found = byPage.get(row.url);
+      const metrics = found ? { clicks: found.clicks ?? 0, impressions: found.impressions ?? 0, ctr: found.ctr ?? 0, position: found.position ?? 0 } : zeroMetrics;
+      await upsertUrlSnapshot(row.id, rangeKey, range, metrics);
+      processed.add(row.id);
+    }
   }
+  for (const row of rows.filter((r) => !processed.has(r.id))) await upsertUrlSnapshot(row.id, rangeKey, range, zeroMetrics);
 }
 
-export async function processRefreshBatch(accessToken: string, limit = 25) {
-  const jobs = await query<any>("select id, range_key, start_date, end_date from refresh_jobs where status in ('pending','running') order by created_at limit 1");
+export async function processRefreshBatch(accessToken: string, limit = 25, jobId?: string) {
+  const jobs = await query<any>(`select id, range_key, start_date, end_date from refresh_jobs where status in ('pending','running') ${jobId ? "and id=$1" : ""} order by created_at limit 1`, jobId ? [jobId] : []);
   const job = jobs.rows[0];
   if (!job) return { processed: 0 };
   await query("update refresh_jobs set status='running', updated_at=now() where id=$1", [job.id]);
@@ -131,8 +141,9 @@ export async function processRefreshBatch(accessToken: string, limit = 25) {
   if (remaining.rows[0].count === 0) {
     const compared = await getDbPerformance(job.range_key, range);
     await upsertMemberSnapshots(compared, job.range_key, range);
-    await query("update refresh_jobs set status='complete', finished_at=now(), updated_at=now() where id=$1", [job.id]);
+    await query("update refresh_jobs set status='complete', processed_urls=(select count(*) from refresh_job_items where refresh_job_id=$1 and status='complete'), failed_urls=(select count(*) from refresh_job_items where refresh_job_id=$1 and status='failed'), finished_at=now(), updated_at=now() where id=$1", [job.id]);
   }
+  await query("update refresh_jobs set processed_urls=(select count(*) from refresh_job_items where refresh_job_id=$1 and status='complete'), failed_urls=(select count(*) from refresh_job_items where refresh_job_id=$1 and status='failed'), updated_at=now() where id=$1", [job.id]);
   return { jobId: job.id, processed: rows.length, remaining: remaining.rows[0].count };
 }
 
