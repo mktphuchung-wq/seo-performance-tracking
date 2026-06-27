@@ -95,3 +95,23 @@ https://www.googleapis.com/auth/spreadsheets
 ```
 
 Replace any previous `https://www.googleapis.com/auth/spreadsheets.readonly` consent configuration with the writable spreadsheets scope, then re-consent the Google account.
+
+## Neon database migration
+
+If `/dashboard/urls` fails with `column cur.content_url_id does not exist`, run the Neon alignment migration in `migrations/20260627_neon_content_url_id.sql`.
+
+### Run in Neon SQL Editor
+
+1. Open the Neon Console and select the production branch/database.
+2. Open **SQL Editor**.
+3. Paste the full contents of `migrations/20260627_neon_content_url_id.sql`.
+4. Click **Run** and confirm it completes without errors.
+5. Visit `/api/health/db`; it should return `ok: true` with empty `missingTables`, `missingViews`, and `missingColumns` arrays.
+
+### Run with `psql`
+
+```bash
+psql "$DATABASE_URL" -f migrations/20260627_neon_content_url_id.sql
+```
+
+The migration adds `content_url_id` UUID columns to URL snapshot and refresh item tables, backfills them from `content_urls.id` via `url_hash`, recreates the latest performance views with `content_url_id`, and keeps `url_hash` indexes for fallback reads.

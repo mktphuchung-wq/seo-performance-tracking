@@ -120,7 +120,7 @@ export async function processRefreshBatch(accessToken: string, limit = 25) {
   if (!job) return { processed: 0 };
   await query("update refresh_jobs set status='running', updated_at=now() where id=$1", [job.id]);
   const items = await query<any>(`select i.id item_id, c.id, c.project, c.url, c.member_name, c.member_email, c.gsc_property
-    from refresh_job_items i join content_urls c on c.id=i.content_url_id
+    from refresh_job_items i join content_urls c on c.id=i.content_url_id or (i.content_url_id is null and i.url_hash = c.url_hash)
     where i.refresh_job_id=$1 and i.status='pending' order by i.created_at limit $2`, [job.id, limit]);
   const range = { startDate: String(job.start_date).slice(0,10), endDate: String(job.end_date).slice(0,10), label: String(job.range_key) };
   const rows = items.rows.map((r:any) => ({ id: String(r.id), project: r.project, url: r.url, member_name: r.member_name, memberEmail: String(r.member_email ?? "").toLowerCase(), gscProperty: r.gsc_property }));

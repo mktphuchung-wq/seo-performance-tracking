@@ -1,7 +1,7 @@
 import { query } from "./db";
 import { getPreviousRange, comparePerformance, type ComparedUrlPerformance } from "./growth";
 import { classifyOpportunity } from "./metrics";
-import { aggregate, type ContentUrl, type UrlPerformance, type UrlMetrics, type QueryMetric, type DailyMetric } from "./google";
+import { type ContentUrl, type UrlPerformance, type UrlMetrics, type QueryMetric, type DailyMetric } from "./google";
 import type { DateRange } from "./dates";
 import { scoreMembers } from "./scoring";
 
@@ -22,8 +22,8 @@ export async function getDbPerformance(rangeKey: string, range: DateRange): Prom
     coalesce(cur.clicks,0) clicks, coalesce(cur.impressions,0) impressions, coalesce(cur.ctr,0) ctr, coalesce(cur.position,0) position,
     coalesce(prev.clicks,0) previous_clicks, coalesce(prev.impressions,0) previous_impressions, coalesce(prev.ctr,0) previous_ctr, coalesce(prev.position,0) previous_position
     from content_urls c
-    left join url_performance_snapshots cur on cur.content_url_id = c.id and cur.range_key = $1 and cur.start_date = $2::date and cur.end_date = $3::date
-    left join url_performance_snapshots prev on prev.content_url_id = c.id and prev.range_key = $4 and prev.start_date = $5::date and prev.end_date = $6::date
+    left join url_performance_snapshots cur on (cur.content_url_id = c.id or (cur.content_url_id is null and cur.url_hash = c.url_hash)) and cur.range_key = $1 and cur.start_date = $2::date and cur.end_date = $3::date
+    left join url_performance_snapshots prev on (prev.content_url_id = c.id or (prev.content_url_id is null and prev.url_hash = c.url_hash)) and prev.range_key = $4 and prev.start_date = $5::date and prev.end_date = $6::date
     where coalesce(c.is_active,true) = true
     order by c.project, c.member_name, c.url`;
   const previousRange = getPreviousRange(range);
@@ -56,8 +56,16 @@ export async function getUrlDetailFromDb(id: string, rangeKey: string, range: Da
   const rows = await getDbPerformance(rangeKey, range);
   const overview = rows.find(r => r.id === id || r.url === id);
   if (!overview) return null;
-  const dailyRes = await query("select date, clicks, impressions, ctr, position from url_performance_daily_snapshots where content_url_id=$1 and date between $2::date and $3::date order by date", [overview.id, range.startDate, range.endDate]).catch(() => ({ rows: [] }));
-  const queryRes = await query("select query, clicks, impressions, ctr, position from url_query_snapshots where content_url_id=$1 and range_key=$2 and start_date=$3::date and end_date=$4::date order by clicks desc limit 250", [overview.id, rangeKey, range.startDate, range.endDate]).catch(() => ({ rows: [] }));
+  const dailyRes = await query(`select s.date, s.clicks, s.impressions, s.ctr, s.position
+    from url_performance_daily_snapshots s
+    left join content_urls c on c.id = $1
+    where (s.content_url_id = c.id or (s.content_url_id is null and s.url_hash = c.url_hash)) and s.date between $2::date and $3::date
+    order by s.date`, [overview.id, range.startDate, range.endDate]).catch(() => ({ rows: [] }));
+  const queryRes = await query(`select s.query, s.clicks, s.impressions, s.ctr, s.position
+    from url_query_snapshots s
+    left join content_urls c on c.id = $1
+    where (s.content_url_id = c.id or (s.content_url_id is null and s.url_hash = c.url_hash)) and s.range_key=$2 and s.start_date=$3::date and s.end_date=$4::date
+    order by s.clicks desc limit 250`, [overview.id, rangeKey, range.startDate, range.endDate]).catch(() => ({ rows: [] }));
   const queries: QueryMetric[] = queryRes.rows.map((r: any) => ({ query: r.query, ...normalizeMetric(r), opportunity: classifyOpportunity(normalizeMetric(r)) }));
   return { overview, warning: overview.warning, daily: dailyRes.rows.map((r: any): DailyMetric => ({ date: String(r.date).slice(0,10), ...normalizeMetric(r) })), queries, ctrOpportunities: queries.filter(q=>q.opportunity==="ctr_opportunity"), rankingOpportunities: queries.filter(q=>q.opportunity==="ranking_opportunity"), winningQueries: queries.filter(q=>q.opportunity==="winner").slice(0,10), range, hasData: overview.clicks > 0 || overview.impressions > 0 };
 }
