@@ -136,3 +136,25 @@ The canonical migration SQL is stored in `migrations/20260627_neon_content_url_i
 ```bash
 psql "$DATABASE_URL" -f migrations/20260627_neon_content_url_id.sql
 ```
+
+## How to deploy database schema to Neon
+
+Use the canonical idempotent migration any time Neon may be out of sync with the application code, especially before using **Refresh GSC Performance**.
+
+### Neon SQL Editor order
+
+1. Open the Neon Console and select the target branch/database.
+2. Open **SQL Editor**.
+3. Paste the complete contents of `migrations/001_canonical_schema.sql`.
+4. Run it once as a single script. It is safe to run again because it uses `create table if not exists`, `alter table add column if not exists`, `create index if not exists`, `create or replace view`, and `create or replace function`.
+5. Visit `/api/health/db` in the deployed app. It should return `ok: true` and empty `missing`, `missingTables`, `missingViews`, and `missingColumns` arrays.
+6. Click **Refresh GSC Performance** only after the health check is green.
+
+### psql command order
+
+```bash
+psql "$DATABASE_URL" -f migrations/001_canonical_schema.sql
+curl -f https://YOUR_APP_HOST/api/health/db
+```
+
+`migrations/001_canonical_schema.sql` is the canonical schema migration for Neon/Postgres. It creates and aligns `content_urls`, `refresh_jobs`, `refresh_job_items`, `url_performance_snapshots`, `member_performance_snapshots`, compatibility daily/query snapshot tables, refresh item ID sync triggers, indexes, and latest-performance views.
