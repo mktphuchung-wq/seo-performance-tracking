@@ -99,11 +99,13 @@ export async function syncSheetToDb(accessToken: string): Promise<SheetSyncResul
 }
 export async function createRefreshJob(rangeKey: string, range: DateRange, requestedBy?: string) {
   const urls = await getDbContentUrls();
-  if (urls.length === 0) return { jobId: null, itemCount: 0, totalUrls: 0 };
+  if (urls.length === 0) return { jobId: null, itemCount: 0, totalUrls: 0, blockedProjects: [] as string[] };
+  const blockedProjects = Array.from(new Set(urls.filter((row) => !row.gscProperty).map((row) => row.project).filter(Boolean))).sort();
+  if (blockedProjects.length) return { jobId: null, itemCount: 0, totalUrls: urls.length, blockedProjects };
   const job = await query<{ id: string }>(`insert into refresh_jobs (range_key, start_date, end_date, status, requested_by, total_urls, processed_urls, failed_urls, created_at, updated_at)
     values ($1,$2,$3,'pending',$4,$5,0,0,now(),now()) returning id`, [rangeKey, range.startDate, range.endDate, requestedBy ?? null, urls.length]);
   for (const row of urls) await query("insert into refresh_job_items (refresh_job_id, content_url_id, status, created_at, updated_at) values ($1,$2,'pending',now(),now())", [job.rows[0].id, row.id]);
-  return { jobId: job.rows[0].id, itemCount: urls.length, totalUrls: urls.length };
+  return { jobId: job.rows[0].id, itemCount: urls.length, totalUrls: urls.length, blockedProjects: [] as string[] };
 }
 
 const zeroMetrics: UrlMetrics = { clicks: 0, impressions: 0, ctr: 0, position: 0 };
@@ -111,6 +113,8 @@ const zeroMetrics: UrlMetrics = { clicks: 0, impressions: 0, ctr: 0, position: 0
 async function processRange(rows: ContentUrl[], accessToken: string, rangeKey: string, range: DateRange) {
   const byProperty = Object.entries(rows.reduce<Record<string, ContentUrl[]>>((a,r)=>{ if (r.gscProperty) (a[r.gscProperty]??=[]).push(r); return a; }, {}));
   const processed = new Set<string>();
+  let withData = 0;
+  let withoutData = 0;
   for (const [property, group] of byProperty) {
     const gscRows = await searchAnalytics(accessToken, property, ["page"], range, undefined, 25000);
     const byPage = new Map(gscRows.map((r) => [String(r.keys?.[0] ?? ""), r]));
@@ -118,10 +122,15 @@ async function processRange(rows: ContentUrl[], accessToken: string, rangeKey: s
       const found = byPage.get(row.url);
       const metrics = found ? { clicks: found.clicks ?? 0, impressions: found.impressions ?? 0, ctr: found.ctr ?? 0, position: found.position ?? 0 } : zeroMetrics;
       await upsertUrlSnapshot(row.id, rangeKey, range, metrics);
+      if (found) withData += 1; else withoutData += 1;
       processed.add(row.id);
     }
   }
-  for (const row of rows.filter((r) => !processed.has(r.id))) await upsertUrlSnapshot(row.id, rangeKey, range, zeroMetrics);
+  for (const row of rows.filter((r) => !processed.has(r.id))) {
+    await upsertUrlSnapshot(row.id, rangeKey, range, zeroMetrics);
+    withoutData += 1;
+  }
+  return { withData, withoutData };
 }
 
 export async function processRefreshBatch(accessToken: string, limit = 25, jobId?: string) {
@@ -134,8 +143,16 @@ export async function processRefreshBatch(accessToken: string, limit = 25, jobId
     where i.refresh_job_id=$1 and i.status='pending' order by i.created_at limit $2`, [job.id, limit]);
   const range = { startDate: String(job.start_date).slice(0,10), endDate: String(job.end_date).slice(0,10), label: String(job.range_key) };
   const rows = items.rows.map((r:any) => ({ id: String(r.id), project: r.project, url: r.url, member_name: r.member_name, memberEmail: String(r.member_email ?? "").toLowerCase(), gscProperty: r.gsc_property }));
-  await processRange(rows, accessToken, job.range_key, range);
-  await processRange(rows, accessToken, `previous:${job.range_key}`, getPreviousRange(range));
+  let currentResult = { withData: 0, withoutData: 0 };
+  try {
+    currentResult = await processRange(rows, accessToken, job.range_key, range);
+    await processRange(rows, accessToken, `previous:${job.range_key}`, getPreviousRange(range));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Google Search Console refresh failed";
+    for (const item of items.rows) await query("update refresh_job_items set status='failed', error_message=$2, updated_at=now() where id=$1", [item.item_id, message]);
+    await query("update refresh_jobs set status='failed', failed_urls=(select count(*) from refresh_job_items where refresh_job_id=$1 and status='failed'), error_message=$2, finished_at=now(), updated_at=now() where id=$1", [job.id, message]);
+    return { jobId: job.id, processed: 0, remaining: 0, urlsWithGscData: 0, urlsWithNoData: rows.length, failedUrls: rows.length, errorMessage: message };
+  }
   for (const item of items.rows) await query("update refresh_job_items set status='complete', updated_at=now() where id=$1", [item.item_id]);
   const remaining = await query<any>("select count(*)::int count from refresh_job_items where refresh_job_id=$1 and status='pending'", [job.id]);
   if (remaining.rows[0].count === 0) {
@@ -144,7 +161,8 @@ export async function processRefreshBatch(accessToken: string, limit = 25, jobId
     await query("update refresh_jobs set status='complete', processed_urls=(select count(*) from refresh_job_items where refresh_job_id=$1 and status='complete'), failed_urls=(select count(*) from refresh_job_items where refresh_job_id=$1 and status='failed'), finished_at=now(), updated_at=now() where id=$1", [job.id]);
   }
   await query("update refresh_jobs set processed_urls=(select count(*) from refresh_job_items where refresh_job_id=$1 and status='complete'), failed_urls=(select count(*) from refresh_job_items where refresh_job_id=$1 and status='failed'), updated_at=now() where id=$1", [job.id]);
-  return { jobId: job.id, processed: rows.length, remaining: remaining.rows[0].count };
+  const latest = await query<any>("select total_urls, processed_urls, failed_urls, error_message from refresh_jobs where id=$1", [job.id]);
+  return { jobId: job.id, processed: rows.length, remaining: remaining.rows[0].count, totalUrls: Number(latest.rows[0]?.total_urls ?? 0), processedUrls: Number(latest.rows[0]?.processed_urls ?? 0), failedUrls: Number(latest.rows[0]?.failed_urls ?? 0), urlsWithGscData: currentResult.withData, urlsWithNoData: currentResult.withoutData, errorMessage: latest.rows[0]?.error_message ?? null };
 }
 
 export async function refreshStatus(jobId?: string) {

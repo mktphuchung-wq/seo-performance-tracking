@@ -38,17 +38,27 @@ export function AdminDataControls({ range = "28d", startDate, endDate }: { range
       const startRes = await fetch("/api/refresh/start", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ range, startDate, endDate }) });
       const started = await startRes.json();
       if (!startRes.ok) throw new Error(started.error || "Refresh start failed");
-      if (started.totalUrls === 0 || started.itemCount === 0) throw new Error("No URLs found. Please run Sync URLs from Sheet first.");
+      if (started.totalUrls === 0 || started.itemCount === 0) throw new Error("No URLs found. Run Sync URLs from Sheet first.");
       let remaining = started.totalUrls;
+      let processedUrls = 0;
+      let urlsWithGscData = 0;
+      let urlsWithNoData = 0;
+      let failedUrls = 0;
+      let errorMessage = "";
       while (remaining > 0) {
         const processRes = await fetch("/api/refresh/process", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jobId: started.jobId, limit: 25 }) });
         const processed = await processRes.json();
         if (!processRes.ok) throw new Error(processed.error || "Refresh process failed");
         remaining = Number(processed.remaining ?? 0);
+        processedUrls += Number(processed.processed ?? 0);
+        urlsWithGscData += Number(processed.urlsWithGscData ?? 0);
+        urlsWithNoData += Number(processed.urlsWithNoData ?? 0);
+        failedUrls = Number(processed.failedUrls ?? failedUrls);
+        errorMessage = String(processed.errorMessage ?? errorMessage ?? "");
         await loadStatus();
         if (Number(processed.processed ?? 0) === 0 && remaining > 0) break;
       }
-      setMessage(`GSC refresh complete for ${started.totalUrls} URLs.`);
+      setMessage(`GSC refresh result: total URLs ${started.totalUrls}; processed URLs ${processedUrls}; URLs with GSC data ${urlsWithGscData}; URLs with no data ${urlsWithNoData}; failed URLs ${failedUrls}${errorMessage ? `; error: ${errorMessage}` : ""}.`);
       await loadStatus();
     } catch (err) { setError(err instanceof Error ? err.message : "Refresh failed"); }
     finally { setLoading(null); }
@@ -63,7 +73,7 @@ export function AdminDataControls({ range = "28d", startDate, endDate }: { range
     {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
     <div className="mt-4 grid gap-4 lg:grid-cols-2">
       <div><h3 className="font-semibold">Latest sync runs</h3><table className="mt-2 w-full text-xs"><tbody>{syncRuns.map((r, i) => <tr className="border-t" key={r.id ?? i}><td className="py-1">{r.status}</td><td>{r.inserted_rows}/{r.updated_rows}/{r.deactivated_rows}/{r.failed_rows}</td><td>{String(r.created_at).slice(0,19)}</td></tr>)}{!syncRuns.length && <tr><td className="py-1 text-slate-500">No sync runs yet.</td></tr>}</tbody></table></div>
-      <div><h3 className="font-semibold">Latest refresh jobs</h3><table className="mt-2 w-full text-xs"><tbody>{jobs.map((j) => <tr className="border-t" key={j.id}><td className="py-1">{j.status}</td><td>{j.complete_items}/{j.total_items} done</td><td>{j.failed_items} failed</td><td>{String(j.range_key)}</td></tr>)}{!jobs.length && <tr><td className="py-1 text-slate-500">No refresh jobs yet.</td></tr>}</tbody></table></div>
+      <div><h3 className="font-semibold">Latest refresh jobs</h3><table className="mt-2 w-full text-xs"><tbody>{jobs.map((j) => <tr className="border-t" key={j.id}><td className="py-1">{j.status}</td><td>{j.complete_items}/{j.total_items} done</td><td>{j.failed_items} failed</td><td>{String(j.range_key)}</td><td>{j.error_message}</td></tr>)}{!jobs.length && <tr><td className="py-1 text-slate-500">No refresh jobs yet.</td></tr>}</tbody></table></div>
     </div>
   </div>;
 }

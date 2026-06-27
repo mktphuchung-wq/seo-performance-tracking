@@ -69,3 +69,49 @@ export async function getUrlDetailFromDb(id: string, rangeKey: string, range: Da
   const queries: QueryMetric[] = queryRes.rows.map((r: any) => ({ query: r.query, ...normalizeMetric(r), opportunity: classifyOpportunity(normalizeMetric(r)) }));
   return { overview, warning: overview.warning, daily: dailyRes.rows.map((r: any): DailyMetric => ({ date: String(r.date).slice(0,10), ...normalizeMetric(r) })), queries, ctrOpportunities: queries.filter(q=>q.opportunity==="ctr_opportunity"), rankingOpportunities: queries.filter(q=>q.opportunity==="ranking_opportunity"), winningQueries: queries.filter(q=>q.opportunity==="winner").slice(0,10), range, hasData: overview.clicks > 0 || overview.impressions > 0 };
 }
+
+export type AdminDiagnostic = {
+  activeUrls: number;
+  missingMemberEmail: number;
+  missingGscProperty: number;
+  missingGscProjects: string[];
+  latestSyncRun: any | null;
+  latestRefreshJob: any | null;
+};
+
+export type AdminMemberRow = ReturnType<typeof scoreMembers>[number] & { snapshotStatus: string; snapshotUpdatedAt?: string | null };
+
+export async function getAdminDiagnostics(): Promise<AdminDiagnostic> {
+  const [counts, projects, syncRuns, refreshJobs] = await Promise.all([
+    query<{ active_urls: number; missing_member_email: number; missing_gsc_property: number }>(`select count(*)::int active_urls,
+      count(*) filter (where nullif(member_email,'') is null)::int missing_member_email,
+      count(*) filter (where nullif(gsc_property,'') is null)::int missing_gsc_property
+      from content_urls where coalesce(is_active,true)=true`),
+    query<{ project: string }>(`select distinct project from content_urls where coalesce(is_active,true)=true and nullif(gsc_property,'') is null order by project`),
+    query<any>("select * from sync_runs order by created_at desc limit 1").catch(() => ({ rows: [] })),
+    query<any>("select * from refresh_jobs order by created_at desc limit 1").catch(() => ({ rows: [] })),
+  ]);
+  const row = counts.rows[0] ?? { active_urls: 0, missing_member_email: 0, missing_gsc_property: 0 };
+  return {
+    activeUrls: Number(row.active_urls ?? 0),
+    missingMemberEmail: Number(row.missing_member_email ?? 0),
+    missingGscProperty: Number(row.missing_gsc_property ?? 0),
+    missingGscProjects: projects.rows.map((r) => r.project).filter(Boolean),
+    latestSyncRun: syncRuns.rows[0] ?? null,
+    latestRefreshJob: refreshJobs.rows[0] ?? null,
+  };
+}
+
+export async function getAdminMemberRows(rangeKey: string, range: DateRange, performanceRows: ComparedUrlPerformance[]): Promise<AdminMemberRow[]> {
+  const scored = scoreMembers(performanceRows);
+  const snapshotRows = await query<any>(`select distinct on (member_name) member_name, updated_at
+    from member_performance_snapshots
+    where range_key=$1 and start_date=$2::date and end_date=$3::date
+    order by member_name, updated_at desc`, [rangeKey, range.startDate, range.endDate]).catch(() => ({ rows: [] }));
+  const snapshotMap = new Map(snapshotRows.rows.map((row: any) => [String(row.member_name), row.updated_at ? String(row.updated_at) : null]));
+  return scored.map((member) => ({
+    ...member,
+    snapshotStatus: snapshotMap.has(member.member_name) ? "Refreshed" : "Pending refresh",
+    snapshotUpdatedAt: snapshotMap.get(member.member_name) ?? null,
+  }));
+}

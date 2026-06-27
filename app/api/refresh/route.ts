@@ -14,7 +14,8 @@ export async function POST(request: Request) {
   const job = await createRefreshJob(rangeKey, range, session.user.email);
   const qs = new URLSearchParams({ range: rangeKey });
   for (const [key, value] of form.entries()) if (typeof value === "string" && value && !["returnTo", "range"].includes(key)) qs.set(key, value);
-  if (job.totalUrls === 0) qs.set("refreshError", "No URLs found. Please run Sync URLs from Sheet first.");
+  if (job.totalUrls === 0) qs.set("refreshError", "No URLs found. Run Sync URLs from Sheet first.");
+  if (job.blockedProjects?.length) qs.set("refreshError", `Some projects are missing GSC mapping. Check PROJECT_GSC_MAP. Affected projects: ${job.blockedProjects.join(", ")}`);
   const requestedReturnTo = String(form.get("returnTo") || "");
   const fallback = session.user.isAdmin ? "/admin" : "/dashboard";
   const returnTo = requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//") ? requestedReturnTo : fallback;
