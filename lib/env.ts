@@ -48,5 +48,5 @@ export const appConfig = {
   sheetId: process.env.GOOGLE_SHEET_ID ?? "",
   contentTab: process.env.GOOGLE_SHEET_TAB || "content_urls",
   allTimeStartDate: process.env.ALL_TIME_START_DATE || "2024-01-01",
-  cacheTtlSeconds: Number(process.env.CACHE_TTL_SECONDS || 21600)
+  cacheTtlDays: Number(process.env.CACHE_TTL_DAYS || 7)
 };

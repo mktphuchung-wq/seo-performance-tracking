@@ -49,3 +49,13 @@ export function UrlTable({ rows, sort = "clicks", basePath = "" }: { rows: UrlPe
   const href = (key: UrlSortKey) => `${basePath}?sort=${key}`;
   return <div><div className="mb-3 flex flex-wrap items-center gap-2 text-sm"><span className="font-medium text-slate-600">Sort:</span>{sorts.map(([key, label]) => <Link className={`rounded-full border px-3 py-1 ${sort === key ? "bg-blue-700 text-white" : "bg-white"}`} href={href(key)} key={key}>{label}</Link>)}</div><div className="overflow-hidden rounded-xl border bg-white"><table className="w-full text-sm"><thead className="bg-slate-100 text-left"><tr><th className="p-3">URL</th><th>Project</th><th>Member</th><th>Clicks</th><th>Impr.</th><th>CTR</th><th>Pos.</th><th>Opportunity</th></tr></thead><tbody>{sortedRows(rows, sort).map((r) => <tr className="border-t" key={r.id}><td className="max-w-xl p-3 break-all"><Link className="text-blue-700" href={`/url/${r.id}`}>{r.url}</Link>{r.warning && <div className="text-xs text-amber-700">{r.warning}</div>}</td><td>{r.project}</td><td>{r.member_name}</td><td>{fmtNum(r.clicks)}</td><td>{fmtNum(r.impressions)}</td><td>{fmtPct(r.ctr)}</td><td>{fmtPos(r.position)}</td><td><span className="rounded-full bg-slate-100 px-2 py-1 text-xs">{labelText(r.opportunity)}</span></td></tr>)}{rows.length === 0 && <tr><td className="p-3 text-slate-500" colSpan={8}>No URLs found for this account.</td></tr>}</tbody></table></div></div>;
 }
+
+export function fmtGrowth(n: number | null) { return n === null ? "New growth" : `${n >= 0 ? "+" : ""}${(n * 100).toFixed(1)}%`; }
+export function StatusBadge({ status }: { status: string }) {
+  const styles: Record<string,string> = { growing: "bg-green-100 text-green-800", new_signal: "bg-emerald-100 text-emerald-800", declining: "bg-red-100 text-red-800", stable: "bg-slate-100 text-slate-700", no_data: "bg-amber-100 text-amber-800" };
+  const arrow = status === "growing" || status === "new_signal" ? "↗" : status === "declining" ? "↘" : "→";
+  return <span className={`rounded-full px-2 py-1 text-xs font-medium ${styles[status] ?? styles.stable}`}>{arrow} {status.replace(/_/g, " ")}</span>;
+}
+export function RefreshDataButton({ range, startDate, endDate }: { range?: string; startDate?: string; endDate?: string }) {
+  return <form action="/api/refresh" method="post"><input type="hidden" name="range" value={range || "28d"} />{startDate && <input type="hidden" name="startDate" value={startDate} />}{endDate && <input type="hidden" name="endDate" value={endDate} />}<button className="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white" type="submit">Refresh Data</button></form>;
+}

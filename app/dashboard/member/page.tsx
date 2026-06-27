@@ -3,16 +3,22 @@ import { redirect } from "next/navigation";
 import { authOptions } from "../../../lib/auth";
 import { getDateRange } from "../../../lib/dates";
 import { getEnvErrors } from "../../../lib/env";
-import { aggregate, filterRowsForEmail, getContentUrls, getUrlPerformance } from "../../../lib/google";
-import { DateRangePicker, MetricGrid, Shell, UrlTable, WarningList } from "../../../components/ui";
+import { filterRowsForEmail, getContentUrls } from "../../../lib/google";
+import { getComparedPerformance } from "../../../lib/cache";
+import { aggregateCompared } from "../../../lib/growth";
+import { DateRangePicker, fmtGrowth, MetricCard, RefreshDataButton, Shell, UrlTable, WarningList } from "../../../components/ui";
+import Link from "next/link";
 
 export default async function MemberDashboard({ searchParams }: { searchParams?: { range?: string; startDate?: string; endDate?: string; sort?: import("../../../components/ui").UrlSortKey } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email || !session.accessToken) redirect("/");
-  const range = getDateRange({ range: searchParams?.range, startDate: searchParams?.startDate, endDate: searchParams?.endDate });
+  const rangeKey = searchParams?.range || "28d";
+  const range = getDateRange({ range: rangeKey, startDate: searchParams?.startDate, endDate: searchParams?.endDate });
   const allRows = await getContentUrls(session.accessToken);
   const rows = filterRowsForEmail(allRows, session.user.email, session.user.isAdmin);
-  const performance = await getUrlPerformance(rows, session.accessToken, range);
-  const optimization = performance.filter((r) => ["ctr_opportunity", "ranking_opportunity", "no_data"].includes(r.opportunity));
-  return <Shell email={session.user.email} isAdmin={session.user.isAdmin}><div className="mb-6 flex items-center justify-between"><h2 className="text-2xl font-semibold">Member dashboard</h2><span className="text-sm text-slate-500">{range.label}: {range.startDate} to {range.endDate}</span></div><DateRangePicker range={searchParams?.range || "28d"} startDate={searchParams?.startDate} endDate={searchParams?.endDate} /><WarningList warnings={[...getEnvErrors(), ...performance.map((p) => p.warning)]} /><MetricGrid metrics={aggregate(performance)} count={performance.length} /><h3 className="mb-3 mt-8 text-xl font-semibold">Top URLs</h3><UrlTable rows={[...performance].sort((a, b) => b.clicks - a.clicks).slice(0, 10)} /><h3 className="mb-3 mt-8 text-xl font-semibold">URLs needing optimization</h3><UrlTable rows={optimization} /><h3 className="mb-3 mt-8 text-xl font-semibold">All visible URLs</h3><UrlTable rows={performance} sort={searchParams?.sort || "clicks"} /></Shell>;
+  const cached = await getComparedPerformance(rows, session.accessToken, rangeKey, range);
+  const performance = cached.rows;
+  const summary = aggregateCompared(performance);
+  const optimization = performance.filter((r) => r.status === "declining" || r.status === "no_data");
+  return <Shell email={session.user.email} isAdmin={session.user.isAdmin}><div className="mb-6 flex items-center justify-between"><h2 className="text-2xl font-semibold">Member dashboard</h2><span className="text-sm text-slate-500">{range.label}: {range.startDate} to {range.endDate}</span></div><div className="mb-4 flex justify-end"><RefreshDataButton range={rangeKey} startDate={searchParams?.startDate} endDate={searchParams?.endDate} /></div><DateRangePicker range={rangeKey} startDate={searchParams?.startDate} endDate={searchParams?.endDate} /><WarningList warnings={[...getEnvErrors(), ...performance.map((p) => p.warning)]} /><div className="grid gap-4 md:grid-cols-5"><MetricCard label="URL count" value={performance.length}/><MetricCard label="Clicks" value={summary.clicks}/><MetricCard label="Click growth" value={fmtGrowth(summary.click_growth_pct)}/><MetricCard label="URLs growing" value={summary.growing}/><MetricCard label="URLs declining" value={summary.declining}/></div><p className="mt-4"><Link className="text-blue-700" href={`/admin/members/${encodeURIComponent(performance[0]?.member_name || "")}`}>Open my 1m/3m/6m detail page</Link></p><h3 className="mb-3 mt-8 text-xl font-semibold">Top URLs</h3><UrlTable rows={[...performance].sort((a, b) => b.clicks - a.clicks).slice(0, 10)} /><h3 className="mb-3 mt-8 text-xl font-semibold">URLs needing optimization</h3><UrlTable rows={optimization} /><h3 className="mb-3 mt-8 text-xl font-semibold">All visible URLs</h3><UrlTable rows={performance} sort={searchParams?.sort || "clicks"} /></Shell>;
 }
