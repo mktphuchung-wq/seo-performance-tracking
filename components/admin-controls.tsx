@@ -5,6 +5,28 @@ import { useEffect, useState } from "react";
 type Job = { id: string; status: string; range_key: string; start_date: string; end_date: string; total_items: number; complete_items: number; failed_items: number; processed_urls?: number; failed_urls?: number; error_message?: string };
 type SyncRun = { id?: string; status: string; total_rows: number; inserted_rows: number; updated_rows: number; deactivated_rows: number; failed_rows: number; error_message?: string; created_at: string };
 
+type JsonSafeResult<T = any> = { ok: true; data: T } | { ok: false; error: string; status: number; endpoint: string; rawPreview?: string };
+
+async function readJsonSafe<T = any>(response: Response, endpoint: string): Promise<JsonSafeResult<T>> {
+  const text = await response.text();
+  const status = response.status;
+  if (!text.trim()) {
+    return { ok: false, status, endpoint, error: `HTTP ${status} from ${endpoint}: empty response body` };
+  }
+
+  try {
+    return { ok: true, data: JSON.parse(text) as T };
+  } catch {
+    const rawPreview = text.slice(0, 500);
+    return { ok: false, status, endpoint, rawPreview, error: `HTTP ${status} from ${endpoint}: response was not JSON. Preview: ${rawPreview}` };
+  }
+}
+
+function apiError(endpoint: string, response: Response, payload: any) {
+  const rawPreview = payload?.rawPreview ? ` Preview: ${payload.rawPreview}` : "";
+  return `HTTP ${response.status} from ${endpoint}: ${payload?.error || payload?.message || response.statusText || "Request failed"}${rawPreview}`;
+}
+
 export function AdminDataControls({ range = "28d", startDate, endDate }: { range?: string; startDate?: string; endDate?: string }) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,9 +57,12 @@ export function AdminDataControls({ range = "28d", startDate, endDate }: { range
   async function refreshGsc() {
     setLoading("refresh"); setError(null); setMessage(null);
     try {
-      const startRes = await fetch("/api/refresh/start", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ range, startDate, endDate }) });
-      const started = await startRes.json();
-      if (!startRes.ok) throw new Error(started.error || "Refresh start failed");
+      const startEndpoint = "/api/refresh/start";
+      const startRes = await fetch(startEndpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ range, startDate, endDate }) });
+      const startJson = await readJsonSafe(startRes, startEndpoint);
+      if (!startJson.ok) throw new Error(startJson.error);
+      const started = startJson.data;
+      if (!startRes.ok || !started.ok) throw new Error(apiError(startEndpoint, startRes, started));
       if (started.totalUrls === 0 || started.itemCount === 0) throw new Error("No URLs found. Run Sync URLs from Sheet first.");
       let remaining = started.totalUrls;
       let processedUrls = 0;
@@ -46,9 +71,15 @@ export function AdminDataControls({ range = "28d", startDate, endDate }: { range
       let failedUrls = 0;
       let errorMessage = "";
       while (remaining > 0) {
-        const processRes = await fetch("/api/refresh/process", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jobId: started.jobId, limit: 25 }) });
-        const processed = await processRes.json();
-        if (!processRes.ok) throw new Error(processed.error || "Refresh process failed");
+        const processEndpoint = "/api/refresh/process";
+        const processRes = await fetch(processEndpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jobId: started.jobId, limit: 25 }) });
+        const processJson = await readJsonSafe(processRes, processEndpoint);
+        if (!processJson.ok) {
+          if (processRes.status === 404) throw new Error("Refresh job created, but processing endpoint is not available.");
+          throw new Error(processJson.error);
+        }
+        const processed = processJson.data;
+        if (!processRes.ok || !processed.ok) throw new Error(apiError(processEndpoint, processRes, processed));
         remaining = Number(processed.remaining ?? 0);
         processedUrls += Number(processed.processed ?? 0);
         urlsWithGscData += Number(processed.urlsWithGscData ?? 0);
