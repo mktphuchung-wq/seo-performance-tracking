@@ -21,6 +21,24 @@ alter table if exists refresh_job_items
   add column if not exists content_url_id uuid,
   add column if not exists url_hash text;
 
+alter table if exists refresh_jobs
+  add column if not exists job_type text,
+  add column if not exists triggered_by text,
+  add column if not exists scope text,
+  add column if not exists total_urls integer default 0,
+  add column if not exists processed_urls integer default 0,
+  add column if not exists failed_urls integer default 0,
+  add column if not exists started_at timestamptz;
+
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema='public' and table_name='refresh_jobs' and column_name='requested_by') then
+    execute 'update refresh_jobs set job_type = coalesce(job_type, ''gsc_refresh''), scope = coalesce(scope, ''all_active_urls''), triggered_by = coalesce(triggered_by, requested_by)';
+  else
+    update refresh_jobs set job_type = coalesce(job_type, 'gsc_refresh'), scope = coalesce(scope, 'all_active_urls');
+  end if;
+end $$;
+
 update url_performance_snapshots s
 set content_url_id = c.id
 from content_urls c

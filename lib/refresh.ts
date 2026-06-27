@@ -3,7 +3,7 @@ import { query } from "./db";
 import { getSheetContentUrlRows, searchAnalytics, type ContentUrl, type UrlMetrics } from "./google";
 import type { DateRange } from "./dates";
 import { getPreviousRange } from "./growth";
-import { getDbContentUrls, getDbPerformance, upsertMemberSnapshots, upsertUrlSnapshot } from "./postgres";
+import { dbContentUrl, getDbPerformance, upsertMemberSnapshots, upsertUrlSnapshot } from "./postgres";
 import { getMemberEmailMap, getProjectGscMap } from "./env";
 
 export type SheetSyncResult = {
@@ -97,15 +97,31 @@ export async function syncSheetToDb(accessToken: string): Promise<SheetSyncResul
     return result;
   }
 }
-export async function createRefreshJob(rangeKey: string, range: DateRange, requestedBy?: string) {
-  const urls = await getDbContentUrls();
-  if (urls.length === 0) return { jobId: null, itemCount: 0, totalUrls: 0, blockedProjects: [] as string[] };
-  const blockedProjects = Array.from(new Set(urls.filter((row) => !row.gscProperty).map((row) => row.project).filter(Boolean))).sort();
-  if (blockedProjects.length) return { jobId: null, itemCount: 0, totalUrls: urls.length, blockedProjects };
-  const job = await query<{ id: string }>(`insert into refresh_jobs (range_key, start_date, end_date, status, requested_by, total_urls, processed_urls, failed_urls, created_at, updated_at)
-    values ($1,$2,$3,'pending',$4,$5,0,0,now(),now()) returning id`, [rangeKey, range.startDate, range.endDate, requestedBy ?? null, urls.length]);
-  for (const row of urls) await query("insert into refresh_job_items (refresh_job_id, content_url_id, status, created_at, updated_at) values ($1,$2,'pending',now(),now())", [job.rows[0].id, row.id]);
-  return { jobId: job.rows[0].id, itemCount: urls.length, totalUrls: urls.length, blockedProjects: [] as string[] };
+export async function createRefreshJob(rangeKey: string, range: DateRange, triggeredBy?: string) {
+  const urls = await query<any>(`select id, project, url, member_name, member_email, gsc_property
+    from public.content_urls
+    where coalesce(is_active,true) = true
+    order by project, member_name, url`);
+  const activeUrls = urls.rows.map(dbContentUrl);
+  if (activeUrls.length === 0) return { jobId: null, itemCount: 0, totalUrls: 0, missingGscPropertyCount: 0, blockedProjects: [] as string[] };
+
+  const missingGscRows = activeUrls.filter((row) => !row.gscProperty);
+  const blockedProjects = Array.from(new Set(missingGscRows.map((row) => row.project).filter(Boolean))).sort();
+  if (missingGscRows.length) {
+    return { jobId: null, itemCount: 0, totalUrls: activeUrls.length, missingGscPropertyCount: missingGscRows.length, blockedProjects };
+  }
+
+  const job = await query<{ id: string }>(`insert into public.refresh_jobs
+    (status, job_type, triggered_by, scope, range_key, start_date, end_date, total_urls, processed_urls, failed_urls, started_at, created_at, updated_at)
+    values ('pending','gsc_refresh',$1,'all_active_urls',$2,$3,$4,$5,0,0,now(),now(),now())
+    returning id`, [triggeredBy ?? null, rangeKey, range.startDate, range.endDate, activeUrls.length]);
+  const jobId = job.rows[0]?.id;
+  if (!jobId) return { jobId: null, itemCount: 0, totalUrls: activeUrls.length, missingGscPropertyCount: 0, blockedProjects: [] as string[] };
+
+  for (const row of activeUrls) {
+    await query("insert into public.refresh_job_items (refresh_job_id, content_url_id, status, created_at, updated_at) values ($1,$2,'pending',now(),now())", [jobId, row.id]);
+  }
+  return { jobId, itemCount: activeUrls.length, totalUrls: activeUrls.length, missingGscPropertyCount: 0, blockedProjects: [] as string[] };
 }
 
 const zeroMetrics: UrlMetrics = { clicks: 0, impressions: 0, ctr: 0, position: 0 };
