@@ -1,22 +1,102 @@
+import crypto from "crypto";
 import { query } from "./db";
-import { getContentUrls, getUrlPerformance, type ContentUrl } from "./google";
-import { filterRowsForEmail } from "./google";
-import { getDateRange, type DateRange } from "./dates";
+import { getSheetContentUrlRows, getUrlPerformance, type ContentUrl } from "./google";
+import type { DateRange } from "./dates";
 import { getPreviousRange } from "./growth";
 import { getDbContentUrls, getDbPerformance, upsertMemberSnapshots, upsertUrlSnapshot } from "./postgres";
+import { getMemberEmailMap, getProjectGscMap } from "./env";
 
-export async function syncSheetToDb(accessToken: string) {
-  const rows = await getContentUrls(accessToken);
-  for (const row of rows) {
-    await query(`insert into content_urls (project, url, member_name, member_email, gsc_property, is_active, updated_at)
-      values ($1,$2,$3,$4,$5,true,now())
-      on conflict (url) do update set project=excluded.project, member_name=excluded.member_name, member_email=excluded.member_email, gsc_property=excluded.gsc_property, is_active=true, updated_at=now()`,
-      [row.project, row.url, row.member_name, row.memberEmail, row.gscProperty ?? null]);
-  }
-  await query("insert into sync_runs (source, status, rows_synced, finished_at, created_at) values ('google_sheet','success',$1,now(),now())", [rows.length]).catch(()=>Promise.resolve({ rows: [], rowCount: 0 }));
-  return { rowsSynced: rows.length };
+export type SheetSyncResult = {
+  status: "success" | "failed";
+  totalRows: number;
+  insertedRows: number;
+  updatedRows: number;
+  deactivatedRows: number;
+  failedRows: number;
+  errorMessage?: string;
+};
+
+function normalizeSheetUrl(value: string): string {
+  const parsed = new URL(value.trim());
+  parsed.hash = "";
+  return parsed.toString();
 }
 
+function urlHash(project: string, normalizedUrl: string, memberName: string): string {
+  return crypto.createHash("sha256").update(`${project}|${normalizedUrl}|${memberName}`).digest("hex");
+}
+
+async function recordSheetSyncRun(result: SheetSyncResult) {
+  await query(`insert into sync_runs (source, status, total_rows, inserted_rows, updated_rows, deactivated_rows, failed_rows, error_message, created_at, finished_at)
+    values ('google_sheet',$1,$2,$3,$4,$5,$6,$7,now(),now())`,
+    [result.status, result.totalRows, result.insertedRows, result.updatedRows, result.deactivatedRows, result.failedRows, result.errorMessage ?? null]);
+}
+
+export async function syncSheetToDb(accessToken: string): Promise<SheetSyncResult> {
+  const result: SheetSyncResult = { status: "success", totalRows: 0, insertedRows: 0, updatedRows: 0, deactivatedRows: 0, failedRows: 0 };
+  try {
+    const rows = await getSheetContentUrlRows(accessToken);
+    const memberMap = getMemberEmailMap();
+    const projectMap = getProjectGscMap();
+    const activeHashes = new Set<string>();
+
+    result.totalRows = rows.length;
+
+    for (const row of rows) {
+      const project = row.project.trim();
+      const memberName = row.member_name.trim();
+      let normalizedUrl = "";
+      try {
+        normalizedUrl = normalizeSheetUrl(row.url);
+      } catch {
+        result.failedRows += 1;
+        continue;
+      }
+
+      if (!project || !memberName || !normalizedUrl) {
+        result.failedRows += 1;
+        continue;
+      }
+
+      const hash = urlHash(project, normalizedUrl, memberName);
+      activeHashes.add(hash);
+      const memberEmail = (memberMap[memberName] ?? "").toLowerCase();
+      const gscProperty = projectMap[project] ?? null;
+      const existing = await query<{ id: string; project: string; url: string; member_name: string; member_email: string | null; gsc_property: string | null; is_active: boolean | null }>(
+        "select id, project, url, member_name, member_email, gsc_property, is_active from content_urls where url_hash=$1",
+        [hash]
+      );
+
+      await query(`insert into content_urls (url_hash, project, url, member_name, member_email, gsc_property, is_active, source, last_seen_at, created_at, updated_at)
+        values ($1,$2,$3,$4,$5,$6,true,'google_sheet',now(),now(),now())
+        on conflict (url_hash) do update set project=excluded.project, url=excluded.url, member_name=excluded.member_name, member_email=excluded.member_email,
+          gsc_property=excluded.gsc_property, is_active=true, source='google_sheet', last_seen_at=now(), updated_at=now()`,
+        [hash, project, normalizedUrl, memberName, memberEmail, gscProperty]);
+
+      if (existing.rows.length === 0) {
+        result.insertedRows += 1;
+      } else {
+        const current = existing.rows[0];
+        const changed = current.project !== project || current.url !== normalizedUrl || current.member_name !== memberName ||
+          String(current.member_email ?? "") !== memberEmail || String(current.gsc_property ?? "") !== String(gscProperty ?? "") || current.is_active !== true;
+        if (changed) result.updatedRows += 1;
+      }
+    }
+
+    const hashes = [...activeHashes];
+    const deactivated = hashes.length
+      ? await query("update content_urls set is_active=false, updated_at=now() where coalesce(is_active,true)=true and not (url_hash = any($1::text[]))", [hashes])
+      : await query("update content_urls set is_active=false, updated_at=now() where coalesce(is_active,true)=true");
+    result.deactivatedRows = deactivated.rowCount ?? 0;
+    await recordSheetSyncRun(result);
+    return result;
+  } catch (error) {
+    result.status = "failed";
+    result.errorMessage = error instanceof Error ? error.message : "Google Sheet sync failed";
+    try { await recordSheetSyncRun(result); } catch {}
+    return result;
+  }
+}
 export async function createRefreshJob(rangeKey: string, range: DateRange, requestedBy?: string) {
   const job = await query<{ id: string }>(`insert into refresh_jobs (range_key, start_date, end_date, status, requested_by, created_at, updated_at)
     values ($1,$2,$3,'pending',$4,now(),now()) returning id`, [rangeKey, range.startDate, range.endDate, requestedBy ?? null]);
