@@ -15,6 +15,19 @@ function auth(accessToken: string) {
   return oauth2;
 }
 
+export type SheetContentUrlRow = { project: string; url: string; member_name: string };
+
+export async function getSheetContentUrlRows(accessToken: string): Promise<SheetContentUrlRow[]> {
+  if (!appConfig.sheetId) return [];
+  const sheets = google.sheets({ version: "v4", auth: auth(accessToken) });
+  const result = await sheets.spreadsheets.values.get({ spreadsheetId: appConfig.sheetId, range: `${appConfig.contentTab}!A:C` });
+  const rows = result.data.values ?? [];
+  return rows.slice(1).map((row) => {
+    const [project = "", url = "", member_name = ""] = row as string[];
+    return { project, url, member_name };
+  });
+}
+
 export async function getContentUrls(accessToken: string): Promise<ContentUrl[]> {
   if (!appConfig.sheetId) return [];
   const sheets = google.sheets({ version: "v4", auth: auth(accessToken) });
