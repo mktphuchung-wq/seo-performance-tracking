@@ -59,7 +59,7 @@ function normalize(row: { clicks?: number | null; impressions?: number | null; c
   return { clicks: row.clicks ?? 0, impressions: row.impressions ?? 0, ctr: row.ctr ?? 0, position: row.position ?? 0 };
 }
 
-async function searchAnalytics(accessToken: string, siteUrl: string, dimensions: string[], range: DateRange, page?: string, rowLimit = 250) {
+export async function searchAnalytics(accessToken: string, siteUrl: string, dimensions: string[], range: DateRange, page?: string, rowLimit = 250) {
   const webmasters = google.searchconsole({ version: "v1", auth: auth(accessToken) });
   const filters = page ? [{ dimension: "page", operator: "equals", expression: page }] : undefined;
   const res = await webmasters.searchanalytics.query({
