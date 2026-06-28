@@ -35,9 +35,12 @@ export function AdminDataControls({ range = "28d", startDate, endDate }: { range
   const [syncRuns, setSyncRuns] = useState<SyncRun[]>([]);
 
   async function loadStatus() {
-    const [refreshRes, healthRes] = await Promise.all([fetch("/api/refresh/status"), fetch("/api/health/db")]);
-    if (refreshRes.ok) setJobs((await refreshRes.json()).jobs ?? []);
-    if (healthRes.ok) setSyncRuns((await healthRes.json()).latestSyncRuns ?? []);
+    const healthRes = await fetch("/api/health/cache");
+    if (healthRes.ok) {
+      const health = await healthRes.json();
+      setJobs(health.latestRefreshRuns ?? []);
+      setSyncRuns(health.latestSyncRuns ?? []);
+    }
   }
 
   useEffect(() => { loadStatus().catch(() => undefined); }, []);
@@ -57,39 +60,13 @@ export function AdminDataControls({ range = "28d", startDate, endDate }: { range
   async function refreshGsc() {
     setLoading("refresh"); setError(null); setMessage(null);
     try {
-      const startEndpoint = "/api/refresh/start";
-      const startRes = await fetch(startEndpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ range, startDate, endDate }) });
-      const startJson = await readJsonSafe(startRes, startEndpoint);
-      if (!startJson.ok) throw new Error(startJson.error);
-      const started = startJson.data;
-      if (!startRes.ok || !started.ok) throw new Error(apiError(startEndpoint, startRes, started));
-      if (started.totalUrls === 0 || started.itemCount === 0) throw new Error("No URLs found. Run Sync URLs from Sheet first.");
-      let remaining = started.totalUrls;
-      let processedUrls = 0;
-      let urlsWithGscData = 0;
-      let urlsWithNoData = 0;
-      let failedUrls = 0;
-      let errorMessage = "";
-      while (remaining > 0) {
-        const processEndpoint = "/api/refresh/process";
-        const processRes = await fetch(processEndpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jobId: started.jobId, limit: 25 }) });
-        const processJson = await readJsonSafe(processRes, processEndpoint);
-        if (!processJson.ok) {
-          if (processRes.status === 404) throw new Error("Refresh job created, but processing endpoint is not available.");
-          throw new Error(processJson.error);
-        }
-        const processed = processJson.data;
-        if (!processRes.ok || !processed.ok) throw new Error(apiError(processEndpoint, processRes, processed));
-        remaining = Number(processed.remaining ?? 0);
-        processedUrls += Number(processed.processed ?? 0);
-        urlsWithGscData += Number(processed.urlsWithGscData ?? 0);
-        urlsWithNoData += Number(processed.urlsWithNoData ?? 0);
-        failedUrls = Number(processed.failedUrls ?? failedUrls);
-        errorMessage = String(processed.errorMessage ?? errorMessage ?? "");
-        await loadStatus();
-        if (Number(processed.processed ?? 0) === 0 && remaining > 0) break;
-      }
-      setMessage(`GSC refresh result: total URLs ${started.totalUrls}; processed URLs ${processedUrls}; URLs with GSC data ${urlsWithGscData}; URLs with no data ${urlsWithNoData}; failed URLs ${failedUrls}${errorMessage ? `; error: ${errorMessage}` : ""}.`);
+      const endpoint = "/api/refresh/cache";
+      const response = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ range, startDate, endDate }) });
+      const json = await readJsonSafe(response, endpoint);
+      if (!json.ok) throw new Error(json.error);
+      const data = json.data;
+      if (!response.ok || data.ok === false) throw new Error(apiError(endpoint, response, data));
+      setMessage(`GSC refresh result: total URLs ${data.totalUrls}; processed URLs ${data.processedUrls}; URLs with GSC data ${data.urlsWithData}; URLs with no data ${data.noDataUrls}; failed URLs ${data.failedUrls}${data.errorMessage ? `; error: ${data.errorMessage}` : ""}.`);
       await loadStatus();
     } catch (err) { setError(err instanceof Error ? err.message : "Refresh failed"); }
     finally { setLoading(null); }
