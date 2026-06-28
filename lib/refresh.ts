@@ -1,9 +1,11 @@
 import crypto from "crypto";
-import { query } from "./db";
-import { getSheetContentUrlRows, searchAnalytics, type ContentUrl, type UrlMetrics } from "./google";
+import { query, transaction } from "./db";
+import { getSheetContentUrlRows, searchAnalytics, type UrlMetrics } from "./google";
 import type { DateRange } from "./dates";
-import { getPreviousRange } from "./growth";
-import { dbContentUrl, getDbPerformance, upsertMemberSnapshots, upsertSeoPerformanceCache } from "./postgres";
+import { cacheKey, comparePerformance, getPreviousRange } from "./growth";
+import { dbContentUrl } from "./postgres";
+import { classifyOpportunity } from "./metrics";
+import { scoreMembers } from "./scoring";
 import { getMemberEmailMap, getProjectGscMap } from "./env";
 
 export type SheetSyncResult = {
@@ -97,81 +99,68 @@ export async function syncSheetToDb(accessToken: string): Promise<SheetSyncResul
     return result;
   }
 }
-export async function createRefreshJob(rangeKey: string, range: DateRange, triggeredBy?: string) {
-  const urls = await query<any>(`select id, url_hash, project, url, member_name, member_email, gsc_property
-    from public.content_urls
-    where coalesce(is_active,true) = true
-    order by project, member_name, url`);
-  const activeUrls = urls.rows.map(dbContentUrl);
-  if (activeUrls.length === 0) return { jobId: null, runId: null, itemCount: 0, totalUrls: 0, missingGscPropertyCount: 0, blockedProjects: [] as string[] };
-
-  const missingGscRows = activeUrls.filter((row) => !row.gscProperty);
-  const blockedProjects = Array.from(new Set(missingGscRows.map((row) => row.project).filter(Boolean))).sort();
-  if (missingGscRows.length) {
-    return { jobId: null, runId: null, itemCount: 0, totalUrls: activeUrls.length, missingGscPropertyCount: missingGscRows.length, blockedProjects };
-  }
-
-  const run = await query<{ id: string }>(`insert into public.refresh_runs
-    (status, range_key, start_date, end_date, triggered_by, total_urls, processed_urls, failed_urls, urls_with_data, no_data_urls, started_at, created_at, updated_at)
-    values ('pending',$1,$2,$3,$4,$5,0,0,0,0,now(),now(),now()) returning id`,
-    [rangeKey, range.startDate, range.endDate, triggeredBy ?? null, activeUrls.length]);
-  const runId = run.rows[0]?.id ?? null;
-  return { jobId: runId, runId, itemCount: activeUrls.length, totalUrls: activeUrls.length, missingGscPropertyCount: 0, blockedProjects: [] as string[] };
-}
+export type CacheRefreshResult = { ok: boolean; runId?: string | null; totalUrls: number; processedUrls: number; urlsWithData: number; noDataUrls: number; failedUrls: number; errorMessage?: string | null };
 
 const zeroMetrics: UrlMetrics = { clicks: 0, impressions: 0, ctr: 0, position: 0 };
 
-async function processRange(rows: ContentUrl[], accessToken: string, rangeKey: string, range: DateRange) {
-  const byProperty = Object.entries(rows.reduce<Record<string, ContentUrl[]>>((a,r)=>{ if (r.gscProperty) (a[r.gscProperty]??=[]).push(r); return a; }, {}));
-  const processed = new Set<string>();
-  let withData = 0;
-  let withoutData = 0;
-  for (const [property, group] of byProperty) {
-    const gscRows = await searchAnalytics(accessToken, property, ["page"], range, undefined, 25000);
-    const byPage = new Map(gscRows.map((r) => [String(r.keys?.[0] ?? ""), r]));
-    for (const row of group) {
-      const found = byPage.get(row.url);
-      const metrics = found ? { clicks: found.clicks ?? 0, impressions: found.impressions ?? 0, ctr: found.ctr ?? 0, position: found.position ?? 0 } : zeroMetrics;
-      await upsertSeoPerformanceCache(row, rangeKey, range, metrics);
-      if (found) withData += 1; else withoutData += 1;
-      processed.add(row.id);
-    }
-  }
-  for (const row of rows.filter((r) => !processed.has(r.id))) {
-    await upsertSeoPerformanceCache(row, rangeKey, range, zeroMetrics);
-    withoutData += 1;
-  }
-  return { withData, withoutData };
+function recommendationFor(status: string) {
+  if (status === "no_data") return "No GSC data for this URL in the selected range.";
+  if (status === "declining") return "Review lost queries and refresh optimization priorities.";
+  if (status === "new_signal") return "Monitor new search visibility and build on early traction.";
+  if (status === "growing") return "Keep supporting this URL's search momentum.";
+  return "Monitor performance.";
 }
 
-export async function processRefreshBatch(accessToken: string, _limit = 25, runId?: string) {
-  const runs = await query<any>(`select id, range_key, start_date, end_date, total_urls from refresh_runs where status in ('pending','running') ${runId ? "and id=$1" : ""} order by created_at limit 1`, runId ? [runId] : []);
-  const run = runs.rows[0];
-  if (!run) return { processed: 0, remaining: 0 };
-
-  await query("update refresh_runs set status='running', updated_at=now() where id=$1", [run.id]);
-  const rowsRes = await query<any>(`select id, url_hash, project, url, member_name, member_email, gsc_property
-    from content_urls where coalesce(is_active,true)=true order by project, member_name, url`);
-  const rows = rowsRes.rows.map(dbContentUrl);
-  const range = { startDate: String(run.start_date).slice(0,10), endDate: String(run.end_date).slice(0,10), label: String(run.range_key) };
+export async function refreshPerformanceCache(accessToken: string, rangeKey: string, range: DateRange, triggeredBy?: string): Promise<CacheRefreshResult> {
+  let runId: string | null = null;
+  const previousRange = getPreviousRange(range);
   try {
-    const currentResult = await processRange(rows, accessToken, run.range_key, range);
-    await processRange(rows, accessToken, `previous:${run.range_key}`, getPreviousRange(range));
-    const compared = await getDbPerformance(run.range_key, range);
-    await upsertMemberSnapshots(compared, run.range_key, range).catch(() => undefined);
-    await query(`update refresh_runs set status='complete', processed_urls=$2, failed_urls=0, urls_with_data=$3, no_data_urls=$4,
-      finished_at=now(), updated_at=now() where id=$1`, [run.id, rows.length, currentResult.withData, currentResult.withoutData]);
-    return { jobId: run.id, runId: run.id, processed: rows.length, remaining: 0, totalUrls: rows.length, processedUrls: rows.length, failedUrls: 0, urlsWithGscData: currentResult.withData, urlsWithNoData: currentResult.withoutData, errorMessage: null };
+    const active = (await query<any>(`select id, url_hash, project, url, member_name, member_email, gsc_property from content_urls where coalesce(is_active,true)=true order by project, member_name, url`)).rows.map(dbContentUrl);
+    if (active.length === 0) return { ok: false, totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: "No active URLs found. Run Sync URLs from Sheet first." };
+    const missingHash = active.filter((u) => !u.urlHash);
+    if (missingHash.length) return { ok: false, totalUrls: active.length, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: active.length, errorMessage: `${missingHash.length} active URLs are missing url_hash.` };
+    const missingGsc = active.filter((u) => !u.gscProperty);
+    if (missingGsc.length) return { ok: false, totalUrls: active.length, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: active.length, errorMessage: `${missingGsc.length} active URLs are missing gsc_property.` };
+
+    const run = await query<{ id: string }>(`insert into refresh_runs (status, triggered_by, range_key, start_date, end_date, previous_start_date, previous_end_date, total_urls, processed_urls, urls_with_data, no_data_urls, failed_urls, started_at, created_at, updated_at) values ('running',$1,$2,$3,$4,$5,$6,$7,0,0,0,0,now(),now(),now()) returning id`, [triggeredBy ?? null, rangeKey, range.startDate, range.endDate, previousRange.startDate, previousRange.endDate, active.length]);
+    runId = run.rows[0]?.id ?? null;
+
+    const currentByUrl = new Map<string, UrlMetrics>();
+    const previousByUrl = new Map<string, UrlMetrics>();
+    for (const [property, group] of Object.entries(active.reduce<Record<string, typeof active>>((acc, row) => { (acc[row.gscProperty!] ??= []).push(row); return acc; }, {}))) {
+      const [curRows, prevRows] = await Promise.all([
+        searchAnalytics(accessToken, property, ["page"], range, undefined, 25000),
+        searchAnalytics(accessToken, property, ["page"], previousRange, undefined, 25000),
+      ]);
+      const allowed = new Set(group.map((r) => r.url));
+      for (const r of curRows) { const url = String(r.keys?.[0] ?? ""); if (allowed.has(url)) currentByUrl.set(url, { clicks: r.clicks ?? 0, impressions: r.impressions ?? 0, ctr: r.ctr ?? 0, position: r.position ?? 0 }); }
+      for (const r of prevRows) { const url = String(r.keys?.[0] ?? ""); if (allowed.has(url)) previousByUrl.set(url, { clicks: r.clicks ?? 0, impressions: r.impressions ?? 0, ctr: r.ctr ?? 0, position: r.position ?? 0 }); }
+    }
+
+    const currentRows = active.map((row) => ({ ...row, ...(currentByUrl.get(row.url) ?? zeroMetrics), opportunity: classifyOpportunity(currentByUrl.get(row.url) ?? zeroMetrics) }));
+    const previousRows = active.map((row) => ({ ...row, ...(previousByUrl.get(row.url) ?? zeroMetrics), opportunity: classifyOpportunity(previousByUrl.get(row.url) ?? zeroMetrics) }));
+    const compared = comparePerformance(currentRows, previousRows, rangeKey, range);
+    const urlsWithData = compared.filter((r) => r.clicks > 0 || r.impressions > 0).length;
+    const noDataUrls = compared.length - urlsWithData;
+    const members = scoreMembers(compared);
+
+    await transaction(async (client) => {
+      await client.query("delete from seo_performance_cache where range_key=$1", [rangeKey]);
+      await client.query("delete from member_performance_cache where range_key=$1", [rangeKey]);
+      for (const r of compared) {
+        await client.query(`insert into seo_performance_cache (cache_key, content_url_id, url_hash, project, url, member_name, member_email, gsc_property, range_key, start_date, end_date, previous_start_date, previous_end_date, clicks, impressions, ctr, position, previous_clicks, previous_impressions, previous_ctr, previous_position, click_delta, click_growth_pct, impression_delta, impression_growth_pct, ctr_delta, position_delta, growth_status, opportunity_status, recommendation, refreshed_at, created_at, updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,now(),now(),now())`, [cacheKey(r, rangeKey, range), r.id, r.urlHash ?? null, r.project, r.url, r.member_name, r.memberEmail, r.gscProperty ?? null, rangeKey, range.startDate, range.endDate, previousRange.startDate, previousRange.endDate, r.clicks, r.impressions, r.ctr, r.position, r.previous_clicks, r.previous_impressions, r.previous_ctr, r.previous_position, r.click_delta, r.click_growth_pct, r.impression_delta, r.impression_growth_pct, r.ctr_delta, r.position_delta, r.status, r.opportunity, recommendationFor(r.status)]);
+      }
+      for (const m of members) {
+        const memberRows = compared.filter((r) => r.member_name === m.member_name);
+        const email = memberRows.find((r) => r.memberEmail)?.memberEmail ?? null;
+        await client.query(`insert into member_performance_cache (cache_key, member_name, member_email, range_key, start_date, end_date, previous_start_date, previous_end_date, url_count, urls_with_data, growing_urls, stable_urls, declining_urls, no_data_urls, clicks, impressions, ctr, position, previous_clicks, previous_impressions, click_delta, click_growth_pct, impression_delta, impression_growth_pct, quantity_index, quality_index, support_signal, main_strength, main_risk, suggested_support, refreshed_at, created_at, updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,now(),now(),now())`, [`${m.member_name}|${rangeKey}|${range.startDate}|${range.endDate}`, m.member_name, email, rangeKey, range.startDate, range.endDate, previousRange.startDate, previousRange.endDate, m.urlCount, m.urlCount - m.noData, m.growing, Math.max(0, m.urlCount - m.growing - m.declining - m.noData), m.declining, m.noData, m.clicks, m.impressions, m.ctr, m.position, m.previous_clicks, m.previous_impressions, m.click_delta, m.click_growth_pct, m.impression_delta, m.impression_growth_pct, m.quantityIndex, m.qualityIndex, m.supportSignal, m.portfolioHealth, m.priorityActions ? "Has URLs needing attention" : "No major risk", m.supportSignal]);
+      }
+      await client.query("update refresh_runs set status='success', processed_urls=$2, urls_with_data=$3, no_data_urls=$4, failed_urls=0, finished_at=now(), updated_at=now() where id=$1", [runId, compared.length, urlsWithData, noDataUrls]);
+    });
+    return { ok: true, runId, totalUrls: active.length, processedUrls: active.length, urlsWithData, noDataUrls, failedUrls: 0, errorMessage: null };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Google Search Console refresh failed";
-    await query("update refresh_runs set status='failed', processed_urls=0, failed_urls=$2, no_data_urls=$2, error_message=$3, finished_at=now(), updated_at=now() where id=$1", [run.id, rows.length, message]);
-    return { jobId: run.id, runId: run.id, processed: 0, remaining: 0, totalUrls: rows.length, processedUrls: 0, failedUrls: rows.length, urlsWithGscData: 0, urlsWithNoData: rows.length, errorMessage: message };
+    if (runId) await query("update refresh_runs set status='failed', failed_urls=total_urls, error_message=$2, finished_at=now(), updated_at=now() where id=$1", [runId, message]).catch(() => undefined);
+    return { ok: false, runId, totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: message };
   }
-}
-
-export async function refreshStatus(runId?: string) {
-  const runs = await query<any>(`select id, status, range_key, start_date, end_date, total_urls, processed_urls, failed_urls, urls_with_data, no_data_urls, error_message, created_at, updated_at,
-    total_urls::int total_items, processed_urls::int complete_items, failed_urls::int failed_items
-    from refresh_runs ${runId ? "where id=$1" : ""} order by created_at desc limit 10`, runId ? [runId] : []);
-  return runs.rows;
 }

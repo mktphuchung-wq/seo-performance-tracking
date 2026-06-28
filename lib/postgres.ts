@@ -1,5 +1,5 @@
 import { query } from "./db";
-import { getPreviousRange, comparePerformance, type ComparedUrlPerformance } from "./growth";
+import { comparePerformance, type ComparedUrlPerformance } from "./growth";
 import { classifyOpportunity } from "./metrics";
 import { type ContentUrl, type UrlPerformance, type UrlMetrics, type QueryMetric, type DailyMetric } from "./google";
 import type { DateRange } from "./dates";
@@ -18,65 +18,29 @@ export async function getDbContentUrls(): Promise<ContentUrl[]> {
 }
 
 export async function getDbPerformance(rangeKey: string, range: DateRange): Promise<ComparedUrlPerformance[]> {
-  const previousRange = getPreviousRange(range);
   const sql = `select c.id, c.url_hash, c.project, c.url, c.member_name, c.member_email, c.gsc_property,
-    coalesce(cur.clicks,0) clicks, coalesce(cur.impressions,0) impressions, coalesce(cur.ctr,0) ctr, coalesce(cur.position,0) position,
-    coalesce(prev.clicks,0) previous_clicks, coalesce(prev.impressions,0) previous_impressions, coalesce(prev.ctr,0) previous_ctr, coalesce(prev.position,0) previous_position
+    coalesce(v.clicks,0) clicks, coalesce(v.impressions,0) impressions, coalesce(v.ctr,0) ctr, coalesce(v.position,0) position,
+    coalesce(v.previous_clicks,0) previous_clicks, coalesce(v.previous_impressions,0) previous_impressions, coalesce(v.previous_ctr,0) previous_ctr, coalesce(v.previous_position,0) previous_position,
+    v.growth_status, v.opportunity_status, v.click_delta, v.click_growth_pct, v.impression_delta, v.impression_growth_pct, v.ctr_delta, v.position_delta, v.refreshed_at
     from content_urls c
-    left join seo_performance_cache cur on cur.project = c.project and cur.url = c.url and cur.member_name = c.member_name and cur.range_key = $1
-    left join seo_performance_cache prev on prev.project = c.project and prev.url = c.url and prev.member_name = c.member_name and prev.range_key = $2
+    left join dashboard_url_performance v on (v.content_url_id = c.id or (v.content_url_id is null and v.url_hash = c.url_hash)) and v.range_key = $1
     where coalesce(c.is_active,true) = true
     order by c.project, c.member_name, c.url`;
-  const res = await query(sql, [rangeKey, `previous:${rangeKey}`]);
+  const res = await query(sql, [rangeKey]);
   return res.rows.map((r: any) => {
     const base = dbContentUrl(r);
-    const current: UrlPerformance = { ...base, ...normalizeMetric(r), opportunity: classifyOpportunity(normalizeMetric(r)) };
+    const current: UrlPerformance = { ...base, ...normalizeMetric(r), opportunity: (r.opportunity_status as any) || classifyOpportunity(normalizeMetric(r)), warning: r.refreshed_at ? undefined : "pending_refresh" };
     const prev: UrlPerformance = { ...base, clicks: num(r.previous_clicks), impressions: num(r.previous_impressions), ctr: num(r.previous_ctr), position: num(r.previous_position), opportunity: "normal" };
-    return comparePerformance([current], [prev], rangeKey, range)[0];
+    const compared = comparePerformance([current], [prev], rangeKey, range)[0];
+    return { ...compared, status: (r.growth_status as any) || compared.status, click_delta: r.click_delta == null ? compared.click_delta : num(r.click_delta), click_growth_pct: r.click_growth_pct == null ? compared.click_growth_pct : num(r.click_growth_pct), impression_delta: r.impression_delta == null ? compared.impression_delta : num(r.impression_delta), impression_growth_pct: r.impression_growth_pct == null ? compared.impression_growth_pct : num(r.impression_growth_pct), ctr_delta: r.ctr_delta == null ? compared.ctr_delta : num(r.ctr_delta), position_delta: r.position_delta == null ? compared.position_delta : num(r.position_delta) };
   });
-}
-
-export async function upsertSeoPerformanceCache(row: ContentUrl, rangeKey: string, range: DateRange, m: UrlMetrics) {
-  const hasData = m.clicks > 0 || m.impressions > 0;
-  await query(`insert into seo_performance_cache (content_url_id, project, url, member_name, member_email, gsc_property, range_key, start_date, end_date, clicks, impressions, ctr, position, has_data, refreshed_at, updated_at)
-    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now(),now())
-    on conflict (project, url, member_name, range_key) do update set content_url_id=excluded.content_url_id, member_email=excluded.member_email, gsc_property=excluded.gsc_property, start_date=excluded.start_date, end_date=excluded.end_date, clicks=excluded.clicks, impressions=excluded.impressions, ctr=excluded.ctr, position=excluded.position, has_data=excluded.has_data, refreshed_at=now(), updated_at=now()`,
-    [row.id, row.project, row.url, row.member_name, row.memberEmail, row.gscProperty ?? null, rangeKey, range.startDate, range.endDate, m.clicks, m.impressions, m.ctr, m.position, hasData]);
-}
-
-export async function upsertUrlSnapshot(contentUrlId: string, rangeKey: string, range: DateRange, m: UrlMetrics) {
-  await query(`insert into seo_performance_cache (content_url_id, project, url, member_name, member_email, gsc_property, range_key, start_date, end_date, clicks, impressions, ctr, position, has_data, refreshed_at, updated_at)
-    select c.id, c.project, c.url, c.member_name, c.member_email, c.gsc_property, $2, $3::date, $4::date, $5, $6, $7, $8, ($5 > 0 or $6 > 0), now(), now()
-    from content_urls c where c.id = $1
-    on conflict (project, url, member_name, range_key) do update set start_date=excluded.start_date, end_date=excluded.end_date, clicks=excluded.clicks, impressions=excluded.impressions, ctr=excluded.ctr, position=excluded.position, has_data=excluded.has_data, refreshed_at=now(), updated_at=now()`,
-    [contentUrlId, rangeKey, range.startDate, range.endDate, m.clicks, m.impressions, m.ctr, m.position]);
-}
-
-export async function upsertMemberSnapshots(rows: ComparedUrlPerformance[], rangeKey: string, range: DateRange) {
-  for (const s of scoreMembers(rows)) {
-    await query(`insert into member_performance_snapshots (member_name, range_key, start_date, end_date, url_count, clicks, impressions, ctr, position, quantity_index, quality_index, updated_at)
-      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())
-      on conflict (member_name, range_key, start_date, end_date) do update set url_count=excluded.url_count, clicks=excluded.clicks, impressions=excluded.impressions, ctr=excluded.ctr, position=excluded.position, quantity_index=excluded.quantity_index, quality_index=excluded.quality_index, updated_at=now()`,
-      [s.member_name, rangeKey, range.startDate, range.endDate, s.urlCount, s.clicks, s.impressions, s.ctr, s.position, s.quantityIndex, s.qualityIndex]);
-  }
 }
 
 export async function getUrlDetailFromDb(id: string, rangeKey: string, range: DateRange) {
   const rows = await getDbPerformance(rangeKey, range);
   const overview = rows.find(r => r.id === id || r.url === id);
   if (!overview) return null;
-  const dailyRes = await query(`select s.date, s.clicks, s.impressions, s.ctr, s.position
-    from url_performance_daily_snapshots s
-    left join content_urls c on c.id = $1
-    where (s.content_url_id = c.id or (s.content_url_id is null and s.url_hash = c.url_hash)) and s.date between $2::date and $3::date
-    order by s.date`, [overview.id, range.startDate, range.endDate]).catch(() => ({ rows: [] }));
-  const queryRes = await query(`select s.query, s.clicks, s.impressions, s.ctr, s.position
-    from url_query_snapshots s
-    left join content_urls c on c.id = $1
-    where (s.content_url_id = c.id or (s.content_url_id is null and s.url_hash = c.url_hash)) and s.range_key=$2 and s.start_date=$3::date and s.end_date=$4::date
-    order by s.clicks desc limit 250`, [overview.id, rangeKey, range.startDate, range.endDate]).catch(() => ({ rows: [] }));
-  const queries: QueryMetric[] = queryRes.rows.map((r: any) => ({ query: r.query, ...normalizeMetric(r), opportunity: classifyOpportunity(normalizeMetric(r)) }));
-  return { overview, warning: overview.warning, daily: dailyRes.rows.map((r: any): DailyMetric => ({ date: String(r.date).slice(0,10), ...normalizeMetric(r) })), queries, ctrOpportunities: queries.filter(q=>q.opportunity==="ctr_opportunity"), rankingOpportunities: queries.filter(q=>q.opportunity==="ranking_opportunity"), winningQueries: queries.filter(q=>q.opportunity==="winner").slice(0,10), range, hasData: overview.clicks > 0 || overview.impressions > 0 };
+  return { overview, warning: overview.warning, daily: [] as DailyMetric[], queries: [] as QueryMetric[], ctrOpportunities: [], rankingOpportunities: [], winningQueries: [], range, hasData: overview.clicks > 0 || overview.impressions > 0 };
 }
 
 export type AdminDiagnostic = {
