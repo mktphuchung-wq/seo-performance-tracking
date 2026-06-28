@@ -22,7 +22,7 @@ export async function POST(request: Request) {
         missingTables: dbHealth.missingTables,
         missingViews: dbHealth.missingViews,
         missingColumns: dbHealth.missingColumns,
-        migration: "migrations/001_canonical_schema.sql",
+        migration: "migrations/001_simple_cache_schema.sql",
       }, { status: 503 });
     }
 
