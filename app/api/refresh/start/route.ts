@@ -33,7 +33,7 @@ export async function POST(request: Request) {
         missingTables: dbHealth.missingTables,
         missingViews: dbHealth.missingViews,
         missingColumns: dbHealth.missingColumns,
-        migration: "migrations/001_canonical_schema.sql",
+        migration: "migrations/001_simple_cache_schema.sql",
       }, { status: 503 });
     }
 
@@ -48,9 +48,6 @@ export async function POST(request: Request) {
     if (job.totalUrls === 0) {
       return NextResponse.json({ ok: false, error: "No active URLs found. Run Sync URLs from Sheet first.", range, ...job }, { status: 400 });
     }
-    if (job.missingUrlHashCount) {
-      return NextResponse.json({ ok: false, error: "Some active URLs are missing url_hash. Run Sync URLs from Sheet or repair content_urls before refreshing.", range, ...job }, { status: 400 });
-    }
     if (job.blockedProjects?.length) {
       return NextResponse.json({ ok: false, error: "Some URLs are missing gsc_property", projects: job.blockedProjects, range, ...job }, { status: 400 });
     }
@@ -64,6 +61,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, jobId: job.jobId, totalUrls: job.totalUrls, itemCount: job.itemCount, range });
   } catch (error) {
     console.error("/api/refresh/start unexpected error", error);
-    return NextResponse.json({ ok: false, error: "Refresh could not be started. Check /api/health/db and run the canonical Neon migration if needed." }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Refresh could not be started. Check /api/health/db and run the simple cache migration if needed." }, { status: 500 });
   }
 }

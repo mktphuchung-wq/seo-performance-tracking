@@ -18,16 +18,16 @@ export async function getDbContentUrls(): Promise<ContentUrl[]> {
 }
 
 export async function getDbPerformance(rangeKey: string, range: DateRange): Promise<ComparedUrlPerformance[]> {
-  const sql = `select c.id, c.project, c.url, c.member_name, c.member_email, c.gsc_property,
+  const previousRange = getPreviousRange(range);
+  const sql = `select c.id, c.url_hash, c.project, c.url, c.member_name, c.member_email, c.gsc_property,
     coalesce(cur.clicks,0) clicks, coalesce(cur.impressions,0) impressions, coalesce(cur.ctr,0) ctr, coalesce(cur.position,0) position,
     coalesce(prev.clicks,0) previous_clicks, coalesce(prev.impressions,0) previous_impressions, coalesce(prev.ctr,0) previous_ctr, coalesce(prev.position,0) previous_position
     from content_urls c
-    left join url_performance_snapshots cur on (cur.content_url_id = c.id or (cur.content_url_id is null and cur.url_hash = c.url_hash)) and cur.range_key = $1 and cur.start_date = $2::date and cur.end_date = $3::date
-    left join url_performance_snapshots prev on (prev.content_url_id = c.id or (prev.content_url_id is null and prev.url_hash = c.url_hash)) and prev.range_key = $4 and prev.start_date = $5::date and prev.end_date = $6::date
+    left join seo_performance_cache cur on cur.project = c.project and cur.url = c.url and cur.member_name = c.member_name and cur.range_key = $1
+    left join seo_performance_cache prev on prev.project = c.project and prev.url = c.url and prev.member_name = c.member_name and prev.range_key = $2
     where coalesce(c.is_active,true) = true
     order by c.project, c.member_name, c.url`;
-  const previousRange = getPreviousRange(range);
-  const res = await query(sql, [rangeKey, range.startDate, range.endDate, `previous:${rangeKey}`, previousRange.startDate, previousRange.endDate]);
+  const res = await query(sql, [rangeKey, `previous:${rangeKey}`]);
   return res.rows.map((r: any) => {
     const base = dbContentUrl(r);
     const current: UrlPerformance = { ...base, ...normalizeMetric(r), opportunity: classifyOpportunity(normalizeMetric(r)) };
@@ -36,10 +36,19 @@ export async function getDbPerformance(rangeKey: string, range: DateRange): Prom
   });
 }
 
+export async function upsertSeoPerformanceCache(row: ContentUrl, rangeKey: string, range: DateRange, m: UrlMetrics) {
+  const hasData = m.clicks > 0 || m.impressions > 0;
+  await query(`insert into seo_performance_cache (content_url_id, project, url, member_name, member_email, gsc_property, range_key, start_date, end_date, clicks, impressions, ctr, position, has_data, refreshed_at, updated_at)
+    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now(),now())
+    on conflict (project, url, member_name, range_key) do update set content_url_id=excluded.content_url_id, member_email=excluded.member_email, gsc_property=excluded.gsc_property, start_date=excluded.start_date, end_date=excluded.end_date, clicks=excluded.clicks, impressions=excluded.impressions, ctr=excluded.ctr, position=excluded.position, has_data=excluded.has_data, refreshed_at=now(), updated_at=now()`,
+    [row.id, row.project, row.url, row.member_name, row.memberEmail, row.gscProperty ?? null, rangeKey, range.startDate, range.endDate, m.clicks, m.impressions, m.ctr, m.position, hasData]);
+}
+
 export async function upsertUrlSnapshot(contentUrlId: string, rangeKey: string, range: DateRange, m: UrlMetrics) {
-  await query(`insert into url_performance_snapshots (content_url_id, range_key, start_date, end_date, clicks, impressions, ctr, position, updated_at)
-    values ($1,$2,$3,$4,$5,$6,$7,$8,now())
-    on conflict (content_url_id, range_key, start_date, end_date) do update set clicks=excluded.clicks, impressions=excluded.impressions, ctr=excluded.ctr, position=excluded.position, updated_at=now()`,
+  await query(`insert into seo_performance_cache (content_url_id, project, url, member_name, member_email, gsc_property, range_key, start_date, end_date, clicks, impressions, ctr, position, has_data, refreshed_at, updated_at)
+    select c.id, c.project, c.url, c.member_name, c.member_email, c.gsc_property, $2, $3::date, $4::date, $5, $6, $7, $8, ($5 > 0 or $6 > 0), now(), now()
+    from content_urls c where c.id = $1
+    on conflict (project, url, member_name, range_key) do update set start_date=excluded.start_date, end_date=excluded.end_date, clicks=excluded.clicks, impressions=excluded.impressions, ctr=excluded.ctr, position=excluded.position, has_data=excluded.has_data, refreshed_at=now(), updated_at=now()`,
     [contentUrlId, rangeKey, range.startDate, range.endDate, m.clicks, m.impressions, m.ctr, m.position]);
 }
 
@@ -76,7 +85,7 @@ export type AdminDiagnostic = {
   missingGscProperty: number;
   missingGscProjects: string[];
   latestSyncRun: any | null;
-  latestRefreshJob: any | null;
+  latestRefreshRun: any | null;
 };
 
 export type AdminMemberRow = ReturnType<typeof scoreMembers>[number] & { snapshotStatus: string; snapshotUpdatedAt?: string | null };
@@ -89,7 +98,7 @@ export async function getAdminDiagnostics(): Promise<AdminDiagnostic> {
       from content_urls where coalesce(is_active,true)=true`),
     query<{ project: string }>(`select distinct project from content_urls where coalesce(is_active,true)=true and nullif(gsc_property,'') is null order by project`),
     query<any>("select * from sync_runs order by created_at desc limit 1").catch(() => ({ rows: [] })),
-    query<any>("select * from refresh_jobs order by created_at desc limit 1").catch(() => ({ rows: [] })),
+    query<any>("select * from refresh_runs order by created_at desc limit 1").catch(() => ({ rows: [] })),
   ]);
   const row = counts.rows[0] ?? { active_urls: 0, missing_member_email: 0, missing_gsc_property: 0 };
   return {
@@ -98,16 +107,16 @@ export async function getAdminDiagnostics(): Promise<AdminDiagnostic> {
     missingGscProperty: Number(row.missing_gsc_property ?? 0),
     missingGscProjects: projects.rows.map((r) => r.project).filter(Boolean),
     latestSyncRun: syncRuns.rows[0] ?? null,
-    latestRefreshJob: refreshJobs.rows[0] ?? null,
+    latestRefreshRun: refreshJobs.rows[0] ?? null,
   };
 }
 
 export async function getAdminMemberRows(rangeKey: string, range: DateRange, performanceRows: ComparedUrlPerformance[]): Promise<AdminMemberRow[]> {
   const scored = scoreMembers(performanceRows);
-  const snapshotRows = await query<any>(`select distinct on (member_name) member_name, updated_at
-    from member_performance_snapshots
-    where range_key=$1 and start_date=$2::date and end_date=$3::date
-    order by member_name, updated_at desc`, [rangeKey, range.startDate, range.endDate]).catch(() => ({ rows: [] }));
+  const snapshotRows = await query<any>(`select member_name, max(updated_at) updated_at
+    from seo_performance_cache
+    where range_key=$1
+    group by member_name`, [rangeKey]).catch(() => ({ rows: [] }));
   const snapshotMap = new Map(snapshotRows.rows.map((row: any) => [String(row.member_name), row.updated_at ? String(row.updated_at) : null]));
   return scored.map((member) => ({
     ...member,

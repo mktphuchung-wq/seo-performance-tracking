@@ -104,7 +104,7 @@ export function AdminDataControls({ range = "28d", startDate, endDate }: { range
     {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
     <div className="mt-4 grid gap-4 lg:grid-cols-2">
       <div><h3 className="font-semibold">Latest sync runs</h3><table className="mt-2 w-full text-xs"><tbody>{syncRuns.map((r, i) => <tr className="border-t" key={r.id ?? i}><td className="py-1">{r.status}</td><td>{r.inserted_rows}/{r.updated_rows}/{r.deactivated_rows}/{r.failed_rows}</td><td>{String(r.created_at).slice(0,19)}</td></tr>)}{!syncRuns.length && <tr><td className="py-1 text-slate-500">No sync runs yet.</td></tr>}</tbody></table></div>
-      <div><h3 className="font-semibold">Latest refresh jobs</h3><table className="mt-2 w-full text-xs"><tbody>{jobs.map((j) => <tr className="border-t" key={j.id}><td className="py-1">{j.status}</td><td>{j.complete_items}/{j.total_items} done</td><td>{j.failed_items} failed</td><td>{String(j.range_key)}</td><td>{j.error_message}</td></tr>)}{!jobs.length && <tr><td className="py-1 text-slate-500">No refresh jobs yet.</td></tr>}</tbody></table></div>
+      <div><h3 className="font-semibold">Latest refresh runs</h3><table className="mt-2 w-full text-xs"><tbody>{jobs.map((j) => <tr className="border-t" key={j.id}><td className="py-1">{j.status}</td><td>{j.complete_items}/{j.total_items} done</td><td>{j.failed_items} failed</td><td>{String(j.range_key)}</td><td>{j.error_message}</td></tr>)}{!jobs.length && <tr><td className="py-1 text-slate-500">No refresh runs yet.</td></tr>}</tbody></table></div>
     </div>
   </div>;
 }
