@@ -9,6 +9,21 @@ export type UrlPerformance = ContentUrl & UrlMetrics & { opportunity: Opportunit
 export type QueryMetric = { query: string; opportunity: OpportunityLabel } & UrlMetrics;
 export type DailyMetric = { date: string } & UrlMetrics;
 
+
+export function classifyGoogleApiError(error: unknown): "invalid_credentials" | "permission_denied" | null {
+  const candidate = error as { code?: unknown; status?: unknown; response?: { status?: unknown; data?: unknown }; message?: unknown; errors?: unknown };
+  const status = Number(candidate?.code ?? candidate?.status ?? candidate?.response?.status ?? 0);
+  const message = [
+    candidate?.message,
+    typeof candidate?.response?.data === "string" ? candidate.response.data : JSON.stringify(candidate?.response?.data ?? ""),
+    JSON.stringify(candidate?.errors ?? "")
+  ].filter(Boolean).join(" ");
+
+  if (status === 401 || /invalid credentials|invalid[_ ]?grant|unauthorized/i.test(message)) return "invalid_credentials";
+  if (status === 403 || /forbidden|permission|insufficient|scope/i.test(message)) return "permission_denied";
+  return null;
+}
+
 function auth(accessToken: string) {
   const oauth2 = new google.auth.OAuth2();
   oauth2.setCredentials({ access_token: accessToken });

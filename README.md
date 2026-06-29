@@ -29,7 +29,7 @@ NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=your-random-secret
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
-GOOGLE_SHEET_ID=...
+GOOGLE_SHEET_ID=1NacfG23BnkKY0ZMktfhDxpZ7cnNGdQRf_UrwQ5kfOIQ
 GOOGLE_SHEET_TAB=content_urls
 ADMIN_EMAILS=admin@company.com,leader@company.com
 MEMBER_EMAIL_MAP={"Hưng":"hung@company.com","Linh":"linh@company.com"}
@@ -60,7 +60,7 @@ Because the sheet only has `project`, `url`, and `member_name`, `PROJECT_GSC_MAP
    - Local: `http://localhost:3000/api/auth/callback/google`
    - Production: `https://YOUR_DOMAIN/api/auth/callback/google`
 
-The OAuth scopes are `openid`, `email`, `profile`, `https://www.googleapis.com/auth/spreadsheets`, and `https://www.googleapis.com/auth/webmasters.readonly`.
+The OAuth scopes are `openid`, `email`, `profile`, `https://www.googleapis.com/auth/spreadsheets.readonly`, and `https://www.googleapis.com/auth/webmasters.readonly`.
 
 ## Vercel deployment
 
@@ -77,6 +77,19 @@ The OAuth scopes are `openid`, `email`, `profile`, `https://www.googleapis.com/a
 - Missing permissions or unmapped projects are shown as warnings in the dashboard.
 
 ## Vercel env troubleshooting
+
+Required Vercel environment variables for Google OAuth, sheet sync, and authorization:
+
+- `NEXTAUTH_URL`
+- `NEXTAUTH_SECRET`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_SHEET_ID` (`1NacfG23BnkKY0ZMktfhDxpZ7cnNGdQRf_UrwQ5kfOIQ`)
+- `GOOGLE_SHEET_TAB` (`content_urls`)
+- `ADMIN_EMAILS`
+- `MEMBER_EMAIL_MAP`
+- `PROJECT_GSC_MAP`
+
 
 - Redeploy after changing env vars.
 - JSON env vars must be one-line valid JSON objects.

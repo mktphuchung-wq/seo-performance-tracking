@@ -2,6 +2,14 @@
 
 import { useState } from "react";
 
+type ApiErrorPayload = { error?: string; errorMessage?: string; code?: string };
+
+function syncErrorMessage(payload: ApiErrorPayload) {
+  if (payload.code === "GOOGLE_INVALID_CREDENTIALS") return "Google credentials expired. Please sign out and sign in again.";
+  if (payload.code === "GOOGLE_PERMISSION_DENIED") return "Your Google account cannot access this Sheet. Share the Sheet with this email or reconnect Google.";
+  return payload.error || payload.errorMessage || "URL sync failed";
+}
+
 type SheetSyncResult = {
   status: "success" | "failed";
   totalRows: number;
@@ -24,7 +32,7 @@ export function SheetSyncButton() {
     try {
       const response = await fetch("/api/sync/sheet", { method: "POST" });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "URL sync failed");
+      if (!response.ok || data.ok === false || data.status === "failed") throw new Error(syncErrorMessage(data));
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "URL sync failed");

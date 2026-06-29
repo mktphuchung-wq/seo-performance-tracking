@@ -2,6 +2,14 @@
 
 import { useEffect, useState } from "react";
 
+type ApiErrorPayload = { error?: string; errorMessage?: string; code?: string };
+
+function syncErrorMessage(payload: ApiErrorPayload) {
+  if (payload.code === "GOOGLE_INVALID_CREDENTIALS") return "Google credentials expired. Please sign out and sign in again.";
+  if (payload.code === "GOOGLE_PERMISSION_DENIED") return "Your Google account cannot access this Sheet. Share the Sheet with this email or reconnect Google.";
+  return payload.error || payload.errorMessage || "URL sync failed";
+}
+
 type Job = { id: string; status: string; range_key: string; start_date: string; end_date: string; total_items: number; complete_items: number; failed_items: number; processed_urls?: number; failed_urls?: number; error_message?: string };
 type SyncRun = { id?: string; status: string; total_rows: number; inserted_rows: number; updated_rows: number; deactivated_rows: number; failed_rows: number; error_message?: string; created_at: string };
 
@@ -50,7 +58,7 @@ export function AdminDataControls({ range = "28d", startDate, endDate }: { range
     try {
       const response = await fetch("/api/sync/sheet", { method: "POST" });
       const data = await response.json();
-      if (!response.ok || data.status === "failed") throw new Error(data.error || data.errorMessage || "URL sync failed");
+      if (!response.ok || data.ok === false || data.status === "failed") throw new Error(syncErrorMessage(data));
       setMessage(`Sheet sync complete: ${data.insertedRows} inserted, ${data.updatedRows} updated, ${data.deactivatedRows} deactivated, ${data.failedRows} failed.`);
       await loadStatus();
     } catch (err) { setError(err instanceof Error ? err.message : "URL sync failed"); }

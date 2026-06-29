@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { query, transaction } from "./db";
-import { getSheetContentUrlRows, searchAnalytics, type UrlMetrics } from "./google";
+import { classifyGoogleApiError, getSheetContentUrlRows, searchAnalytics, type UrlMetrics } from "./google";
 import type { DateRange } from "./dates";
 import { cacheKey, comparePerformance, getPreviousRange } from "./growth";
 import { dbContentUrl } from "./postgres";
@@ -96,6 +96,7 @@ export async function syncSheetToDb(accessToken: string): Promise<SheetSyncResul
     result.status = "failed";
     result.errorMessage = error instanceof Error ? error.message : "Google Sheet sync failed";
     try { await recordSheetSyncRun(result); } catch {}
+    if (classifyGoogleApiError(error)) throw error;
     return result;
   }
 }
