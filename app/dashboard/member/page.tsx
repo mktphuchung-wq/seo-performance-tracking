@@ -1,12 +1,12 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "../../../lib/auth";
-import { getDateRange } from "../../../lib/dates";
+import { getDashboardMetricPeriods, getDateRange } from "../../../lib/dates";
 import { getEnvErrors } from "../../../lib/env";
 import { filterRowsForEmail } from "../../../lib/google";
 import { getDbPerformance } from "../../../lib/postgres";
 import { aggregateCompared, type GrowthStatus } from "../../../lib/growth";
-import { fmtGrowth, MetricCard, RefreshDataButton, Shell, UrlTable, WarningList } from "../../../components/ui";
+import { fmtGrowth, fmtNum, MetricCard, RefreshDataButton, Shell, UrlTable, WarningList } from "../../../components/ui";
 import type { OpportunityLabel } from "../../../lib/metrics";
 import Link from "next/link";
 
@@ -54,6 +54,18 @@ function cleanParams(params: SearchParams, overrides: Partial<SearchParams> = {}
   return `?${query.toString()}`;
 }
 
+function ratioValue(numerator: number, denominator: number) {
+  return denominator > 0 ? numerator / denominator : null;
+}
+
+function fmtShare(value: number | null) {
+  return value === null ? "—" : `${(value * 100).toFixed(1)}%`;
+}
+
+function hasRefreshedRows(rows: Awaited<ReturnType<typeof getDbPerformance>>) {
+  return rows.some((row) => row.refreshed_at);
+}
+
 function filterPerformance(rows: Awaited<ReturnType<typeof getDbPerformance>>, params: SearchParams) {
   const minImpressions = Number(params.minImpressions || 0);
   const minClicks = Number(params.minClicks || 0);
@@ -84,10 +96,31 @@ export default async function MemberDashboard({ searchParams }: { searchParams?:
   const params = searchParams || {};
   const rangeKey = params.range || "28d";
   const range = getDateRange({ range: rangeKey, startDate: params.startDate, endDate: params.endDate });
-  const dbRows = await getDbPerformance(rangeKey, range);
+  const metricPeriods = getDashboardMetricPeriods();
+  const [dbRows, currentMonthRows, previousMonthRows, last3MonthRows] = await Promise.all([
+    getDbPerformance(rangeKey, range),
+    getDbPerformance("current_month", metricPeriods.current_month),
+    getDbPerformance("previous_month", metricPeriods.previous_month),
+    getDbPerformance("last_3_months", metricPeriods.last_3_months).then((rows) => hasRefreshedRows(rows) ? rows : getDbPerformance("3m", metricPeriods.last_3_months)),
+  ]);
   const visibleRows = session.user.isAdmin ? dbRows : filterRowsForEmail(dbRows, session.user.email, false);
   const selectedRows = filterPerformance(visibleRows, params);
   const summary = aggregateCompared(selectedRows);
+  const currentMonthVisibleRows = session.user.isAdmin ? currentMonthRows : filterRowsForEmail(currentMonthRows, session.user.email, false);
+  const previousMonthVisibleRows = session.user.isAdmin ? previousMonthRows : filterRowsForEmail(previousMonthRows, session.user.email, false);
+  const last3MonthVisibleRows = session.user.isAdmin ? last3MonthRows : filterRowsForEmail(last3MonthRows, session.user.email, false);
+  const currentMonthSelectedRows = filterPerformance(currentMonthVisibleRows, params);
+  const previousMonthSelectedRows = filterPerformance(previousMonthVisibleRows, params);
+  const last3MonthSelectedRows = filterPerformance(last3MonthVisibleRows, params);
+  const currentMonthSummary = aggregateCompared(currentMonthSelectedRows);
+  const previousMonthSummary = hasRefreshedRows(previousMonthSelectedRows)
+    ? aggregateCompared(previousMonthSelectedRows)
+    : { ...currentMonthSummary, clicks: currentMonthSummary.previous_clicks, impressions: currentMonthSummary.previous_impressions };
+  const last3MonthSummary = aggregateCompared(last3MonthSelectedRows);
+  const clickGrowthVsPreviousMonth = previousMonthSummary.clicks > 0 ? (currentMonthSummary.clicks - previousMonthSummary.clicks) / previousMonthSummary.clicks : null;
+  const impressionGrowthVsPreviousMonth = previousMonthSummary.impressions > 0 ? (currentMonthSummary.impressions - previousMonthSummary.impressions) / previousMonthSummary.impressions : null;
+  const clickShareOfLast3Months = ratioValue(currentMonthSummary.clicks, last3MonthSummary.clicks);
+  const impressionShareOfLast3Months = ratioValue(currentMonthSummary.impressions, last3MonthSummary.impressions);
   const projects = uniqueValues(visibleRows, "project");
   const members = uniqueValues(visibleRows, "member_name");
   const activePreset = params.view || "all";
@@ -99,7 +132,16 @@ export default async function MemberDashboard({ searchParams }: { searchParams?:
       <RefreshDataButton range={rangeKey} startDate={params.startDate} endDate={params.endDate} returnTo="/dashboard" preserve={params} />
     </div>
     <WarningList warnings={[...getEnvErrors(), ...selectedRows.map((p) => p.warning)]} />
-    <div className="grid gap-4 md:grid-cols-5"><MetricCard label="URL count" value={selectedRows.length}/><MetricCard label="Clicks" value={summary.clicks}/><MetricCard label="Click growth" value={fmtGrowth(summary.click_growth_pct)}/><MetricCard label="URLs growing" value={summary.growing}/><MetricCard label="URLs declining" value={summary.declining}/></div>
+    <div className="grid gap-4 md:grid-cols-4 lg:grid-cols-7">
+      <MetricCard label="URLs this month" value={currentMonthSelectedRows.length} />
+      <MetricCard label="Clicks this month" value={fmtNum(currentMonthSummary.clicks)} />
+      <MetricCard label="Impressions this month" value={fmtNum(currentMonthSummary.impressions)} />
+      <MetricCard label="Click growth vs previous month" value={clickGrowthVsPreviousMonth === null ? "Not refreshed yet" : fmtGrowth(clickGrowthVsPreviousMonth)} />
+      <MetricCard label="Impression growth vs previous month" value={impressionGrowthVsPreviousMonth === null ? "Not refreshed yet" : fmtGrowth(impressionGrowthVsPreviousMonth)} />
+      <MetricCard label="Share of last 3 months clicks" value={fmtShare(clickShareOfLast3Months)} />
+      <MetricCard label="Share of last 3 months impressions" value={fmtShare(impressionShareOfLast3Months)} />
+    </div>
+    <div className="mt-4 grid gap-4 md:grid-cols-5"><MetricCard label="Filtered URL count" value={selectedRows.length}/><MetricCard label="Filtered clicks" value={fmtNum(summary.clicks)}/><MetricCard label="Filtered click growth" value={fmtGrowth(summary.click_growth_pct)}/><MetricCard label="Filtered URLs growing" value={summary.growing}/><MetricCard label="Filtered URLs declining" value={summary.declining}/></div>
     {memberInsightName && <p className="mt-4"><Link className="text-blue-700" href={`/member-insights/${encodeURIComponent(memberInsightName)}`}>Open 1m/3m/6m detail page</Link></p>}
 
     <section className="mt-8 rounded-xl border bg-white p-4 shadow-sm">
