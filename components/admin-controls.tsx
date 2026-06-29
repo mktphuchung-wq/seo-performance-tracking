@@ -10,7 +10,8 @@ function syncErrorMessage(payload: ApiErrorPayload) {
   return payload.error || payload.errorMessage || "URL sync failed";
 }
 
-type Job = { id: string; status: string; range_key: string; start_date: string; end_date: string; total_items: number; complete_items: number; failed_items: number; processed_urls?: number; failed_urls?: number; error_message?: string };
+type RefreshRun = { id: string; status: string; range_key: string; start_date: string; end_date: string; total_urls: number; processed_urls: number; failed_urls: number; urls_with_data: number; no_data_urls: number; error_message?: string };
+type RefreshRangeKey = "current_month" | "previous_month" | "last_3_months" | "all_time";
 type SyncRun = { id?: string; status: string; total_rows: number; inserted_rows: number; updated_rows: number; deactivated_rows: number; failed_rows: number; error_message?: string; created_at: string };
 
 type JsonSafeResult<T = any> = { ok: true; data: T } | { ok: false; error: string; status: number; endpoint: string; rawPreview?: string };
@@ -39,14 +40,14 @@ export function AdminDataControls({ range = "current_month", startDate, endDate 
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [refreshRuns, setRefreshRuns] = useState<RefreshRun[]>([]);
   const [syncRuns, setSyncRuns] = useState<SyncRun[]>([]);
 
   async function loadStatus() {
     const healthRes = await fetch("/api/health/cache");
     if (healthRes.ok) {
       const health = await healthRes.json();
-      setJobs(health.latestRefreshRuns ?? []);
+      setRefreshRuns(health.latestRefreshRuns ?? []);
       setSyncRuns(health.latestSyncRuns ?? []);
     }
   }
@@ -65,11 +66,12 @@ export function AdminDataControls({ range = "current_month", startDate, endDate 
     finally { setLoading(null); }
   }
 
-  async function refreshGsc() {
-    setLoading("refresh"); setError(null); setMessage(null);
+  async function refreshGsc(refreshRange: RefreshRangeKey = range as RefreshRangeKey) {
+    setLoading(`refresh:${refreshRange}`); setError(null); setMessage(null);
     try {
       const endpoint = "/api/refresh/cache";
-      const response = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ range, startDate, endDate }) });
+      const body = refreshRange === range ? { range: refreshRange, startDate, endDate } : { range: refreshRange };
+      const response = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       const json = await readJsonSafe(response, endpoint);
       if (!json.ok) throw new Error(json.error);
       const data = json.data;
@@ -83,13 +85,18 @@ export function AdminDataControls({ range = "current_month", startDate, endDate 
   return <div className="mb-6 rounded-xl border bg-white p-4">
     <div className="flex flex-wrap gap-3">
       <button className="rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60" onClick={syncSheet} disabled={!!loading}>{loading === "sync" ? "Syncing URLs…" : "Sync URLs from Sheet"}</button>
-      <button className="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60" onClick={refreshGsc} disabled={!!loading}>{loading === "refresh" ? "Refreshing GSC…" : "Refresh GSC Performance"}</button>
+      {([
+        ["current_month", "Refresh current month"],
+        ["previous_month", "Refresh previous month"],
+        ["last_3_months", "Refresh last 3 months"],
+        ["all_time", "Refresh all time"],
+      ] as const).map(([refreshRange, label]) => <button key={refreshRange} className="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60" onClick={() => refreshGsc(refreshRange)} disabled={!!loading}>{loading === `refresh:${refreshRange}` ? "Refreshing…" : label}</button>)}
     </div>
     {message && <p className="mt-3 text-sm text-emerald-800">{message}</p>}
     {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
     <div className="mt-4 grid gap-4 lg:grid-cols-2">
       <div><h3 className="font-semibold">Latest sync runs</h3><table className="mt-2 w-full text-xs"><tbody>{syncRuns.map((r, i) => <tr className="border-t" key={r.id ?? i}><td className="py-1">{r.status}</td><td>{r.inserted_rows}/{r.updated_rows}/{r.deactivated_rows}/{r.failed_rows}</td><td>{String(r.created_at).slice(0,19)}</td></tr>)}{!syncRuns.length && <tr><td className="py-1 text-slate-500">No sync runs yet.</td></tr>}</tbody></table></div>
-      <div><h3 className="font-semibold">Latest refresh runs</h3><table className="mt-2 w-full text-xs"><tbody>{jobs.map((j) => <tr className="border-t" key={j.id}><td className="py-1">{j.status}</td><td>{j.complete_items}/{j.total_items} done</td><td>{j.failed_items} failed</td><td>{String(j.range_key)}</td><td>{j.error_message}</td></tr>)}{!jobs.length && <tr><td className="py-1 text-slate-500">No refresh runs yet.</td></tr>}</tbody></table></div>
+      <div><h3 className="font-semibold">Latest refresh runs</h3><table className="mt-2 w-full text-xs"><tbody>{refreshRuns.map((j) => <tr className="border-t" key={j.id}><td className="py-1">{j.status}</td><td>{j.processed_urls}/{j.total_urls} done</td><td>{j.urls_with_data} with data</td><td>{j.no_data_urls} no data</td><td>{j.failed_urls} failed</td><td>{String(j.range_key)}</td><td>{j.error_message}</td></tr>)}{!refreshRuns.length && <tr><td className="py-1 text-slate-500">No refresh runs yet.</td></tr>}</tbody></table></div>
     </div>
   </div>;
 }

@@ -6,5 +6,6 @@ export default function AdminUrlsRedirect({ searchParams }: { searchParams?: Rec
     if (Array.isArray(value)) value.forEach((item) => qs.append(key, item));
     else if (value) qs.set(key, value);
   });
-  redirect(`/url-data-source${qs.toString() ? `?${qs.toString()}` : ""}`);
+  const query = qs.toString();
+  redirect(`/url-data-source${query ? `?${query}` : ""}`);
 }
