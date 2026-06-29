@@ -8,6 +8,7 @@ import { filterRowsForEmail } from "../../lib/google";
 import { recommendationFor } from "../../lib/recommendations";
 import { getDbContentUrls, getDbPerformance } from "../../lib/postgres";
 import { fmtGrowth, fmtNum, fmtPct, fmtPos, MetricSection, RefreshDataButton, Shell, StatusBadge, WarningList } from "../../components/ui";
+import { getGrowthClassName } from "../../lib/format";
 
 const insightRanges = [
   ["current_month", "Current month"],
@@ -68,7 +69,7 @@ function Section({ title, description, rows }: { title: string; description?: st
     <div className="overflow-auto rounded-xl border bg-white">
       <table className="w-full text-sm">
         <thead className="bg-slate-100 text-left"><tr><th className="p-3">URL</th><th>Project</th><th>Clicks</th><th>Impr.</th><th>CTR</th><th>Pos.</th><th>Click growth</th><th>Impr. growth</th><th>Status</th><th>Recommendation</th></tr></thead>
-        <tbody>{rows.map((row) => <tr className="border-t" key={row.id}><td className="max-w-xl break-all p-3"><Link className="text-blue-700" href={`/url/${row.id}`}>{row.url}</Link></td><td>{row.project}</td><td>{fmtNum(row.clicks)}</td><td>{fmtNum(row.impressions)}</td><td>{fmtPct(row.ctr)}</td><td>{fmtPos(row.position)}</td><td>{fmtGrowth(row.click_growth_pct)}</td><td>{fmtGrowth(row.impression_growth_pct)}</td><td><StatusBadge status={row.status} /></td><td>{recommendationFor(row)}</td></tr>)}{rows.length === 0 && <tr><td className="p-3 text-slate-500" colSpan={10}>No URLs match this section.</td></tr>}</tbody>
+        <tbody>{rows.map((row) => <tr className="border-t" key={row.id}><td className="max-w-xl break-all p-3"><Link className="text-blue-700" href={`/url/${row.id}`}>{row.url}</Link></td><td>{row.project}</td><td>{fmtNum(row.clicks)}</td><td>{fmtNum(row.impressions)}</td><td>{fmtPct(row.ctr)}</td><td>{fmtPos(row.position)}</td><td><span className={getGrowthClassName(row.click_growth_pct)}>{fmtGrowth(row.click_growth_pct)}</span></td><td><span className={getGrowthClassName(row.impression_growth_pct)}>{fmtGrowth(row.impression_growth_pct)}</span></td><td><StatusBadge status={row.status} /></td><td>{recommendationFor(row)}</td></tr>)}{rows.length === 0 && <tr><td className="p-3 text-slate-500" colSpan={10}>No URLs match this section.</td></tr>}</tbody>
       </table>
     </div>
   </section>;
@@ -113,7 +114,7 @@ export default async function MemberInsights({ searchParams }: { searchParams?: 
     {!selectedMember ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-950">Choose a member to load insights. All members are intentionally hidden until a member is selected.</div> : <>
       <div className="grid gap-6 xl:grid-cols-2">
         <MetricSection title="KPI overview" description={`Portfolio metrics for ${selectedMember}.`} metrics={[{ label: "Active URLs", value: memberRows.length }, { label: "URLs With Data", value: memberRows.length - summary.noData }, { label: "Current Clicks", value: fmtNum(summary.clicks) }, { label: "Previous Clicks", value: fmtNum(summary.previous_clicks) }, { label: "Current Impressions", value: fmtNum(summary.impressions) }, { label: "Previous Impressions", value: fmtNum(summary.previous_impressions) }, { label: "CTR", value: fmtPct(summary.ctr) }, { label: "Avg Position", value: fmtPos(summary.position) }]} />
-        <MetricSection title="Trend summary" description="Growth and health signals for the selected range." tone="quality" metrics={[{ label: "Click Growth %", value: fmtGrowth(summary.click_growth_pct) }, { label: "Impression Growth %", value: fmtGrowth(summary.impression_growth_pct) }, { label: "Growing URLs", value: summary.growing }, { label: "Declining URLs", value: summary.declining }, { label: "No Data URLs", value: summary.noData }, { label: "Suggested Action", value: <span className="text-base font-medium leading-snug">{insightRecommendation(memberRows, summary)}</span> }]} />
+        <MetricSection title="Trend summary" description="Growth and health signals for the selected range." tone="quality" metrics={[{ label: "Click Growth %", value: <span className={getGrowthClassName(summary.click_growth_pct)}>{fmtGrowth(summary.click_growth_pct)}</span> }, { label: "Impression Growth %", value: <span className={getGrowthClassName(summary.impression_growth_pct)}>{fmtGrowth(summary.impression_growth_pct)}</span> }, { label: "Growing URLs", value: summary.growing }, { label: "Declining URLs", value: summary.declining }, { label: "No Data URLs", value: summary.noData }, { label: "Suggested Action", value: <span className="text-base font-medium leading-snug">{insightRecommendation(memberRows, summary)}</span> }]} />
       </div>
       <SuggestedActions rows={memberRows} summary={summary} />
       <Section title="URL portfolio table" rows={memberRows} />
