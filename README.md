@@ -1,6 +1,22 @@
 # Performance SEO Project - SEO Team
 
-A simple Vercel-ready Next.js App Router dashboard for SEO teams. Google Sheets is the only database, Google OAuth authorizes members, and the Google Search Console API provides URL performance data.
+A Vercel-ready Next.js App Router dashboard for SEO teams. The current architecture uses Google Sheets as the source of truth for URL ownership, Neon/Postgres as the cache and reporting database, Google OAuth for authorization, and the Google Search Console API for URL performance data.
+
+## Current data architecture
+
+The active Neon/Postgres schema is documented in `migrations/001_simple_cache_schema.sql`. New environments should run that migration as the current schema baseline.
+
+Current tables and views:
+
+- `content_urls` — canonical URL inventory synced from the Google Sheet, including project, URL, member ownership, member email, GSC property, active status, and source timestamps.
+- `seo_performance_cache` — URL-level GSC cache for each date range, including current/previous metrics, deltas, growth status, opportunity status, and recommendations.
+- `member_performance_cache` — member-level rollups derived from the URL cache, including URL counts, totals, growth distribution, and support signals.
+- `refresh_runs` — audit table for cache refresh attempts, totals, failures, date ranges, and status.
+- `sync_runs` — audit table for Google Sheet sync attempts, row counts, deactivations, failures, and status.
+- `dashboard_url_performance` — dashboard-facing view over `seo_performance_cache` for URL reporting.
+- `dashboard_member_performance` — dashboard-facing view over `member_performance_cache` for member reporting.
+
+Older migrations, including `migrations/001_canonical_schema.sql` and `migrations/20260627_neon_content_url_id.sql`, remain in the repository only for legacy/backward-compatibility support of databases that were created before the simple cache architecture. They are not the canonical schema for new deployments.
 
 ## Required Google Sheet format
 
@@ -10,7 +26,7 @@ Use exactly one tab named `content_urls` with exactly these required columns:
 project | url | member_name
 ```
 
-The app reads the sheet only; Slack or another workflow can populate it.
+The app reads the sheet as the source URL/member inventory. Admin sync actions import those rows into the `content_urls` table and record the outcome in `sync_runs`.
 
 ## Local setup
 
@@ -36,17 +52,18 @@ MEMBER_EMAIL_MAP={"Hưng":"hung@company.com","Linh":"linh@company.com"}
 PROJECT_GSC_MAP={"Tartan Vibes Clothing":"sc-domain:tartanvibesclothing.com"}
 ALL_TIME_START_DATE=2024-01-01
 CACHE_TTL_SECONDS=21600
+DATABASE_URL=postgres://USER:PASSWORD@HOST/DB?sslmode=require
 ```
 
 Invalid JSON in `MEMBER_EMAIL_MAP` or `PROJECT_GSC_MAP` is surfaced as a clear setup warning instead of crashing the UI.
 
 ## How member authorization works
 
-The logged-in Google email is matched against `MEMBER_EMAIL_MAP` values. The matching key is treated as the member's `member_name`, and normal members only see sheet rows with that same `member_name`. Admin emails in `ADMIN_EMAILS` can see every sheet row.
+The logged-in Google email is matched against `MEMBER_EMAIL_MAP` values. The matching key is treated as the member's `member_name`, and normal members only see sheet/database rows with that same `member_name`. Admin emails in `ADMIN_EMAILS` can see every row.
 
 ## How project-to-GSC mapping works
 
-Because the sheet only has `project`, `url`, and `member_name`, `PROJECT_GSC_MAP` maps each project to a Search Console property. If a project is missing from the map, the row remains visible with a warning and GSC queries are skipped for that URL.
+Because the sheet only has `project`, `url`, and `member_name`, `PROJECT_GSC_MAP` maps each project to a Search Console property. During sync, mapped values are stored on `content_urls.gsc_property`. If a project is missing from the map, the row remains visible with a warning and GSC refreshes skip that URL.
 
 ## Google Cloud setup
 
@@ -62,13 +79,44 @@ Because the sheet only has `project`, `url`, and `member_name`, `PROJECT_GSC_MAP
 
 The OAuth scopes are `openid`, `email`, `profile`, `https://www.googleapis.com/auth/spreadsheets.readonly`, and `https://www.googleapis.com/auth/webmasters.readonly`.
 
+## Deploy the current database schema to Neon
+
+Use `migrations/001_simple_cache_schema.sql` as the current schema baseline for Neon/Postgres.
+
+> **Important:** This migration intentionally drops and recreates the current cache tables and dashboard views. Use it for new environments, reset workflows, or deployments where replacing cached SEO data is acceptable. Back up data first if you need to preserve an existing cache.
+
+### Neon SQL Editor
+
+1. Open the Neon Console and select the target branch/database.
+2. Open **SQL Editor**.
+3. Paste the complete contents of `migrations/001_simple_cache_schema.sql`.
+4. Run it once as a single script.
+5. Visit `/api/health/db` in the deployed app. It should return `ok: true` with empty `missingTables`, `missingViews`, and `missingColumns` arrays.
+6. Visit `/api/health/cache` to inspect cache row counts and recent `refresh_runs` / `sync_runs` records.
+
+### psql
+
+```bash
+psql "$DATABASE_URL" -f migrations/001_simple_cache_schema.sql
+curl -f https://YOUR_APP_HOST/api/health/db
+curl -f https://YOUR_APP_HOST/api/health/cache
+```
+
+## Refreshing cached GSC performance
+
+Admins should use the dashboard **Refresh GSC Performance** action, which posts to `POST /api/refresh/cache`. The refresh reads active rows from `content_urls`, queries Search Console for the selected date range and comparison period, replaces the relevant rows in `seo_performance_cache`, rebuilds `member_performance_cache`, and records the attempt in `refresh_runs`.
+
+The old queued refresh endpoints are not part of the current architecture. `POST /api/refresh/start` and `POST /api/refresh/process` are retained only as removed-endpoint responses and should not be used by operators or integrations.
+
 ## Vercel deployment
 
 1. Import the repository into Vercel.
-2. Add every variable from `.env.example` to the Vercel project settings.
+2. Add every variable from `.env.example` to the Vercel project settings, including `DATABASE_URL`.
 3. Set `NEXTAUTH_URL` to your production URL.
 4. Add the production OAuth redirect URI in Google Cloud.
 5. Deploy.
+6. Run `migrations/001_simple_cache_schema.sql` against the production Neon database if the current schema is not already installed.
+7. Confirm `/api/health/db` and `/api/health/cache` are healthy.
 
 ## GSC permission troubleshooting
 
@@ -78,7 +126,7 @@ The OAuth scopes are `openid`, `email`, `profile`, `https://www.googleapis.com/a
 
 ## Vercel env troubleshooting
 
-Required Vercel environment variables for Google OAuth, sheet sync, and authorization:
+Required Vercel environment variables for Google OAuth, sheet sync, database cache, and authorization:
 
 - `NEXTAUTH_URL`
 - `NEXTAUTH_SECRET`
@@ -89,85 +137,15 @@ Required Vercel environment variables for Google OAuth, sheet sync, and authoriz
 - `ADMIN_EMAILS`
 - `MEMBER_EMAIL_MAP`
 - `PROJECT_GSC_MAP`
+- `DATABASE_URL`
 
+Redeploy after changing env vars. JSON env vars must be one-line valid JSON objects. `NEXTAUTH_SECRET` must be set in production.
 
-- Redeploy after changing env vars.
-- JSON env vars must be one-line valid JSON objects.
-- `NEXTAUTH_SECRET` must be set in production.
+## Legacy migrations
 
-## Phase 2 cache and growth features
+The repository keeps earlier Neon migrations for compatibility with older production databases:
 
-Phase 2 adds previous-period growth comparisons, member scoring, member detail pages, project-level growth insights, and a Google Sheet-backed cache tab named `performance_cache`.
+- `migrations/001_canonical_schema.sql` — legacy queued-refresh/snapshot schema that created `refresh_jobs`, `refresh_job_items`, URL/member snapshot tables, compatibility daily/query snapshot tables, and latest-performance views.
+- `migrations/20260627_neon_content_url_id.sql` — legacy alignment patch for older queued-refresh databases that needed `content_url_id` and refresh job/item compatibility columns.
 
-The cache tab is generated by the app and has a default TTL of 7 days. Set `CACHE_TTL_DAYS=7` to override the TTL. Admins can use the **Refresh Data** button to force the app to re-read `content_urls`, query Google Search Console for current and previous periods, and upsert `performance_cache` rows.
-
-Because the app writes cache rows to Google Sheets, the Google OAuth scope must include:
-
-```text
-https://www.googleapis.com/auth/spreadsheets
-```
-
-Replace any previous `https://www.googleapis.com/auth/spreadsheets.readonly` consent configuration with the writable spreadsheets scope, then re-consent the Google account.
-
-## Neon database migration
-
-If `/dashboard/urls` fails with `column cur.content_url_id does not exist`, run the Neon alignment migration in `migrations/20260627_neon_content_url_id.sql`.
-
-### Run in Neon SQL Editor
-
-1. Open the Neon Console and select the production branch/database.
-2. Open **SQL Editor**.
-3. Paste the full contents of `migrations/20260627_neon_content_url_id.sql`.
-4. Click **Run** and confirm it completes without errors.
-5. Visit `/api/health/db`; it should return `ok: true` with empty `missingTables`, `missingViews`, and `missingColumns` arrays.
-
-### Run with `psql`
-
-```bash
-psql "$DATABASE_URL" -f migrations/20260627_neon_content_url_id.sql
-```
-
-The migration adds `content_url_id` UUID columns to URL snapshot and refresh item tables, backfills them from `content_urls.id` via `url_hash`, recreates the latest performance views with `content_url_id`, and keeps `url_hash` indexes for fallback reads.
-
-## Refresh pipeline Neon schema alignment
-
-Run this migration before starting a GSC refresh if `/api/refresh/start`, `/api/refresh/process`, or `/api/health/db` reports a database schema mismatch such as a missing `refresh_jobs.start_date`, `refresh_job_items.refresh_job_id`, or `refresh_job_items.updated_at` column.
-
-### Exact order to run in Neon
-
-1. Open the Neon Console for the production branch/database.
-2. Open **SQL Editor**.
-3. Paste and run the complete SQL from `migrations/20260627_neon_content_url_id.sql` in one execution.
-4. Confirm Neon reports `COMMIT` / successful execution.
-5. Visit `/api/health/db` while signed in/deployed. It should return `ok: true` with empty `missingTables`, `missingViews`, and `missingColumns` arrays.
-6. Start the refresh from the Admin UI. `/api/refresh/start` now checks the same required tables and columns before creating a job and returns `code: "DB_SCHEMA_MISMATCH"` with the exact missing `table.column` entries if Neon is still out of sync.
-
-### Migration SQL
-
-The canonical migration SQL is stored in `migrations/20260627_neon_content_url_id.sql`. It adds all refresh job columns used by the runtime, keeps `job_id` and `refresh_job_id` backward-compatible, adds refresh item indexes, and installs an `updated_at` trigger for `refresh_job_items`.
-
-```bash
-psql "$DATABASE_URL" -f migrations/20260627_neon_content_url_id.sql
-```
-
-## How to deploy database schema to Neon
-
-Use the canonical idempotent migration any time Neon may be out of sync with the application code, especially before using **Refresh GSC Performance**.
-
-### Neon SQL Editor order
-
-1. Open the Neon Console and select the target branch/database.
-2. Open **SQL Editor**.
-3. Paste the complete contents of `migrations/001_canonical_schema.sql`.
-4. Run it once as a single script. It is safe to run again because it uses `create table if not exists`, `alter table add column if not exists`, `create index if not exists`, `create or replace view`, and `create or replace function`.
-5. Visit `/api/health/db` in the deployed app. It should return `ok: true` and empty `missing`, `missingTables`, `missingViews`, and `missingColumns` arrays.
-6. Click **Refresh GSC Performance** only after the health check is green.
-
-### psql command order
-
-```bash
-psql "$DATABASE_URL" -f migrations/001_canonical_schema.sql
-curl -f https://YOUR_APP_HOST/api/health/db
-```
-
-`migrations/001_canonical_schema.sql` is the canonical schema migration for Neon/Postgres. It creates and aligns `content_urls`, `refresh_jobs`, `refresh_job_items`, `url_performance_snapshots`, `member_performance_snapshots`, compatibility daily/query snapshot tables, refresh item ID sync triggers, indexes, and latest-performance views.
+Do not use those files as the canonical schema for new deployments. Use `migrations/001_simple_cache_schema.sql` unless you are explicitly repairing an older database that still depends on the legacy queued-refresh/snapshot model.
