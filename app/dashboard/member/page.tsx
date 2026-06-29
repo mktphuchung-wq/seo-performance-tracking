@@ -6,8 +6,8 @@ import { getEnvErrors } from "../../../lib/env";
 import { filterRowsForEmail } from "../../../lib/google";
 import { getDbPerformance } from "../../../lib/postgres";
 import { aggregateCompared, type GrowthStatus } from "../../../lib/growth";
-import { fmtGrowth, fmtNum, fmtPct, fmtPos, MetricSection, RefreshDataButton, Shell, StatusBadge, UrlTable, WarningList } from "../../../components/ui";
-import { labelText, type OpportunityLabel } from "../../../lib/metrics";
+import { fmtGrowth, fmtNum, fmtPct, fmtPos, MetricSection, RefreshDataButton, Shell, UrlTable, WarningList, type MetricTone } from "../../../components/ui";
+import { type OpportunityLabel } from "../../../lib/metrics";
 import Link from "next/link";
 
 type SearchParams = {
@@ -55,21 +55,9 @@ function cleanParams(params: SearchParams, overrides: Partial<SearchParams> = {}
 }
 
 
-function dominantOpportunity(rows: Awaited<ReturnType<typeof getDbPerformance>>) {
-  if (!rows.length) return "No URLs";
-  const counts = rows.reduce<Record<OpportunityLabel, number>>((acc, row) => {
-    acc[row.opportunity] = (acc[row.opportunity] || 0) + 1;
-    return acc;
-  }, {} as Record<OpportunityLabel, number>);
-  const [top] = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  return top ? labelText(top[0] as OpportunityLabel) : "No URLs";
-}
-
-function recommendationForSummary(summary: ReturnType<typeof aggregateCompared>) {
-  if (summary.noData > 0) return "Refresh or map URLs with no Search Console data.";
-  if (summary.declining > summary.growing) return "Prioritize declining URLs for content and SERP review.";
-  if ((summary.click_growth_pct ?? 0) >= 0.1 || (summary.impression_growth_pct ?? 0) >= 0.15) return "Scale the tactics driving current growth.";
-  return "Monitor performance and optimize the highest-impression URLs.";
+function growthMetricTone(value: number | null): MetricTone {
+  if (value === null || value === 0) return "growth-neutral";
+  return value > 0 ? "growth-positive" : "growth-negative";
 }
 
 function filterPerformance(rows: Awaited<ReturnType<typeof getDbPerformance>>, params: SearchParams) {
@@ -116,32 +104,30 @@ export default async function MemberDashboard({ searchParams }: { searchParams?:
   const members = uniqueValues(visibleRows, "member_name");
   const activePreset = params.view || "all";
   const memberInsightName = session.user.isAdmin ? params.member || selectedRows[0]?.member_name || "" : selectedRows[0]?.member_name || "";
+  const selectedRangeLabel = range.label;
 
   return <Shell email={session.user.email} isAdmin={session.user.isAdmin}>
     <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-      <div><h2 className="text-2xl font-semibold">Member dashboard</h2><p className="text-sm text-slate-500">{range.label}: {range.startDate} to {range.endDate}</p></div>
+      <div><h2 className="text-2xl font-semibold">SEO Team Performance</h2><p className="text-sm text-slate-500">{range.label}: {range.startDate} to {range.endDate}</p></div>
       <RefreshDataButton range={rangeKey} startDate={params.startDate} endDate={params.endDate} returnTo="/dashboard" preserve={params} />
     </div>
     <WarningList warnings={[...getEnvErrors(), ...selectedRows.map((p) => p.warning)]} />
     <div className="grid gap-6 xl:grid-cols-2">
-      <MetricSection title="Quantity Performance" description="Volume-only metrics for the selected filters." tone="quantity" metrics={[
+      <MetricSection title={`SEO Team Performance: ${selectedRangeLabel}`} description="Volume-only metrics for the selected filters." tone="quantity" metrics={[
         { label: "Active URLs", value: selectedRows.length },
         { label: "URLs this month", value: currentMonthSelectedRows.length },
         { label: "Current Clicks", value: fmtNum(summary.clicks) },
         { label: "Previous Clicks", value: fmtNum(summary.previous_clicks) },
+        { label: "Click Delta", value: fmtNum(summary.click_delta) },
         { label: "Current Impressions", value: fmtNum(summary.impressions) },
         { label: "Previous Impressions", value: fmtNum(summary.previous_impressions) },
-        { label: "Click Delta", value: fmtNum(summary.click_delta) },
         { label: "Impression Delta", value: fmtNum(summary.impression_delta) },
       ]} />
-      <MetricSection title="Quality Performance" description="Growth, efficiency, status, and recommendations for the selected URLs." tone="quality" metrics={[
-        { label: "Click Growth %", value: fmtGrowth(summary.click_growth_pct) },
-        { label: "Impression Growth %", value: fmtGrowth(summary.impression_growth_pct) },
-        { label: "CTR", value: fmtPct(summary.ctr) },
-        { label: "Avg Position", value: fmtPos(summary.position) },
-        { label: "Growth Status", value: <StatusBadge status={summary.declining > summary.growing ? "declining" : summary.growing ? "growing" : "stable"} /> },
-        { label: "Opportunity Status", value: dominantOpportunity(selectedRows) },
-        { label: "Recommendation", value: <span className="text-base font-medium leading-snug">{recommendationForSummary(summary)}</span> },
+      <MetricSection title="SEO Performance Growth" description="Growth and efficiency metrics for the selected URLs." tone="quality" metrics={[
+        { label: "Click Growth %", value: fmtGrowth(summary.click_growth_pct), tone: growthMetricTone(summary.click_growth_pct) },
+        { label: "Impression Growth %", value: fmtGrowth(summary.impression_growth_pct), tone: growthMetricTone(summary.impression_growth_pct) },
+        { label: "CTR", value: fmtPct(summary.ctr), tone: "growth-neutral" },
+        { label: "Avg Position", value: fmtPos(summary.position), tone: "growth-neutral" },
       ]} />
     </div>
     {memberInsightName && <p className="mt-4"><Link className="text-blue-700" href={`/member-insights/${encodeURIComponent(memberInsightName)}`}>Open 1m/3m/6m detail page</Link></p>}
