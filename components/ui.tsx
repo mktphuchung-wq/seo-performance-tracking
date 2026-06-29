@@ -42,23 +42,34 @@ export function DateRangePicker({ range = "current_month", startDate, endDate, p
   return <div className="mb-6 rounded-xl border bg-white p-4"><div className="mb-3 flex flex-wrap gap-2">{items.map(([key, label]) => <Link className={`rounded-full border px-3 py-1 text-sm ${range === key ? "bg-blue-700 text-white" : "bg-white"}`} href={href(key)} key={key}>{label}</Link>)}</div><form className="flex flex-wrap items-end gap-3">{Object.entries(preserve).filter(([k, v]) => v && k !== "range" && k !== "startDate" && k !== "endDate").map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}<input type="hidden" name="range" value="custom" /><label className="text-sm text-slate-600">Custom start<input className="ml-2 rounded border px-2 py-1" name="startDate" type="date" defaultValue={startDate} /></label><label className="text-sm text-slate-600">End<input className="ml-2 rounded border px-2 py-1" name="endDate" type="date" defaultValue={endDate} /></label><button className="rounded bg-slate-900 px-3 py-1 text-sm text-white" type="submit">Apply custom range</button></form></div>;
 }
 
-export type MetricItem = { label: string; value: React.ReactNode };
+export type MetricTone = "neutral" | "quantity" | "growth-positive" | "growth-negative" | "growth-neutral";
+export type MetricItem = { label: string; value: React.ReactNode; tone?: MetricTone };
 
-export function MetricCard({ label, value }: MetricItem) {
-  return <div className="rounded-xl border bg-white p-5 shadow-sm"><div className="text-sm text-slate-500">{label}</div><div className="mt-2 text-2xl font-semibold">{value}</div></div>;
+const metricToneStyles: Record<MetricTone, { card: string; label: string; value: string }> = {
+  neutral: { card: "border-slate-200 bg-white", label: "text-slate-500", value: "text-slate-900" },
+  quantity: { card: "border-blue-100 bg-white", label: "text-blue-700", value: "text-blue-950" },
+  "growth-positive": { card: "border-green-100 bg-green-50/70", label: "text-green-700", value: "text-green-800" },
+  "growth-negative": { card: "border-red-100 bg-red-50/70", label: "text-red-700", value: "text-red-800" },
+  "growth-neutral": { card: "border-slate-200 bg-slate-50/80", label: "text-slate-500", value: "text-slate-700" },
+};
+
+export function MetricCard({ label, value, tone = "neutral" }: MetricItem) {
+  const styles = metricToneStyles[tone];
+  return <div className={`rounded-xl border p-5 shadow-sm ${styles.card}`}><div className={`text-sm ${styles.label}`}>{label}</div><div className={`mt-2 text-2xl font-semibold ${styles.value}`}>{value}</div></div>;
 }
 
 export function MetricSection({ title, description, metrics, tone = "quantity" }: { title: string; description?: string; metrics: MetricItem[]; tone?: "quantity" | "quality" }) {
   const styles = tone === "quantity"
     ? "border-blue-100 bg-blue-50/60"
-    : "border-emerald-100 bg-emerald-50/60";
-  const heading = tone === "quantity" ? "text-blue-950" : "text-emerald-950";
+    : "border-slate-200 bg-white";
+  const heading = tone === "quantity" ? "text-blue-950" : "text-slate-950";
+  const defaultMetricTone: MetricTone = tone === "quantity" ? "quantity" : "growth-neutral";
   return <section className={`rounded-2xl border p-4 shadow-sm ${styles}`}>
     <div className="mb-4">
       <h3 className={`text-lg font-semibold ${heading}`}>{title}</h3>
       {description && <p className="mt-1 text-sm text-slate-600">{description}</p>}
     </div>
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{metrics.map((metric) => <MetricCard key={metric.label} label={metric.label} value={metric.value} />)}</div>
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{metrics.map((metric) => <MetricCard key={metric.label} {...metric} tone={metric.tone || defaultMetricTone} />)}</div>
   </section>;
 }
 
