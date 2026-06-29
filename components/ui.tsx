@@ -8,7 +8,32 @@ type LegacyUrlSortKey = UrlSortKey | "ctr_asc" | "position_asc" | "position_desc
 type SortableUrlPerformance = UrlPerformance & { click_growth_pct?: number | null; impression_growth_pct?: number | null; status?: string; refreshed_at?: string | null };
 
 export function Shell({ children, email, isAdmin }: { children: React.ReactNode; email?: string | null; isAdmin?: boolean }) {
-  return <main className="mx-auto max-w-7xl p-6"><div className="mb-8 flex flex-col gap-4 border-b pb-5 md:flex-row md:items-end md:justify-between"><div><h1 className="text-3xl font-bold">Member Performance Tracking</h1><p className="text-slate-600">Phase 2 SEO portfolio health, priorities, and Search Console trends.</p></div><div className="flex flex-wrap gap-3 text-sm"><Link href="/dashboard">Dashboard / My Performance</Link><Link href="/url-data-source">URL Data Source</Link>{isAdmin && <><Link href="/member-insights">Member Insights</Link><Link href="/admin">Admin</Link><Link className="text-slate-400" href="/admin/projects">Projects</Link></>}<span className="text-slate-500">{email}</span>{email && <a href="/api/auth/signout">Sign out</a>}</div></div>{children}</main>;
+  const navItems = [
+    { href: "/dashboard", label: "My Performance" },
+    { href: "/url-data-source", label: "URL Data Source" },
+    ...(isAdmin ? [
+      { href: "/member-insights", label: "Member Insights" },
+      { href: "/admin", label: "Admin" },
+    ] : []),
+  ];
+
+  return <main className="mx-auto max-w-7xl p-6">
+    <div className="mb-8 flex flex-col gap-5 border-b pb-5 lg:flex-row lg:items-center lg:justify-between">
+      <div>
+        <h1 className="text-3xl font-bold">SEO Team Performance Tracking</h1>
+      </div>
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between lg:justify-end">
+        <nav aria-label="Main navigation" className="flex flex-wrap gap-2">
+          {navItems.map((item) => <Link className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700" href={item.href} key={item.href}>{item.label}</Link>)}
+        </nav>
+        {email && <div className="flex flex-wrap items-center gap-3 text-sm md:justify-end">
+          <span className="text-slate-500">{email}</span>
+          <a className="font-semibold text-blue-700 hover:text-blue-900" href="/api/auth/signout">Sign out</a>
+        </div>}
+      </div>
+    </div>
+    {children}
+  </main>;
 }
 
 export function DateRangePicker({ range = "current_month", startDate, endDate, preserve = {} }: { range?: string; startDate?: string; endDate?: string; preserve?: Record<string, string | undefined> }) {
