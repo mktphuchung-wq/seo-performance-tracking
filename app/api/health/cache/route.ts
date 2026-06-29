@@ -12,7 +12,7 @@ export async function GET() {
     await query("select 1");
     const schema = await checkDbSchemaHealth();
     return NextResponse.json({ ok: schema.ok, database: { connected: true }, schema, latestSyncRuns: (await query("select * from public.sync_runs order by created_at desc limit 10").catch(() => ({ rows: [] }))).rows,
-      latestRefreshRuns: (await query("select id, status, range_key, start_date, end_date, total_urls::int total_items, processed_urls::int complete_items, failed_urls::int failed_items, processed_urls, failed_urls, error_message, created_at, updated_at from public.refresh_runs order by created_at desc limit 10").catch(() => ({ rows: [] }))).rows,
+      latestRefreshRuns: (await query("select id, status, range_key, start_date, end_date, total_urls::int, processed_urls::int, failed_urls::int, urls_with_data::int, no_data_urls::int, error_message, created_at, updated_at from public.refresh_runs order by created_at desc limit 10").catch(() => ({ rows: [] }))).rows,
       counts: {
       contentUrls: await safeCount("select count(*) from public.content_urls"),
       activeUrls: await safeCount("select count(*) from public.content_urls where coalesce(is_active,true)=true"),
