@@ -7,6 +7,7 @@ import { filterRowsForEmail } from "../../../lib/google";
 import { getDbPerformance } from "../../../lib/postgres";
 import { aggregateCompared, type GrowthStatus } from "../../../lib/growth";
 import { fmtGrowth, fmtNum, fmtPct, fmtPos, MetricSection, RefreshDataButton, Shell, UrlTable, WarningList, type MetricTone } from "../../../components/ui";
+import { formatSignedNumber } from "../../../lib/format";
 import { type OpportunityLabel } from "../../../lib/metrics";
 import Link from "next/link";
 
@@ -118,10 +119,10 @@ export default async function MemberDashboard({ searchParams }: { searchParams?:
         { label: "URLs this month", value: currentMonthSelectedRows.length },
         { label: "Current Clicks", value: fmtNum(summary.clicks) },
         { label: "Previous Clicks", value: fmtNum(summary.previous_clicks) },
-        { label: "Click Delta", value: fmtNum(summary.click_delta) },
+        { label: "Click Delta", value: formatSignedNumber(summary.click_delta), tone: growthMetricTone(summary.click_delta) },
         { label: "Current Impressions", value: fmtNum(summary.impressions) },
         { label: "Previous Impressions", value: fmtNum(summary.previous_impressions) },
-        { label: "Impression Delta", value: fmtNum(summary.impression_delta) },
+        { label: "Impression Delta", value: formatSignedNumber(summary.impression_delta), tone: growthMetricTone(summary.impression_delta) },
       ]} />
       <MetricSection title="SEO Performance Growth" description="Growth and efficiency metrics for the selected URLs." tone="quality" metrics={[
         { label: "Click Growth %", value: fmtGrowth(summary.click_growth_pct), tone: growthMetricTone(summary.click_growth_pct) },
