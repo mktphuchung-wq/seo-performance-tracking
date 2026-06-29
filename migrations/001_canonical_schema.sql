@@ -1,5 +1,12 @@
--- Canonical Neon/Postgres schema for SEO performance tracking.
--- Idempotent: safe to run repeatedly in Neon SQL Editor or with psql.
+-- LEGACY/BACKWARD-COMPATIBILITY MIGRATION.
+-- This older queued-refresh/snapshot schema is retained for databases that were
+-- created before the current simple cache architecture. It is NOT the canonical
+-- schema for new deployments. Use migrations/001_simple_cache_schema.sql for
+-- the current tables/views: content_urls, seo_performance_cache,
+-- member_performance_cache, refresh_runs, sync_runs, dashboard_url_performance,
+-- and dashboard_member_performance.
+-- Idempotent: safe to run repeatedly in Neon SQL Editor or with psql when
+-- repairing a legacy database that still depends on refresh_jobs/refresh_job_items.
 
 create extension if not exists pgcrypto;
 

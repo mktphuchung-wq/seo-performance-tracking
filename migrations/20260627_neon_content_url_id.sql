@@ -1,4 +1,9 @@
--- Align Neon URL performance schema with application code.
+-- LEGACY/BACKWARD-COMPATIBILITY MIGRATION.
+-- This patch aligns older queued-refresh/snapshot databases with the previous
+-- application schema. It is retained only for databases that still depend on
+-- refresh_jobs, refresh_job_items, and URL/member snapshot tables.
+-- New deployments should use migrations/001_simple_cache_schema.sql, which is
+-- the current simple cache architecture.
 -- Run in the Neon SQL Editor or with: psql "$DATABASE_URL" -f migrations/20260627_neon_content_url_id.sql
 
 begin;

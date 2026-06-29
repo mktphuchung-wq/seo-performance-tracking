@@ -1,5 +1,15 @@
--- Exact Neon/Postgres schema for the simple cache MVP model.
--- This reset migration intentionally creates only the simple cache objects used by the app.
+-- CURRENT Neon/Postgres schema for the simple cache architecture.
+-- This is the canonical schema baseline for new deployments.
+-- It intentionally creates only the tables and views used by the current app:
+--   content_urls
+--   seo_performance_cache
+--   member_performance_cache
+--   refresh_runs
+--   sync_runs
+--   dashboard_url_performance
+--   dashboard_member_performance
+-- This reset migration drops/recreates those cache objects, so back up data first
+-- if you need to preserve an existing cache.
 
 begin;
 
@@ -14,6 +24,7 @@ drop table if exists public.refresh_runs cascade;
 drop table if exists public.sync_runs cascade;
 drop table if exists public.content_urls cascade;
 
+-- Current URL inventory synced from the Google Sheet.
 create table public.content_urls (
   id uuid primary key default gen_random_uuid(),
   url_hash text not null,
@@ -30,6 +41,7 @@ create table public.content_urls (
   updated_at timestamptz not null default now()
 );
 
+-- Current refresh audit table for POST /api/refresh/cache runs.
 create table public.refresh_runs (
   id uuid primary key default gen_random_uuid(),
   status text not null default 'running',
@@ -52,6 +64,7 @@ create table public.refresh_runs (
   constraint refresh_runs_status_check check (status in ('running', 'success', 'failed'))
 );
 
+-- Current Google Sheet sync audit table.
 create table public.sync_runs (
   id uuid primary key default gen_random_uuid(),
   source text not null default 'google_sheet',
@@ -70,6 +83,7 @@ create table public.sync_runs (
   constraint sync_runs_status_check check (status in ('success', 'failed'))
 );
 
+-- Current URL-level SEO/GSC performance cache used by the dashboard.
 create table public.seo_performance_cache (
   id uuid primary key default gen_random_uuid(),
   cache_key text not null,
@@ -108,6 +122,7 @@ create table public.seo_performance_cache (
   constraint seo_performance_cache_growth_status_check check (growth_status in ('growing', 'declining', 'stable', 'new_signal', 'no_data'))
 );
 
+-- Current member-level rollup cache derived from seo_performance_cache.
 create table public.member_performance_cache (
   id uuid primary key default gen_random_uuid(),
   cache_key text not null,
@@ -169,6 +184,7 @@ create index refresh_runs_range_idx on public.refresh_runs (range_key, start_dat
 create index sync_runs_source_created_idx on public.sync_runs (source, created_at desc);
 create index sync_runs_status_created_idx on public.sync_runs (status, created_at desc);
 
+-- Current dashboard-facing URL performance view.
 create view public.dashboard_url_performance as
 select
   id,
@@ -207,6 +223,7 @@ select
   updated_at
 from public.seo_performance_cache;
 
+-- Current dashboard-facing member performance view.
 create view public.dashboard_member_performance as
 select
   id,
