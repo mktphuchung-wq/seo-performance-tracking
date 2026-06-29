@@ -8,6 +8,18 @@ export type UrlSortDirection = "asc" | "desc";
 type LegacyUrlSortKey = UrlSortKey | "ctr_asc" | "position_asc" | "position_desc" | "opportunity";
 type SortableUrlPerformance = UrlPerformance & { click_growth_pct?: number | null; impression_growth_pct?: number | null; status?: string; refreshed_at?: string | null };
 
+export function PageContainer({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <div className={`mx-auto w-full max-w-[1760px] px-4 py-5 sm:px-6 lg:px-8 2xl:px-10 ${className}`}>{children}</div>;
+}
+
+export function SectionGrid({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <div className={`grid gap-5 xl:grid-cols-2 2xl:gap-6 ${className}`}>{children}</div>;
+}
+
+export function DataTableContainer({ children }: { children: React.ReactNode }) {
+  return <div className="w-full overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="min-w-full align-middle">{children}</div></div>;
+}
+
 export function Shell({ children, email, isAdmin }: { children: React.ReactNode; email?: string | null; isAdmin?: boolean }) {
   const navItems = [
     { href: "/dashboard", label: "My Performance" },
@@ -18,29 +30,33 @@ export function Shell({ children, email, isAdmin }: { children: React.ReactNode;
     ] : []),
   ];
 
-  return <main className="mx-auto max-w-7xl p-6">
-    <div className="mb-8 flex flex-col gap-5 border-b pb-5 lg:flex-row lg:items-center lg:justify-between">
-      <div>
-        <h1 className="text-3xl font-bold">SEO Team Performance Tracking</h1>
-      </div>
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between lg:justify-end">
-        <nav aria-label="Main navigation" className="flex flex-wrap gap-2">
-          {navItems.map((item) => <Link className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700" href={item.href} key={item.href}>{item.label}</Link>)}
-        </nav>
-        {email && <div className="flex flex-wrap items-center gap-3 text-sm md:justify-end">
-          <span className="text-slate-500">{email}</span>
-          <a className="font-semibold text-blue-700 hover:text-blue-900" href="/api/auth/signout">Sign out</a>
-        </div>}
-      </div>
-    </div>
-    {children}
+  return <main className="min-h-screen w-full">
+    <header className="border-b border-slate-200 bg-white/90 shadow-sm backdrop-blur">
+      <PageContainer className="py-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">SEO Team Performance Tracking</h1>
+          </div>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between xl:justify-end">
+            <nav aria-label="Main navigation" className="flex flex-wrap gap-2">
+              {navItems.map((item) => <Link className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 sm:text-[15px]" href={item.href} key={item.href}>{item.label}</Link>)}
+            </nav>
+            {email && <div className="flex flex-wrap items-center gap-3 text-sm lg:justify-end">
+              <span className="max-w-full truncate text-slate-500">{email}</span>
+              <a className="font-semibold text-blue-700 hover:text-blue-900" href="/api/auth/signout">Sign out</a>
+            </div>}
+          </div>
+        </div>
+      </PageContainer>
+    </header>
+    <PageContainer>{children}</PageContainer>
   </main>;
 }
 
 export function DateRangePicker({ range = "current_month", startDate, endDate, preserve = {} }: { range?: string; startDate?: string; endDate?: string; preserve?: Record<string, string | undefined> }) {
   const items = [["current_month", "Current month"], ["previous_month", "Previous month"], ["last_3_months", "Last 3 months"], ["last_6_months", "Last 6 months"], ["all_time", "All time"]];
   const href = (key: string) => { const qs = new URLSearchParams(); Object.entries(preserve).forEach(([k, v]) => { if (v && k !== "startDate" && k !== "endDate") qs.set(k, v); }); qs.set("range", key); return `?${qs.toString()}`; };
-  return <div className="mb-6 rounded-xl border bg-white p-4"><div className="mb-3 flex flex-wrap gap-2">{items.map(([key, label]) => <Link className={`rounded-full border px-3 py-1 text-sm ${range === key ? "bg-blue-700 text-white" : "bg-white"}`} href={href(key)} key={key}>{label}</Link>)}</div><form className="flex flex-wrap items-end gap-3">{Object.entries(preserve).filter(([k, v]) => v && k !== "range" && k !== "startDate" && k !== "endDate").map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}<input type="hidden" name="range" value="custom" /><label className="text-sm text-slate-600">Custom start<input className="ml-2 rounded border px-2 py-1" name="startDate" type="date" defaultValue={startDate} /></label><label className="text-sm text-slate-600">End<input className="ml-2 rounded border px-2 py-1" name="endDate" type="date" defaultValue={endDate} /></label><button className="rounded bg-slate-900 px-3 py-1 text-sm text-white" type="submit">Apply custom range</button></form></div>;
+  return <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div className="mb-4 flex flex-wrap gap-2">{items.map(([key, label]) => <Link className={`rounded-full border px-3 py-1 text-sm ${range === key ? "bg-blue-700 text-white" : "bg-white"}`} href={href(key)} key={key}>{label}</Link>)}</div><form className="flex flex-wrap items-end gap-3">{Object.entries(preserve).filter(([k, v]) => v && k !== "range" && k !== "startDate" && k !== "endDate").map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}<input type="hidden" name="range" value="custom" /><label className="text-sm text-slate-600">Custom start<input className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2 sm:ml-2 sm:mt-0 sm:w-auto" name="startDate" type="date" defaultValue={startDate} /></label><label className="text-sm text-slate-600">End<input className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2 sm:ml-2 sm:mt-0 sm:w-auto" name="endDate" type="date" defaultValue={endDate} /></label><button className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white" type="submit">Apply custom range</button></form></div>;
 }
 
 export type MetricTone = "neutral" | "quantity" | "growth-positive" | "growth-negative" | "growth-neutral";
@@ -56,7 +72,7 @@ const metricToneStyles: Record<MetricTone, { card: string; label: string; value:
 
 export function MetricCard({ label, value, tone = "neutral" }: MetricItem) {
   const styles = metricToneStyles[tone];
-  return <div className={`rounded-xl border p-5 shadow-sm ${styles.card}`}><div className={`text-sm ${styles.label}`}>{label}</div><div className={`mt-2 text-2xl font-semibold ${styles.value}`}>{value}</div></div>;
+  return <div className={`min-h-32 rounded-2xl border p-5 shadow-sm sm:p-6 ${styles.card}`}><div className={`text-[13px] font-medium uppercase tracking-wide ${styles.label}`}>{label}</div><div className={`mt-3 text-2xl font-semibold leading-tight sm:text-3xl ${styles.value}`}>{value}</div></div>;
 }
 
 export function MetricSection({ title, description, metrics, tone = "quantity" }: { title: string; description?: string; metrics: MetricItem[]; tone?: "quantity" | "quality" }) {
@@ -65,12 +81,12 @@ export function MetricSection({ title, description, metrics, tone = "quantity" }
     : "border-slate-200 bg-white";
   const heading = tone === "quantity" ? "text-blue-950" : "text-slate-950";
   const defaultMetricTone: MetricTone = tone === "quantity" ? "quantity" : "growth-neutral";
-  return <section className={`rounded-2xl border p-4 shadow-sm ${styles}`}>
+  return <section className={`rounded-2xl border p-5 shadow-sm sm:p-6 ${styles}`}>
     <div className="mb-4">
       <h3 className={`text-lg font-semibold ${heading}`}>{title}</h3>
       {description && <p className="mt-1 text-sm text-slate-600">{description}</p>}
     </div>
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{metrics.map((metric) => <MetricCard key={metric.label} {...metric} tone={metric.tone || defaultMetricTone} />)}</div>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">{metrics.map((metric) => <MetricCard key={metric.label} {...metric} tone={metric.tone || defaultMetricTone} />)}</div>
   </section>;
 }
 
@@ -79,7 +95,7 @@ export function fmtNum(n: number) { return formatNumber(n); }
 export function fmtPos(n: number) { return n ? n.toFixed(1) : "—"; }
 
 export function MetricGrid({ metrics, count }: { metrics: UrlMetrics; count?: number }) {
-  return <div className="grid gap-4 md:grid-cols-5">{count !== undefined && <MetricCard label="URL count" value={count} />}<MetricCard label="Clicks" value={fmtNum(metrics.clicks)} /><MetricCard label="Impressions" value={fmtNum(metrics.impressions)} /><MetricCard label="CTR" value={fmtPct(metrics.ctr)} /><MetricCard label="Avg. position" value={fmtPos(metrics.position)} /></div>;
+  return <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">{count !== undefined && <MetricCard label="URL count" value={count} />}<MetricCard label="Clicks" value={fmtNum(metrics.clicks)} /><MetricCard label="Impressions" value={fmtNum(metrics.impressions)} /><MetricCard label="CTR" value={fmtPct(metrics.ctr)} /><MetricCard label="Avg. position" value={fmtPos(metrics.position)} /></div>;
 }
 
 export function WarningList({ warnings }: { warnings: (string | undefined)[] }) {
@@ -123,7 +139,7 @@ export function UrlTable({ rows, sort = "clicks", direction, basePath = "", pres
   const activeSort = normalizeUrlSort(sort, direction || (preserve.direction as UrlSortDirection | undefined));
   const href = (key: UrlSortKey) => { const qs = new URLSearchParams(); Object.entries(preserve).forEach(([k, v]) => { if (v && k !== "sort" && k !== "direction") qs.set(k, v); }); qs.set("sort", key); qs.set("direction", activeSort.key === key && activeSort.direction === "asc" ? "desc" : "asc"); const query = qs.toString(); return `${basePath}${query ? `?${query}` : ""}`; };
   const header = (key: UrlSortKey, label: string, className = "") => { const active = activeSort.key === key; const nextDirection = active && activeSort.direction === "asc" ? "descending" : "ascending"; return <th className={className || undefined}><Link aria-label={`Sort by ${label} ${nextDirection}`} aria-sort={active ? (activeSort.direction === "asc" ? "ascending" : "descending") : undefined} className={`inline-flex items-center gap-1 py-3 pr-3 font-semibold ${active ? "text-blue-700" : "text-slate-700 hover:text-blue-700"}`} href={href(key)}>{label}<span aria-hidden="true" className={active ? "text-blue-700" : "text-slate-400"}>{active ? (activeSort.direction === "asc" ? "↑" : "↓") : "↕"}</span></Link></th>; };
-  return <div><div className="overflow-auto rounded-xl border bg-white"><table className="w-full text-sm"><thead className="bg-slate-100 text-left"><tr>{header("url", "URL", "p-3")}{header("project", "Project")}<th>Member</th>{header("clicks", "Clicks")}{header("impressions", "Impr.")}{header("ctr", "CTR")}{header("position", "Pos.")}{header("click_growth_pct", "Click Growth")}{header("impression_growth_pct", "Impr. Growth")}{header("growth_status", "Status")}<th>Opportunity</th>{header("refreshed_at", "Refreshed")}</tr></thead><tbody>{sortedRows(rows, activeSort.key, activeSort.direction).map((row) => { const r = row as SortableUrlPerformance; return <tr className="border-t" key={r.id}><td className="max-w-xl p-3 break-all"><Link className="text-blue-700" href={`/url/${r.id}`}>{r.url}</Link>{r.warning && <div className="text-xs text-amber-700">{r.warning}</div>}</td><td>{r.project}</td><td>{r.member_name}</td><td>{fmtNum(r.clicks)}</td><td>{fmtNum(r.impressions)}</td><td>{fmtPct(r.ctr)}</td><td>{fmtPos(r.position)}</td><td><span className={getGrowthClassName(r.click_growth_pct)}>{r.click_growth_pct === undefined ? "—" : fmtGrowth(r.click_growth_pct)}</span></td><td><span className={getGrowthClassName(r.impression_growth_pct)}>{r.impression_growth_pct === undefined ? "—" : fmtGrowth(r.impression_growth_pct)}</span></td><td>{r.status ? <StatusBadge status={r.status} /> : "—"}</td><td><span className="rounded-full bg-slate-100 px-2 py-1 text-xs">{labelText(r.opportunity)}</span></td><td>{fmtDateTime(r.refreshed_at)}</td></tr>; })}{rows.length === 0 && <tr><td className="p-3 text-slate-500" colSpan={12}>No URLs found for this account.</td></tr>}</tbody></table></div></div>;
+  return <DataTableContainer><table className="w-full min-w-[1280px] table-auto text-[13px] sm:text-sm"><thead className="bg-slate-100 text-left"><tr>{header("url", "URL", "p-3")}{header("project", "Project")}<th>Member</th>{header("clicks", "Clicks")}{header("impressions", "Impr.")}{header("ctr", "CTR")}{header("position", "Pos.")}{header("click_growth_pct", "Click Growth")}{header("impression_growth_pct", "Impr. Growth")}{header("growth_status", "Status")}<th>Opportunity</th>{header("refreshed_at", "Refreshed")}</tr></thead><tbody>{sortedRows(rows, activeSort.key, activeSort.direction).map((row) => { const r = row as SortableUrlPerformance; return <tr className="border-t" key={r.id}><td className="w-[34rem] max-w-[34rem] p-3"><Link className="block truncate text-blue-700" title={r.url} href={`/url/${r.id}`}>{r.url}</Link>{r.warning && <div className="text-xs text-amber-700">{r.warning}</div>}</td><td>{r.project}</td><td>{r.member_name}</td><td>{fmtNum(r.clicks)}</td><td>{fmtNum(r.impressions)}</td><td>{fmtPct(r.ctr)}</td><td>{fmtPos(r.position)}</td><td><span className={getGrowthClassName(r.click_growth_pct)}>{r.click_growth_pct === undefined ? "—" : fmtGrowth(r.click_growth_pct)}</span></td><td><span className={getGrowthClassName(r.impression_growth_pct)}>{r.impression_growth_pct === undefined ? "—" : fmtGrowth(r.impression_growth_pct)}</span></td><td>{r.status ? <StatusBadge status={r.status} /> : "—"}</td><td><span className="rounded-full bg-slate-100 px-2 py-1 text-xs">{labelText(r.opportunity)}</span></td><td>{fmtDateTime(r.refreshed_at)}</td></tr>; })}{rows.length === 0 && <tr><td className="p-3 text-slate-500" colSpan={12}>No URLs found for this account.</td></tr>}</tbody></table></DataTableContainer>;
 }
 
 export function fmtGrowth(n: number | null) { return n === null ? "—" : formatSignedPercent(n * 100); }
@@ -134,5 +150,5 @@ export function StatusBadge({ status }: { status: string }) {
   return <span className={`rounded-full px-2 py-1 text-xs font-medium ${styles[status] ?? styles.stable}`}>{arrow} {label}</span>;
 }
 export function RefreshDataButton({ range, startDate, endDate, returnTo, preserve = {} }: { range?: string; startDate?: string; endDate?: string; returnTo?: string; preserve?: Record<string, string | undefined> }) {
-  return <form action="/api/refresh/cache" method="post"><input type="hidden" name="range" value={range || "current_month"} />{startDate && <input type="hidden" name="startDate" value={startDate} />}{endDate && <input type="hidden" name="endDate" value={endDate} />}{returnTo && <input type="hidden" name="returnTo" value={returnTo} />}{Object.entries(preserve).filter(([k, v]) => v && !["range", "startDate", "endDate"].includes(k)).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}<button className="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white" type="submit">Refresh GSC Performance</button></form>;
+  return <form action="/api/refresh/cache" method="post"><input type="hidden" name="range" value={range || "current_month"} />{startDate && <input type="hidden" name="startDate" value={startDate} />}{endDate && <input type="hidden" name="endDate" value={endDate} />}{returnTo && <input type="hidden" name="returnTo" value={returnTo} />}{Object.entries(preserve).filter(([k, v]) => v && !["range", "startDate", "endDate"].includes(k)).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}<button className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-800" type="submit">Refresh GSC Performance</button></form>;
 }
