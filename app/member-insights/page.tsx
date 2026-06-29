@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "../../lib/auth";
-import { getDashboardMetricPeriods, getDateRange } from "../../lib/dates";
+import { getDateRange } from "../../lib/dates";
 import { aggregateCompared, type ComparedUrlPerformance } from "../../lib/growth";
 import { filterRowsForEmail } from "../../lib/google";
 import { getDbContentUrls, getDbPerformance } from "../../lib/postgres";
@@ -13,18 +13,15 @@ const insightRanges = [
   ["current_month", "Current month"],
   ["previous_month", "Previous month"],
   ["last_3_months", "Last 3 months"],
+  ["last_6_months", "Last 6 months"],
   ["all_time", "All time"],
 ] as const;
 
 type InsightRangeKey = typeof insightRanges[number][0];
 type SearchParams = { member?: string; range?: string; refreshError?: string };
 
-function getInsightRange(rangeKey: string) {
-  const periods = getDashboardMetricPeriods();
-  if (rangeKey === "current_month") return periods.current_month;
-  if (rangeKey === "previous_month") return periods.previous_month;
-  if (rangeKey === "last_3_months") return periods.last_3_months;
-  return getDateRange({ range: "all_time" });
+function getInsightRange(rangeKey: InsightRangeKey) {
+  return getDateRange({ range: rangeKey });
 }
 
 function cleanParams(params: SearchParams, overrides: Partial<SearchParams> = {}) {
