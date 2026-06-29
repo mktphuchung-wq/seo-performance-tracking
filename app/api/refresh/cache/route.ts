@@ -12,10 +12,10 @@ function bodyString(body: Record<string, unknown>, key: string) {
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email || !session.accessToken || !session.user.isAdmin) return NextResponse.json({ ok: false, errorMessage: "Unauthorized" }, { status: 401 });
+    if (!session?.user?.email || !session.accessToken || !session.user.isAdmin) return NextResponse.json({ ok: false, error: "Unauthorized", errorMessage: "Unauthorized" }, { status: 401 });
     const contentType = request.headers.get("content-type") || "";
     const body = contentType.includes("application/json") ? await request.json().catch(() => ({})) : Object.fromEntries(await request.formData());
-    const requestedRange = bodyString(body, "range") || bodyString(body, "rangeKey") || "current_month";
+    const requestedRange = bodyString(body, "range_key") || bodyString(body, "range") || bodyString(body, "rangeKey") || "current_month";
     const rangeKey = normalizeDateRangeKey(requestedRange);
     const range = getDateRange({ range: rangeKey, startDate: bodyString(body, "startDate"), endDate: bodyString(body, "endDate") });
     const result = await refreshPerformanceCache(session.accessToken, rangeKey, range, session.user.email);
@@ -29,6 +29,7 @@ export async function POST(request: Request) {
     }
     return NextResponse.json(result, { status: result.ok ? 200 : 500 });
   } catch (error) {
-    return NextResponse.json({ ok: false, totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: error instanceof Error ? error.message : "Refresh failed" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Refresh failed";
+    return NextResponse.json({ ok: false, error: message, totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: message }, { status: 500 });
   }
 }
