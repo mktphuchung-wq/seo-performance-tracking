@@ -29,7 +29,7 @@ export async function getDbPerformance(rangeKey: string, range: DateRange): Prom
   const res = await query(sql, [rangeKey]);
   return res.rows.map((r: any) => {
     const base = dbContentUrl(r);
-    const current: UrlPerformance = { ...base, ...normalizeMetric(r), opportunity: (r.opportunity_status as any) || classifyOpportunity(normalizeMetric(r)), warning: r.refreshed_at ? undefined : "pending_refresh" };
+    const current: UrlPerformance = { ...base, ...normalizeMetric(r), opportunity: (r.opportunity_status as any) || classifyOpportunity(normalizeMetric(r)), warning: r.refreshed_at ? undefined : "Not refreshed yet" };
     const prev: UrlPerformance = { ...base, clicks: num(r.previous_clicks), impressions: num(r.previous_impressions), ctr: num(r.previous_ctr), position: num(r.previous_position), opportunity: "normal" };
     const compared = comparePerformance([current], [prev], rangeKey, range)[0];
     return { ...compared, status: (r.growth_status as any) || compared.status, click_delta: r.click_delta == null ? compared.click_delta : num(r.click_delta), click_growth_pct: r.click_growth_pct == null ? compared.click_growth_pct : num(r.click_growth_pct), impression_delta: r.impression_delta == null ? compared.impression_delta : num(r.impression_delta), impression_growth_pct: r.impression_growth_pct == null ? compared.impression_growth_pct : num(r.impression_growth_pct), ctr_delta: r.ctr_delta == null ? compared.ctr_delta : num(r.ctr_delta), position_delta: r.position_delta == null ? compared.position_delta : num(r.position_delta), refreshed_at: r.refreshed_at ? String(r.refreshed_at) : null };
@@ -84,7 +84,7 @@ export async function getAdminMemberRows(rangeKey: string, range: DateRange, per
   const snapshotMap = new Map(snapshotRows.rows.map((row: any) => [String(row.member_name), row.updated_at ? String(row.updated_at) : null]));
   return scored.map((member) => ({
     ...member,
-    snapshotStatus: snapshotMap.has(member.member_name) ? "Refreshed" : "Pending refresh",
+    snapshotStatus: snapshotMap.has(member.member_name) ? "Refreshed" : "Not refreshed yet",
     snapshotUpdatedAt: snapshotMap.get(member.member_name) ?? null,
   }));
 }

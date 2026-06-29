@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { AdminDataControls } from "../../../components/admin-controls";
 import { redirect } from "next/navigation";
 import { authOptions } from "../../../lib/auth";
-import { getDateRange } from "../../../lib/dates";
+import { getDateRange, normalizeDateRangeKey } from "../../../lib/dates";
 import { aggregateCompared, type ComparedUrlPerformance } from "../../../lib/growth";
 import { getAdminDiagnostics, getAdminMemberRows, getDbPerformance } from "../../../lib/postgres";
 import { DateRangePicker, fmtGrowth, fmtNum, fmtPct, fmtPos, MetricCard, RefreshDataButton, Shell, StatusBadge, UrlTable, WarningList } from "../../../components/ui";
@@ -16,7 +16,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams?: 
   const session = await getServerSession(authOptions);
   if (!session?.user?.email ) redirect("/");
   if (!session.user.isAdmin) redirect("/dashboard");
-  const rangeKey = searchParams?.range || "28d";
+  const rangeKey = normalizeDateRangeKey(searchParams?.range);
   const range = getDateRange({ range: rangeKey, startDate: searchParams?.startDate, endDate: searchParams?.endDate });
   const performance = await getDbPerformance(rangeKey, range);
   const summary = aggregateCompared(performance);

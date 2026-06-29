@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import type { ContentUrl, UrlMetrics, UrlPerformance } from "./google";
 import type { DateRange } from "./dates";
 
-export type RangeKey = "1m" | "3m" | "6m" | "28d" | "12m" | "all" | "custom";
+export type RangeKey = "current_month" | "previous_month" | "last_3_months" | "all_time" | "1m" | "3m" | "6m" | "28d" | "12m" | "all" | "custom";
 export type GrowthStatus = "growing" | "declining" | "stable" | "new_signal" | "no_data";
 export type ComparedUrlPerformance = UrlPerformance & {
   rangeKey: string; range: DateRange; previousRange: DateRange;
