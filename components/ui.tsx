@@ -11,8 +11,8 @@ export function Shell({ children, email, isAdmin }: { children: React.ReactNode;
   return <main className="mx-auto max-w-7xl p-6"><div className="mb-8 flex flex-col gap-4 border-b pb-5 md:flex-row md:items-end md:justify-between"><div><h1 className="text-3xl font-bold">Member Performance Tracking</h1><p className="text-slate-600">Phase 2 SEO portfolio health, priorities, and Search Console trends.</p></div><div className="flex flex-wrap gap-3 text-sm"><Link href="/dashboard">Dashboard / My Performance</Link><Link href="/url-data-source">URL Data Source</Link>{isAdmin && <><Link href="/member-insights">Member Insights</Link><Link href="/admin">Admin</Link><Link className="text-slate-400" href="/admin/projects">Projects</Link></>}<span className="text-slate-500">{email}</span>{email && <a href="/api/auth/signout">Sign out</a>}</div></div>{children}</main>;
 }
 
-export function DateRangePicker({ range = "28d", startDate, endDate, preserve = {} }: { range?: string; startDate?: string; endDate?: string; preserve?: Record<string, string | undefined> }) {
-  const items = [["28d", "Last 28 days"], ["3m", "Last 3 months"], ["6m", "Last 6 months"], ["12m", "Last 12 months"], ["all", "All time"]];
+export function DateRangePicker({ range = "current_month", startDate, endDate, preserve = {} }: { range?: string; startDate?: string; endDate?: string; preserve?: Record<string, string | undefined> }) {
+  const items = [["current_month", "Current month"], ["previous_month", "Previous month"], ["last_3_months", "Last 3 months"], ["all_time", "All time"]];
   const href = (key: string) => { const qs = new URLSearchParams(); Object.entries(preserve).forEach(([k, v]) => { if (v && k !== "startDate" && k !== "endDate") qs.set(k, v); }); qs.set("range", key); return `?${qs.toString()}`; };
   return <div className="mb-6 rounded-xl border bg-white p-4"><div className="mb-3 flex flex-wrap gap-2">{items.map(([key, label]) => <Link className={`rounded-full border px-3 py-1 text-sm ${range === key ? "bg-blue-700 text-white" : "bg-white"}`} href={href(key)} key={key}>{label}</Link>)}</div><form className="flex flex-wrap items-end gap-3">{Object.entries(preserve).filter(([k, v]) => v && k !== "range" && k !== "startDate" && k !== "endDate").map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}<input type="hidden" name="range" value="custom" /><label className="text-sm text-slate-600">Custom start<input className="ml-2 rounded border px-2 py-1" name="startDate" type="date" defaultValue={startDate} /></label><label className="text-sm text-slate-600">End<input className="ml-2 rounded border px-2 py-1" name="endDate" type="date" defaultValue={endDate} /></label><button className="rounded bg-slate-900 px-3 py-1 text-sm text-white" type="submit">Apply custom range</button></form></div>;
 }
@@ -46,7 +46,7 @@ export function MetricGrid({ metrics, count }: { metrics: UrlMetrics; count?: nu
 }
 
 export function WarningList({ warnings }: { warnings: (string | undefined)[] }) {
-  const unique = Array.from(new Set(warnings.filter(Boolean)));
+  const unique = Array.from(new Set(warnings.filter(Boolean).map((warning) => warning === "pending_refresh" ? "Not refreshed yet" : warning)));
   if (!unique.length) return null;
   return <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><strong>Setup warnings:</strong><ul className="mt-2 list-disc pl-5">{unique.map((w) => <li key={w}>{w}</li>)}</ul></div>;
 }
@@ -81,7 +81,7 @@ function sortedRows(rows: UrlPerformance[], sort: LegacyUrlSortKey, direction?: 
     return (normalized.direction === "asc" ? result : -result) || compareString(left.url, right.url);
   });
 }
-function fmtDateTime(value?: string | null) { if (!value) return "—"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString(); }
+function fmtDateTime(value?: string | null) { if (!value) return "Not refreshed yet"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString(); }
 export function UrlTable({ rows, sort = "clicks", direction, basePath = "", preserve = {} }: { rows: UrlPerformance[]; sort?: LegacyUrlSortKey; direction?: UrlSortDirection; basePath?: string; preserve?: Record<string, string | undefined> }) {
   const activeSort = normalizeUrlSort(sort, direction || (preserve.direction as UrlSortDirection | undefined));
   const href = (key: UrlSortKey) => { const qs = new URLSearchParams(); Object.entries(preserve).forEach(([k, v]) => { if (v && k !== "sort" && k !== "direction") qs.set(k, v); }); qs.set("sort", key); qs.set("direction", activeSort.key === key && activeSort.direction === "asc" ? "desc" : "asc"); const query = qs.toString(); return `${basePath}${query ? `?${query}` : ""}`; };
@@ -96,5 +96,5 @@ export function StatusBadge({ status }: { status: string }) {
   return <span className={`rounded-full px-2 py-1 text-xs font-medium ${styles[status] ?? styles.stable}`}>{arrow} {status.replace(/_/g, " ")}</span>;
 }
 export function RefreshDataButton({ range, startDate, endDate, returnTo, preserve = {} }: { range?: string; startDate?: string; endDate?: string; returnTo?: string; preserve?: Record<string, string | undefined> }) {
-  return <form action="/api/refresh" method="post"><input type="hidden" name="range" value={range || "28d"} />{startDate && <input type="hidden" name="startDate" value={startDate} />}{endDate && <input type="hidden" name="endDate" value={endDate} />}{returnTo && <input type="hidden" name="returnTo" value={returnTo} />}{Object.entries(preserve).filter(([k, v]) => v && !["range", "startDate", "endDate"].includes(k)).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}<button className="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white" type="submit">Refresh GSC Performance</button></form>;
+  return <form action="/api/refresh" method="post"><input type="hidden" name="range" value={range || "current_month"} />{startDate && <input type="hidden" name="startDate" value={startDate} />}{endDate && <input type="hidden" name="endDate" value={endDate} />}{returnTo && <input type="hidden" name="returnTo" value={returnTo} />}{Object.entries(preserve).filter(([k, v]) => v && !["range", "startDate", "endDate"].includes(k)).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}<button className="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white" type="submit">Refresh GSC Performance</button></form>;
 }

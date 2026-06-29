@@ -35,7 +35,7 @@ function apiError(endpoint: string, response: Response, payload: any) {
   return `HTTP ${response.status} from ${endpoint}: ${payload?.error || payload?.message || response.statusText || "Request failed"}${rawPreview}`;
 }
 
-export function AdminDataControls({ range = "28d", startDate, endDate }: { range?: string; startDate?: string; endDate?: string }) {
+export function AdminDataControls({ range = "current_month", startDate, endDate }: { range?: string; startDate?: string; endDate?: string }) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);

@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "../../../lib/auth";
-import { getDateRange } from "../../../lib/dates";
+import { getDateRange, normalizeDateRangeKey } from "../../../lib/dates";
 import { filterRowsForEmail } from "../../../lib/google";
 import { getUrlDetailFromDb } from "../../../lib/postgres";
 import { labelText } from "../../../lib/metrics";
@@ -11,7 +11,7 @@ import { TrendChart } from "../../../components/trend-chart";
 export default async function UrlDetail({ params, searchParams }: { params: { id: string }; searchParams?: { range?: string } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) redirect("/");
-  const rangeKey = searchParams?.range || "28d";
+  const rangeKey = normalizeDateRangeKey(searchParams?.range);
   const detail = await getUrlDetailFromDb(params.id, rangeKey, getDateRange({ range: rangeKey }));
   if (!detail || !filterRowsForEmail([detail.overview], session.user.email, session.user.isAdmin).length) {
     redirect("/dashboard");

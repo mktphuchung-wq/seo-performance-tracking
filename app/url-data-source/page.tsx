@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "../../lib/auth";
-import { getDateRange } from "../../lib/dates";
+import { getDateRange, normalizeDateRangeKey } from "../../lib/dates";
 import { filterRowsForEmail } from "../../lib/google";
 import { getDbPerformance } from "../../lib/postgres";
 import { DateRangePicker, RefreshDataButton, Shell, UrlTable, WarningList, type UrlSortDirection, type UrlSortKey } from "../../components/ui";
@@ -9,7 +9,7 @@ import { DateRangePicker, RefreshDataButton, Shell, UrlTable, WarningList, type 
 export default async function AdminUrls({ searchParams }: { searchParams?: { range?: string; startDate?: string; endDate?: string; sort?: UrlSortKey; direction?: UrlSortDirection } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email ) redirect("/");
-  const rangeKey = searchParams?.range || "28d";
+  const rangeKey = normalizeDateRangeKey(searchParams?.range);
   const range = getDateRange({ range: rangeKey, startDate: searchParams?.startDate, endDate: searchParams?.endDate });
   const allRows = await getDbPerformance(rangeKey, range);
   const rows = session.user.isAdmin ? allRows : filterRowsForEmail(allRows, session.user.email, false);

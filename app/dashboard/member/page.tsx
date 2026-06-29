@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "../../../lib/auth";
-import { getDashboardMetricPeriods, getDateRange } from "../../../lib/dates";
+import { getDashboardMetricPeriods, getDateRange, normalizeDateRangeKey } from "../../../lib/dates";
 import { getEnvErrors } from "../../../lib/env";
 import { filterRowsForEmail } from "../../../lib/google";
 import { getDbPerformance } from "../../../lib/postgres";
@@ -30,7 +30,7 @@ type PresetView = "all" | "growing" | "declining" | "no_data" | "high_impression
 
 const growthStatusOptions: GrowthStatus[] = ["growing", "new_signal", "declining", "stable", "no_data"];
 const opportunityStatusOptions: OpportunityLabel[] = ["no_data", "ctr_opportunity", "ranking_opportunity", "winner", "low_visibility", "normal"];
-const rangeOptions = [["28d", "Last 28 days"], ["3m", "Last 3 months"], ["6m", "Last 6 months"], ["12m", "Last 12 months"], ["all", "All time"], ["custom", "Custom"]] as const;
+const rangeOptions = [["current_month", "Current month"], ["previous_month", "Previous month"], ["last_3_months", "Last 3 months"], ["all_time", "All time"], ["custom", "Custom"]] as const;
 const presetViews: { key: PresetView; label: string; sort?: SearchParams["sort"]; direction?: SearchParams["direction"] }[] = [
   { key: "all", label: "All URLs" },
   { key: "growing", label: "Growing URLs", sort: "click_growth_pct", direction: "desc" },
@@ -100,7 +100,7 @@ export default async function MemberDashboard({ searchParams }: { searchParams?:
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) redirect("/");
   const params = searchParams || {};
-  const rangeKey = params.range || "28d";
+  const rangeKey = normalizeDateRangeKey(params.range);
   const range = getDateRange({ range: rangeKey, startDate: params.startDate, endDate: params.endDate });
   const metricPeriods = getDashboardMetricPeriods();
   const [dbRows, currentMonthRows] = await Promise.all([
