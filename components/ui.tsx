@@ -17,8 +17,24 @@ export function DateRangePicker({ range = "28d", startDate, endDate, preserve = 
   return <div className="mb-6 rounded-xl border bg-white p-4"><div className="mb-3 flex flex-wrap gap-2">{items.map(([key, label]) => <Link className={`rounded-full border px-3 py-1 text-sm ${range === key ? "bg-blue-700 text-white" : "bg-white"}`} href={href(key)} key={key}>{label}</Link>)}</div><form className="flex flex-wrap items-end gap-3">{Object.entries(preserve).filter(([k, v]) => v && k !== "range" && k !== "startDate" && k !== "endDate").map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}<input type="hidden" name="range" value="custom" /><label className="text-sm text-slate-600">Custom start<input className="ml-2 rounded border px-2 py-1" name="startDate" type="date" defaultValue={startDate} /></label><label className="text-sm text-slate-600">End<input className="ml-2 rounded border px-2 py-1" name="endDate" type="date" defaultValue={endDate} /></label><button className="rounded bg-slate-900 px-3 py-1 text-sm text-white" type="submit">Apply custom range</button></form></div>;
 }
 
-export function MetricCard({ label, value }: { label: string; value: string | number }) {
+export type MetricItem = { label: string; value: React.ReactNode };
+
+export function MetricCard({ label, value }: MetricItem) {
   return <div className="rounded-xl border bg-white p-5 shadow-sm"><div className="text-sm text-slate-500">{label}</div><div className="mt-2 text-2xl font-semibold">{value}</div></div>;
+}
+
+export function MetricSection({ title, description, metrics, tone = "quantity" }: { title: string; description?: string; metrics: MetricItem[]; tone?: "quantity" | "quality" }) {
+  const styles = tone === "quantity"
+    ? "border-blue-100 bg-blue-50/60"
+    : "border-emerald-100 bg-emerald-50/60";
+  const heading = tone === "quantity" ? "text-blue-950" : "text-emerald-950";
+  return <section className={`rounded-2xl border p-4 shadow-sm ${styles}`}>
+    <div className="mb-4">
+      <h3 className={`text-lg font-semibold ${heading}`}>{title}</h3>
+      {description && <p className="mt-1 text-sm text-slate-600">{description}</p>}
+    </div>
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{metrics.map((metric) => <MetricCard key={metric.label} label={metric.label} value={metric.value} />)}</div>
+  </section>;
 }
 
 export function fmtPct(n: number) { return `${(n * 100).toFixed(2)}%`; }
