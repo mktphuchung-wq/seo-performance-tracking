@@ -33,7 +33,10 @@ export function scoreMember(member_name: string, rows: ComparedUrlPerformance[],
   );
   const supportSignal = noDataRate >= 0.3 ? "Needs data" : decliningRate >= 0.3 || (a.click_growth_pct ?? 0) <= -0.2 ? "Needs support" : qualityIndex >= 75 && (a.click_growth_pct ?? 0) > 0 ? "Strong performer" : (a.click_growth_pct ?? 0) >= 0.1 || (a.impression_growth_pct ?? 0) >= 0.15 ? "Growing" : "Stable";
   const priorityActions = rows.filter((r) => r.status === "declining" || r.status === "no_data").length;
-  return { member_name, urlCount: rows.length, ...a, quantityIndex: Math.round(quantityIndex), qualityIndex: Math.round(qualityIndex), portfolioHealth: healthLabel(decliningRate, noDataRate, a.click_growth_pct), priorityActions, supportSignal };
+  const activeUrls = rows.length;
+  const urlsThisMonth = rows.length;
+  const urlsWithData = rows.length - a.noData;
+  return { member_name, urlCount: rows.length, activeUrls, urlsThisMonth, urlsWithData, ...a, quantityIndex: Math.round(quantityIndex), qualityIndex: Math.round(qualityIndex), portfolioHealth: healthLabel(decliningRate, noDataRate, a.click_growth_pct), priorityActions, supportSignal };
 }
 
 export function scoreMembers(rows: ComparedUrlPerformance[]) {
