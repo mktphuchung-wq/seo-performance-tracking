@@ -2,25 +2,125 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "../../lib/auth";
-import { getDateRange } from "../../lib/dates";
-import { getDbPerformance } from "../../lib/postgres";
-import { scoreMembers } from "../../lib/scoring";
-import { DateRangePicker, fmtGrowth, fmtNum, fmtPct, fmtPos, RefreshDataButton, Shell, StatusBadge, WarningList } from "../../components/ui";
+import { getDashboardMetricPeriods, getDateRange } from "../../lib/dates";
+import { aggregateCompared, type ComparedUrlPerformance } from "../../lib/growth";
+import { filterRowsForEmail } from "../../lib/google";
+import { recommendationFor } from "../../lib/recommendations";
+import { getDbContentUrls, getDbPerformance } from "../../lib/postgres";
+import { fmtGrowth, fmtNum, fmtPct, fmtPos, MetricSection, RefreshDataButton, Shell, StatusBadge, WarningList } from "../../components/ui";
 
-export default async function Members({ searchParams }: { searchParams?: { range?: string; startDate?: string; endDate?: string } }) {
+const insightRanges = [
+  ["current_month", "Current month"],
+  ["previous_month", "Previous month"],
+  ["last_3_months", "Last 3 months"],
+  ["all_time", "All time"],
+] as const;
+
+type InsightRangeKey = typeof insightRanges[number][0];
+type SearchParams = { member?: string; range?: string; refreshError?: string };
+
+function getInsightRange(rangeKey: string) {
+  const periods = getDashboardMetricPeriods();
+  if (rangeKey === "current_month") return periods.current_month;
+  if (rangeKey === "previous_month") return periods.previous_month;
+  if (rangeKey === "last_3_months") return periods.last_3_months;
+  return getDateRange({ range: "all_time" });
+}
+
+function cleanParams(params: SearchParams, overrides: Partial<SearchParams> = {}) {
+  const query = new URLSearchParams();
+  Object.entries({ ...params, ...overrides }).forEach(([key, value]) => {
+    if (value) query.set(key, String(value));
+  });
+  return `?${query.toString()}`;
+}
+
+function sortByGrowth(rows: ComparedUrlPerformance[], direction: "asc" | "desc") {
+  return [...rows].sort((a, b) => {
+    const left = a.click_growth_pct ?? (a.clicks > 0 ? Number.POSITIVE_INFINITY : 0);
+    const right = b.click_growth_pct ?? (b.clicks > 0 ? Number.POSITIVE_INFINITY : 0);
+    return direction === "desc" ? right - left || b.click_delta - a.click_delta : left - right || a.click_delta - b.click_delta;
+  });
+}
+
+function insightRecommendation(rows: ComparedUrlPerformance[], summary: ReturnType<typeof aggregateCompared>) {
+  if (!rows.length) return "No active URLs are assigned to this member.";
+  if (summary.noData > 0) return "Refresh Search Console data or verify URL/property mapping for no-data URLs.";
+  if (summary.declining > summary.growing) return "Prioritize content refreshes and query analysis for declining URLs.";
+  if ((summary.click_growth_pct ?? 0) >= 0.1 || (summary.impression_growth_pct ?? 0) >= 0.15) return "Document what is working on growing URLs and apply those patterns across the portfolio.";
+  return "Review high-impression, low-CTR URLs for title/meta updates and monitor stable URLs.";
+}
+
+
+function SuggestedActions({ rows, summary }: { rows: ComparedUrlPerformance[]; summary: ReturnType<typeof aggregateCompared> }) {
+  const actions = [
+    insightRecommendation(rows, summary),
+    summary.declining ? `Review ${summary.declining} declining URL${summary.declining === 1 ? "" : "s"} for query losses and content freshness.` : "Maintain current monitoring for URLs without decline signals.",
+    summary.noData ? `Validate Search Console coverage for ${summary.noData} no-data URL${summary.noData === 1 ? "" : "s"}.` : "No no-data cleanup is needed for this range.",
+    rows.some((row) => row.impressions >= 100 && row.ctr < 0.01) ? "Rewrite titles and meta descriptions for high-impression, low-CTR URLs." : "Continue watching CTR opportunities as impressions grow.",
+  ];
+  return <section className="mt-8 rounded-xl border bg-white p-5 shadow-sm"><h3 className="text-xl font-semibold">Suggested actions</h3><ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-700">{actions.map((action) => <li key={action}>{action}</li>)}</ul></section>;
+}
+
+function Section({ title, description, rows }: { title: string; description?: string; rows: ComparedUrlPerformance[] }) {
+  return <section className="mt-8">
+    <div className="mb-3"><h3 className="text-xl font-semibold">{title}</h3>{description && <p className="text-sm text-slate-500">{description}</p>}</div>
+    <div className="overflow-auto rounded-xl border bg-white">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-100 text-left"><tr><th className="p-3">URL</th><th>Project</th><th>Clicks</th><th>Impr.</th><th>CTR</th><th>Pos.</th><th>Click growth</th><th>Impr. growth</th><th>Status</th><th>Recommendation</th></tr></thead>
+        <tbody>{rows.map((row) => <tr className="border-t" key={row.id}><td className="max-w-xl break-all p-3"><Link className="text-blue-700" href={`/url/${row.id}`}>{row.url}</Link></td><td>{row.project}</td><td>{fmtNum(row.clicks)}</td><td>{fmtNum(row.impressions)}</td><td>{fmtPct(row.ctr)}</td><td>{fmtPos(row.position)}</td><td>{fmtGrowth(row.click_growth_pct)}</td><td>{fmtGrowth(row.impression_growth_pct)}</td><td><StatusBadge status={row.status} /></td><td>{recommendationFor(row)}</td></tr>)}{rows.length === 0 && <tr><td className="p-3 text-slate-500" colSpan={10}>No URLs match this section.</td></tr>}</tbody>
+      </table>
+    </div>
+  </section>;
+}
+
+export default async function MemberInsights({ searchParams }: { searchParams?: SearchParams }) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email ) redirect("/");
-  if (!session.user.isAdmin) redirect("/dashboard");
-  const rangeKey = searchParams?.range || "28d";
-  const range = getDateRange({ range: rangeKey, startDate: searchParams?.startDate, endDate: searchParams?.endDate });
-  const rows = await getDbPerformance(rangeKey, range);
-  const members = scoreMembers(rows);
-  const priority = members.filter((m) => m.priorityActions > 0 || m.supportSignal !== "Stable").slice(0, 8);
+  if (!session?.user?.email) redirect("/");
+
+  const params = searchParams || {};
+  const rangeKey = (insightRanges.some(([key]) => key === params.range) ? params.range : "current_month") as InsightRangeKey;
+  const range = getInsightRange(rangeKey);
+  const [activeUrls, rows] = await Promise.all([getDbContentUrls(), getDbPerformance(rangeKey, range)]);
+  const visibleUrls = session.user.isAdmin ? activeUrls : filterRowsForEmail(activeUrls, session.user.email, false);
+  const memberOptions = Array.from(new Set(visibleUrls.map((row) => row.member_name).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const requestedMember = params.member ? decodeURIComponent(params.member) : "";
+  const selectedMember = session.user.isAdmin ? (memberOptions.includes(requestedMember) ? requestedMember : "") : memberOptions[0] || "";
+
+  if (!session.user.isAdmin && requestedMember && requestedMember !== selectedMember) redirect(`/member-insights?${new URLSearchParams({ range: rangeKey }).toString()}`);
+
+  const visibleRows = session.user.isAdmin ? rows : filterRowsForEmail(rows, session.user.email, false);
+  const memberRows = selectedMember ? visibleRows.filter((row) => row.member_name === selectedMember) : [];
+  const summary = aggregateCompared(memberRows);
+  const topGrowing = sortByGrowth(memberRows.filter((row) => row.status === "growing" || row.status === "new_signal"), "desc").slice(0, 10);
+  const topDeclining = sortByGrowth(memberRows.filter((row) => row.status === "declining"), "asc").slice(0, 10);
+  const highImpressionLowCtr = [...memberRows].filter((row) => row.impressions >= 100 && row.ctr < 0.01).sort((a, b) => b.impressions - a.impressions).slice(0, 10);
+  const noData = memberRows.filter((row) => row.status === "no_data");
+
   return <Shell email={session.user.email} isAdmin={session.user.isAdmin}>
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-2xl font-semibold">Member Insights</h2><p className="text-sm text-slate-500">Quantity Index measures portfolio scale. Quality Index measures growth, health, and optimization signals.</p></div><div className="flex items-center gap-3"><span className="text-xs text-slate-500">Supabase snapshots</span><RefreshDataButton range={rangeKey} startDate={searchParams?.startDate} endDate={searchParams?.endDate} returnTo="/member-insights" /></div></div>
-    <DateRangePicker range={rangeKey} startDate={searchParams?.startDate} endDate={searchParams?.endDate} />
-    <WarningList warnings={[...rows.map((p) => p.warning)]} />
-    <h3 className="mb-3 mt-8 text-xl font-semibold">Priority action list</h3><div className="overflow-auto rounded-xl border bg-white"><table className="w-full text-sm"><thead className="bg-slate-100 text-left"><tr><th className="p-3">Member</th><th>Portfolio health</th><th>Priority URLs</th><th>Support signal</th><th>Declining</th><th>No data</th><th>Quality Index</th></tr></thead><tbody>{priority.map((m) => <tr className="border-t" key={m.member_name}><td className="p-3"><Link className="text-blue-700" href={`/member-insights/${encodeURIComponent(m.member_name)}`}>{m.member_name}</Link></td><td>{m.portfolioHealth}</td><td>{m.priorityActions}</td><td>{m.supportSignal}</td><td>{m.declining}</td><td>{m.noData}</td><td>{m.qualityIndex}</td></tr>)}</tbody></table></div>
-    <h3 className="mb-3 mt-8 text-xl font-semibold">Member comparison matrix</h3><div className="overflow-auto rounded-xl border bg-white"><table className="w-full text-sm"><thead className="bg-slate-100 text-left"><tr><th className="p-3">Member</th><th>Portfolio Health</th><th>URL Count</th><th>Quantity Index</th><th>Quality Index</th><th>Current Clicks</th><th>Previous Clicks</th><th>Click Growth %</th><th>Current Impressions</th><th>Previous Impressions</th><th>Impression Growth %</th><th>CTR</th><th>Avg Position</th><th>Growing URLs</th><th>Declining URLs</th><th>No Data URLs</th><th>Priority Actions</th><th>Support Signal</th></tr></thead><tbody>{members.map((m) => { const status = m.portfolioHealth === "At risk" ? "declining" : m.portfolioHealth === "Healthy growth" ? "growing" : "stable"; return <tr className="border-t" key={m.member_name}><td className="p-3"><Link className="text-blue-700" href={`/member-insights/${encodeURIComponent(m.member_name)}`}>{m.member_name}</Link></td><td><StatusBadge status={status}/><span className="ml-2">{m.portfolioHealth}</span></td><td>{m.urlCount}</td><td>{m.quantityIndex}</td><td>{m.qualityIndex}</td><td>{fmtNum(m.clicks)}</td><td>{fmtNum(m.previous_clicks)}</td><td>{fmtGrowth(m.click_growth_pct)}</td><td>{fmtNum(m.impressions)}</td><td>{fmtNum(m.previous_impressions)}</td><td>{fmtGrowth(m.impression_growth_pct)}</td><td>{fmtPct(m.ctr)}</td><td>{fmtPos(m.position)}</td><td>{m.growing}</td><td>{m.declining}</td><td>{m.noData}</td><td>{m.priorityActions}</td><td>{m.supportSignal}</td></tr>; })}</tbody></table></div>
+    <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><h2 className="text-2xl font-semibold">Member Insights</h2><p className="text-sm text-slate-500">Select one member and one range to review portfolio performance. {range.label}: {range.startDate} to {range.endDate}</p></div>{session.user.isAdmin && <RefreshDataButton range={rangeKey} returnTo="/member-insights" preserve={{ member: selectedMember }} />}</div>
+    <WarningList warnings={[params.refreshError, ...memberRows.map((row) => row.warning)]} />
+
+    <section className="mb-6 rounded-xl border bg-white p-4 shadow-sm">
+      <form className="flex flex-wrap items-end gap-3">
+        <label className="min-w-64 text-sm text-slate-600">Member<select className="mt-1 w-full rounded border px-2 py-2" name="member" defaultValue={selectedMember} disabled={!session.user.isAdmin}><option value="">Select a member</option>{memberOptions.map((member) => <option key={member} value={member}>{member}</option>)}</select></label>
+        <input type="hidden" name="range" value={rangeKey} />
+        {session.user.isAdmin && <button className="rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white" type="submit">View member</button>}
+      </form>
+      <div className="mt-4 flex flex-wrap gap-2">{insightRanges.map(([key, label]) => <Link className={`rounded-full border px-3 py-1 text-sm ${rangeKey === key ? "bg-blue-700 text-white" : "bg-white text-slate-700"}`} href={cleanParams({ member: selectedMember, range: rangeKey }, { range: key })} key={key}>{label}</Link>)}</div>
+    </section>
+
+    {!selectedMember ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-950">Choose a member to load insights. All members are intentionally hidden until a member is selected.</div> : <>
+      <div className="grid gap-6 xl:grid-cols-2">
+        <MetricSection title="KPI overview" description={`Portfolio metrics for ${selectedMember}.`} metrics={[{ label: "Active URLs", value: memberRows.length }, { label: "URLs With Data", value: memberRows.length - summary.noData }, { label: "Current Clicks", value: fmtNum(summary.clicks) }, { label: "Previous Clicks", value: fmtNum(summary.previous_clicks) }, { label: "Current Impressions", value: fmtNum(summary.impressions) }, { label: "Previous Impressions", value: fmtNum(summary.previous_impressions) }, { label: "CTR", value: fmtPct(summary.ctr) }, { label: "Avg Position", value: fmtPos(summary.position) }]} />
+        <MetricSection title="Trend summary" description="Growth and health signals for the selected range." tone="quality" metrics={[{ label: "Click Growth %", value: fmtGrowth(summary.click_growth_pct) }, { label: "Impression Growth %", value: fmtGrowth(summary.impression_growth_pct) }, { label: "Growing URLs", value: summary.growing }, { label: "Declining URLs", value: summary.declining }, { label: "No Data URLs", value: summary.noData }, { label: "Suggested Action", value: <span className="text-base font-medium leading-snug">{insightRecommendation(memberRows, summary)}</span> }]} />
+      </div>
+      <SuggestedActions rows={memberRows} summary={summary} />
+      <Section title="URL portfolio table" rows={memberRows} />
+      <Section title="Top growing URLs" rows={topGrowing} />
+      <Section title="Top declining URLs" rows={topDeclining} />
+      <Section title="High impressions but low CTR URLs" description="URLs with at least 100 impressions and CTR below 1%." rows={highImpressionLowCtr} />
+      <Section title="No data URLs" rows={noData} />
+    </>}
   </Shell>;
 }
