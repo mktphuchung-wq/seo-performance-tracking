@@ -11,7 +11,7 @@ function syncErrorMessage(payload: ApiErrorPayload) {
 }
 
 type RefreshRun = { id: string; status: string; range_key: string; start_date: string; end_date: string; total_urls: number; processed_urls: number; failed_urls: number; urls_with_data: number; no_data_urls: number; error_message?: string };
-type RefreshRangeKey = "current_month" | "previous_month" | "last_3_months" | "all_time";
+type RefreshRangeKey = "current_month" | "previous_month" | "last_3_months" | "last_6_months" | "all_time";
 type SyncRun = { id?: string; status: string; total_rows: number; inserted_rows: number; updated_rows: number; deactivated_rows: number; failed_rows: number; error_message?: string; created_at: string };
 
 type JsonSafeResult<T = any> = { ok: true; data: T } | { ok: false; error: string; status: number; endpoint: string; rawPreview?: string };
@@ -89,6 +89,7 @@ export function AdminDataControls({ range = "current_month", startDate, endDate 
         ["current_month", "Refresh current month"],
         ["previous_month", "Refresh previous month"],
         ["last_3_months", "Refresh last 3 months"],
+        ["last_6_months", "Refresh last 6 months"],
         ["all_time", "Refresh all time"],
       ] as const).map(([refreshRange, label]) => <button key={refreshRange} className="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60" onClick={() => refreshGsc(refreshRange)} disabled={!!loading}>{loading === `refresh:${refreshRange}` ? "Refreshing…" : label}</button>)}
     </div>
