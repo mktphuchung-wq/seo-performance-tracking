@@ -8,7 +8,7 @@ export type ComparedUrlPerformance = UrlPerformance & {
   rangeKey: string; range: DateRange; previousRange: DateRange;
   previous_clicks: number; previous_impressions: number; previous_ctr: number; previous_position: number;
   click_delta: number; click_growth_pct: number | null; impression_delta: number; impression_growth_pct: number | null;
-  ctr_delta: number; position_delta: number; status: GrowthStatus;
+  ctr_delta: number; position_delta: number; status: GrowthStatus; refreshed_at?: string | null;
 };
 
 const DAY = 86400000;

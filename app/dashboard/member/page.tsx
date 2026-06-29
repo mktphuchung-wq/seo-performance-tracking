@@ -9,7 +9,7 @@ import { aggregateCompared } from "../../../lib/growth";
 import { DateRangePicker, fmtGrowth, MetricCard, RefreshDataButton, Shell, UrlTable, WarningList } from "../../../components/ui";
 import Link from "next/link";
 
-export default async function MemberDashboard({ searchParams }: { searchParams?: { range?: string; startDate?: string; endDate?: string; sort?: import("../../../components/ui").UrlSortKey } }) {
+export default async function MemberDashboard({ searchParams }: { searchParams?: { range?: string; startDate?: string; endDate?: string; sort?: import("../../../components/ui").UrlSortKey; direction?: import("../../../components/ui").UrlSortDirection } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) redirect("/");
   const rangeKey = searchParams?.range || "28d";

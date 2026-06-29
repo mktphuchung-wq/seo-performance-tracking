@@ -12,7 +12,7 @@ function group(rows: ComparedUrlPerformance[], key: keyof Pick<ComparedUrlPerfor
   return Object.entries(rows.reduce<Record<string, ComparedUrlPerformance[]>>((acc, row) => { (acc[String(row[key])] ??= []).push(row); return acc; }, {}));
 }
 
-export default async function AdminDashboard({ searchParams }: { searchParams?: { range?: string; startDate?: string; endDate?: string; sort?: import("../../../components/ui").UrlSortKey; refreshError?: string } }) {
+export default async function AdminDashboard({ searchParams }: { searchParams?: { range?: string; startDate?: string; endDate?: string; sort?: import("../../../components/ui").UrlSortKey; direction?: import("../../../components/ui").UrlSortDirection; refreshError?: string } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email ) redirect("/");
   if (!session.user.isAdmin) redirect("/dashboard");

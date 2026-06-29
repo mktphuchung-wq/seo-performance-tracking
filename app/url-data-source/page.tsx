@@ -4,9 +4,9 @@ import { authOptions } from "../../lib/auth";
 import { getDateRange } from "../../lib/dates";
 import { filterRowsForEmail } from "../../lib/google";
 import { getDbPerformance } from "../../lib/postgres";
-import { DateRangePicker, RefreshDataButton, Shell, UrlTable, WarningList, type UrlSortKey } from "../../components/ui";
+import { DateRangePicker, RefreshDataButton, Shell, UrlTable, WarningList, type UrlSortDirection, type UrlSortKey } from "../../components/ui";
 
-export default async function AdminUrls({ searchParams }: { searchParams?: { range?: string; startDate?: string; endDate?: string; sort?: UrlSortKey } }) {
+export default async function AdminUrls({ searchParams }: { searchParams?: { range?: string; startDate?: string; endDate?: string; sort?: UrlSortKey; direction?: UrlSortDirection } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email ) redirect("/");
   const rangeKey = searchParams?.range || "28d";
