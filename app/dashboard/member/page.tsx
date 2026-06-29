@@ -6,7 +6,7 @@ import { getEnvErrors } from "../../../lib/env";
 import { filterRowsForEmail } from "../../../lib/google";
 import { getDbPerformance } from "../../../lib/postgres";
 import { aggregateCompared, type GrowthStatus } from "../../../lib/growth";
-import { fmtGrowth, fmtNum, fmtPct, fmtPos, MetricSection, RefreshDataButton, Shell, UrlTable, WarningList, type MetricTone } from "../../../components/ui";
+import { fmtGrowth, fmtNum, fmtPct, fmtPos, MetricSection, RefreshDataButton, SectionGrid, Shell, UrlTable, WarningList, type MetricTone } from "../../../components/ui";
 import { formatSignedNumber } from "../../../lib/format";
 import { type OpportunityLabel } from "../../../lib/metrics";
 import Link from "next/link";
@@ -31,7 +31,7 @@ type PresetView = "all" | "growing" | "declining" | "no_data" | "high_impression
 
 const growthStatusOptions: GrowthStatus[] = ["growing", "new_signal", "declining", "stable", "no_data"];
 const opportunityStatusOptions: OpportunityLabel[] = ["no_data", "ctr_opportunity", "ranking_opportunity", "winner", "low_visibility", "normal"];
-const rangeOptions = [["current_month", "Current month"], ["previous_month", "Previous month"], ["last_3_months", "Last 3 months"], ["all_time", "All time"], ["custom", "Custom"]] as const;
+const rangeOptions = [["current_month", "Current month"], ["previous_month", "Previous month"], ["last_3_months", "Last 3 months"], ["last_6_months", "Last 6 months"], ["all_time", "All time"], ["custom", "Custom"]] as const;
 const presetViews: { key: PresetView; label: string; sort?: SearchParams["sort"]; direction?: SearchParams["direction"] }[] = [
   { key: "all", label: "All URLs" },
   { key: "growing", label: "Growing URLs", sort: "click_growth_pct", direction: "desc" },
@@ -113,7 +113,7 @@ export default async function MemberDashboard({ searchParams }: { searchParams?:
       <RefreshDataButton range={rangeKey} startDate={params.startDate} endDate={params.endDate} returnTo="/dashboard" preserve={params} />
     </div>
     <WarningList warnings={[...getEnvErrors(), ...selectedRows.map((p) => p.warning)]} />
-    <div className="grid gap-6 xl:grid-cols-2">
+    <SectionGrid>
       <MetricSection title={`SEO Team Performance: ${selectedRangeLabel}`} description="Volume-only metrics for the selected filters." tone="quantity" metrics={[
         { label: "Active URLs", value: selectedRows.length },
         { label: "URLs this month", value: currentMonthSelectedRows.length },
@@ -130,26 +130,26 @@ export default async function MemberDashboard({ searchParams }: { searchParams?:
         { label: "CTR", value: fmtPct(summary.ctr), tone: "growth-neutral" },
         { label: "Avg Position", value: fmtPos(summary.position), tone: "growth-neutral" },
       ]} />
-    </div>
+    </SectionGrid>
     {memberInsightName && <p className="mt-4"><Link className="text-blue-700" href={`/member-insights/${encodeURIComponent(memberInsightName)}`}>Open 1m/3m/6m detail page</Link></p>}
 
-    <section className="mt-8 rounded-xl border bg-white p-4 shadow-sm">
+    <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between"><div><h3 className="text-xl font-semibold">URL performance</h3><p className="text-sm text-slate-500">One filtered table powered by dashboard_url_performance snapshots.</p></div><Link className="text-sm text-blue-700" href="/dashboard">Reset filters</Link></div>
-      <div className="mb-4 flex flex-wrap gap-2">{presetViews.map((preset) => <Link key={preset.key} className={`rounded-full border px-3 py-1 text-sm ${activePreset === preset.key ? "bg-blue-700 text-white" : "bg-white text-slate-700"}`} href={cleanParams(params, { view: preset.key, sort: preset.sort, direction: preset.direction })}>{preset.label}</Link>)}</div>
-      <form className="grid gap-3 md:grid-cols-4 lg:grid-cols-8">
-        <label className="text-sm text-slate-600">Project<select className="mt-1 w-full rounded border px-2 py-1" name="project" defaultValue={params.project || ""}><option value="">All projects</option>{projects.map((project) => <option key={project} value={project}>{project}</option>)}</select></label>
-        {session.user.isAdmin && <label className="text-sm text-slate-600">Member<select className="mt-1 w-full rounded border px-2 py-1" name="member" defaultValue={params.member || ""}><option value="">All members</option>{members.map((member) => <option key={member} value={member}>{member}</option>)}</select></label>}
-        <label className="text-sm text-slate-600">Growth Status<select className="mt-1 w-full rounded border px-2 py-1" name="growthStatus" defaultValue={params.growthStatus || ""}><option value="">Any</option>{growthStatusOptions.map((status) => <option key={status} value={status}>{status.replace(/_/g, " ")}</option>)}</select></label>
-        <label className="text-sm text-slate-600">Opportunity Status<select className="mt-1 w-full rounded border px-2 py-1" name="opportunityStatus" defaultValue={params.opportunityStatus || ""}><option value="">Any</option>{opportunityStatusOptions.map((status) => <option key={status} value={status}>{status.replace(/_/g, " ")}</option>)}</select></label>
-        <label className="text-sm text-slate-600">Date Range<select className="mt-1 w-full rounded border px-2 py-1" name="range" defaultValue={rangeKey}>{rangeOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-        <label className="text-sm text-slate-600">Search URL<input className="mt-1 w-full rounded border px-2 py-1" name="searchUrl" defaultValue={params.searchUrl || ""} placeholder="/blog/example" /></label>
-        <label className="text-sm text-slate-600">Min Impressions<input className="mt-1 w-full rounded border px-2 py-1" min="0" name="minImpressions" type="number" defaultValue={params.minImpressions || ""} /></label>
-        <label className="text-sm text-slate-600">Min Clicks<input className="mt-1 w-full rounded border px-2 py-1" min="0" name="minClicks" type="number" defaultValue={params.minClicks || ""} /></label>
+      <div className="mb-5 flex flex-wrap gap-2">{presetViews.map((preset) => <Link key={preset.key} className={`rounded-full border px-3 py-1 text-sm ${activePreset === preset.key ? "bg-blue-700 text-white" : "bg-white text-slate-700"}`} href={cleanParams(params, { view: preset.key, sort: preset.sort, direction: preset.direction })}>{preset.label}</Link>)}</div>
+      <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
+        <label className="text-sm text-slate-600">Project<select className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2" name="project" defaultValue={params.project || ""}><option value="">All projects</option>{projects.map((project) => <option key={project} value={project}>{project}</option>)}</select></label>
+        {session.user.isAdmin && <label className="text-sm text-slate-600">Member<select className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2" name="member" defaultValue={params.member || ""}><option value="">All members</option>{members.map((member) => <option key={member} value={member}>{member}</option>)}</select></label>}
+        <label className="text-sm text-slate-600">Growth Status<select className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2" name="growthStatus" defaultValue={params.growthStatus || ""}><option value="">Any</option>{growthStatusOptions.map((status) => <option key={status} value={status}>{status.replace(/_/g, " ")}</option>)}</select></label>
+        <label className="text-sm text-slate-600">Opportunity Status<select className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2" name="opportunityStatus" defaultValue={params.opportunityStatus || ""}><option value="">Any</option>{opportunityStatusOptions.map((status) => <option key={status} value={status}>{status.replace(/_/g, " ")}</option>)}</select></label>
+        <label className="text-sm text-slate-600">Date Range<select className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2" name="range" defaultValue={rangeKey}>{rangeOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+        <label className="text-sm text-slate-600">Search URL<input className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2" name="searchUrl" defaultValue={params.searchUrl || ""} placeholder="/blog/example" /></label>
+        <label className="text-sm text-slate-600">Min Impressions<input className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2" min="0" name="minImpressions" type="number" defaultValue={params.minImpressions || ""} /></label>
+        <label className="text-sm text-slate-600">Min Clicks<input className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2" min="0" name="minClicks" type="number" defaultValue={params.minClicks || ""} /></label>
         <input type="hidden" name="view" value={activePreset} />
         {params.sort && <input type="hidden" name="sort" value={params.sort} />}{params.direction && <input type="hidden" name="direction" value={params.direction} />}
-        <label className="text-sm text-slate-600">Custom start<input className="mt-1 w-full rounded border px-2 py-1" name="startDate" type="date" defaultValue={params.startDate} /></label>
-        <label className="text-sm text-slate-600">Custom end<input className="mt-1 w-full rounded border px-2 py-1" name="endDate" type="date" defaultValue={params.endDate} /></label>
-        <div className="flex items-end"><button className="rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white" type="submit">Apply filters</button></div>
+        <label className="text-sm text-slate-600">Custom start<input className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2" name="startDate" type="date" defaultValue={params.startDate} /></label>
+        <label className="text-sm text-slate-600">Custom end<input className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2" name="endDate" type="date" defaultValue={params.endDate} /></label>
+        <div className="flex items-end"><button className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white" type="submit">Apply filters</button></div>
       </form>
     </section>
 

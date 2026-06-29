@@ -2,5 +2,5 @@
 @tailwind components;
 @tailwind utilities;
 
-body { @apply bg-slate-50 text-slate-950; }
+body { @apply bg-slate-50 text-[15px] text-slate-950 antialiased; }
 a { @apply text-blue-700 hover:text-blue-900; }
