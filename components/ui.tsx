@@ -2,7 +2,10 @@ import Link from "next/link";
 import type { UrlMetrics, UrlPerformance } from "../lib/google";
 import { labelText, type OpportunityLabel } from "../lib/metrics";
 
-export type UrlSortKey = "clicks" | "impressions" | "ctr_asc" | "position_asc" | "position_desc" | "opportunity";
+export type UrlSortKey = "url" | "project" | "clicks" | "impressions" | "ctr" | "position" | "click_growth_pct" | "impression_growth_pct" | "growth_status" | "refreshed_at";
+export type UrlSortDirection = "asc" | "desc";
+type LegacyUrlSortKey = UrlSortKey | "ctr_asc" | "position_asc" | "position_desc" | "opportunity";
+type SortableUrlPerformance = UrlPerformance & { click_growth_pct?: number | null; impression_growth_pct?: number | null; status?: string; refreshed_at?: string | null };
 
 export function Shell({ children, email, isAdmin }: { children: React.ReactNode; email?: string | null; isAdmin?: boolean }) {
   return <main className="mx-auto max-w-7xl p-6"><div className="mb-8 flex flex-col gap-4 border-b pb-5 md:flex-row md:items-end md:justify-between"><div><h1 className="text-3xl font-bold">Member Performance Tracking</h1><p className="text-slate-600">Phase 2 SEO portfolio health, priorities, and Search Console trends.</p></div><div className="flex flex-wrap gap-3 text-sm"><Link href="/dashboard">Dashboard / My Performance</Link><Link href="/url-data-source">URL Data Source</Link>{isAdmin && <><Link href="/member-insights">Member Insights</Link><Link href="/admin">Admin</Link><Link className="text-slate-400" href="/admin/projects">Projects</Link></>}<span className="text-slate-500">{email}</span>{email && <a href="/api/auth/signout">Sign out</a>}</div></div>{children}</main>;
@@ -33,22 +36,41 @@ export function WarningList({ warnings }: { warnings: (string | undefined)[] }) 
 }
 
 const opportunityRank: Record<OpportunityLabel, number> = { no_data: 0, ctr_opportunity: 1, ranking_opportunity: 2, winner: 3, low_visibility: 4, normal: 5 };
+const growthStatusRank: Record<string, number> = { growing: 0, new_signal: 1, declining: 2, stable: 3, no_data: 4 };
 
-function sortedRows(rows: UrlPerformance[], sort: UrlSortKey) {
-  return [...rows].sort((a, b) => {
-    if (sort === "impressions") return b.impressions - a.impressions;
-    if (sort === "ctr_asc") return a.ctr - b.ctr;
-    if (sort === "position_asc") return (a.position || Number.MAX_SAFE_INTEGER) - (b.position || Number.MAX_SAFE_INTEGER);
-    if (sort === "position_desc") return b.position - a.position;
-    if (sort === "opportunity") return opportunityRank[a.opportunity] - opportunityRank[b.opportunity];
-    return b.clicks - a.clicks;
+function normalizeUrlSort(sort?: LegacyUrlSortKey, direction?: UrlSortDirection): { key: UrlSortKey; direction: UrlSortDirection } {
+  if (sort === "ctr_asc") return { key: "ctr", direction: "asc" };
+  if (sort === "position_asc") return { key: "position", direction: "asc" };
+  if (sort === "position_desc") return { key: "position", direction: "desc" };
+  if (sort === "opportunity") return { key: "growth_status", direction: direction || "asc" };
+  const key = sort || "clicks";
+  return { key, direction: direction || (key === "position" ? "asc" : "desc") };
+}
+function compareNullableNumber(a: number | null | undefined, b: number | null | undefined) { const am = a === null || a === undefined; const bm = b === null || b === undefined; if (am && bm) return 0; if (am) return 1; if (bm) return -1; return a - b; }
+function compareString(a: string | null | undefined, b: string | null | undefined) { return (a || "").localeCompare(b || "", undefined, { sensitivity: "base" }); }
+function compareDate(a: string | null | undefined, b: string | null | undefined) { const at = a ? new Date(a).getTime() : Number.NaN; const bt = b ? new Date(b).getTime() : Number.NaN; const am = Number.isNaN(at); const bm = Number.isNaN(bt); if (am && bm) return 0; if (am) return 1; if (bm) return -1; return at - bt; }
+function sortedRows(rows: UrlPerformance[], sort: LegacyUrlSortKey, direction?: UrlSortDirection) {
+  const normalized = normalizeUrlSort(sort, direction);
+  return [...rows].sort((a, b) => { const left = a as SortableUrlPerformance; const right = b as SortableUrlPerformance; let result = 0;
+    if (normalized.key === "url") result = compareString(left.url, right.url);
+    else if (normalized.key === "project") result = compareString(left.project, right.project);
+    else if (normalized.key === "clicks") result = left.clicks - right.clicks;
+    else if (normalized.key === "impressions") result = left.impressions - right.impressions;
+    else if (normalized.key === "ctr") result = left.ctr - right.ctr;
+    else if (normalized.key === "position") result = compareNullableNumber(left.position || null, right.position || null);
+    else if (normalized.key === "click_growth_pct") result = compareNullableNumber(left.click_growth_pct, right.click_growth_pct);
+    else if (normalized.key === "impression_growth_pct") result = compareNullableNumber(left.impression_growth_pct, right.impression_growth_pct);
+    else if (normalized.key === "growth_status") result = (growthStatusRank[left.status || left.opportunity] ?? opportunityRank[left.opportunity] ?? 99) - (growthStatusRank[right.status || right.opportunity] ?? opportunityRank[right.opportunity] ?? 99);
+    else if (normalized.key === "refreshed_at") result = compareDate(left.refreshed_at, right.refreshed_at);
+    return (normalized.direction === "asc" ? result : -result) || compareString(left.url, right.url);
   });
 }
-
-export function UrlTable({ rows, sort = "clicks", basePath = "", preserve = {} }: { rows: UrlPerformance[]; sort?: UrlSortKey; basePath?: string; preserve?: Record<string, string | undefined> }) {
-  const sorts: [UrlSortKey, string][] = [["clicks", "Clicks desc"], ["impressions", "Impressions desc"], ["ctr_asc", "CTR asc"], ["position_asc", "Position asc"], ["position_desc", "Position desc"], ["opportunity", "Opportunity"]];
-  const href = (key: UrlSortKey) => { const qs = new URLSearchParams(); Object.entries(preserve).forEach(([k, v]) => { if (v) qs.set(k, v); }); qs.set("sort", key); const query = qs.toString(); return `${basePath}${query ? `?${query}` : ""}`; };
-  return <div><div className="mb-3 flex flex-wrap items-center gap-2 text-sm"><span className="font-medium text-slate-600">Sort:</span>{sorts.map(([key, label]) => <Link className={`rounded-full border px-3 py-1 ${sort === key ? "bg-blue-700 text-white" : "bg-white"}`} href={href(key)} key={key}>{label}</Link>)}</div><div className="overflow-hidden rounded-xl border bg-white"><table className="w-full text-sm"><thead className="bg-slate-100 text-left"><tr><th className="p-3">URL</th><th>Project</th><th>Member</th><th>Clicks</th><th>Impr.</th><th>CTR</th><th>Pos.</th><th>Opportunity</th></tr></thead><tbody>{sortedRows(rows, sort).map((r) => <tr className="border-t" key={r.id}><td className="max-w-xl p-3 break-all"><Link className="text-blue-700" href={`/url/${r.id}`}>{r.url}</Link>{r.warning && <div className="text-xs text-amber-700">{r.warning}</div>}</td><td>{r.project}</td><td>{r.member_name}</td><td>{fmtNum(r.clicks)}</td><td>{fmtNum(r.impressions)}</td><td>{fmtPct(r.ctr)}</td><td>{fmtPos(r.position)}</td><td><span className="rounded-full bg-slate-100 px-2 py-1 text-xs">{labelText(r.opportunity)}</span></td></tr>)}{rows.length === 0 && <tr><td className="p-3 text-slate-500" colSpan={8}>No URLs found for this account.</td></tr>}</tbody></table></div></div>;
+function fmtDateTime(value?: string | null) { if (!value) return "—"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString(); }
+export function UrlTable({ rows, sort = "clicks", direction, basePath = "", preserve = {} }: { rows: UrlPerformance[]; sort?: LegacyUrlSortKey; direction?: UrlSortDirection; basePath?: string; preserve?: Record<string, string | undefined> }) {
+  const activeSort = normalizeUrlSort(sort, direction || (preserve.direction as UrlSortDirection | undefined));
+  const href = (key: UrlSortKey) => { const qs = new URLSearchParams(); Object.entries(preserve).forEach(([k, v]) => { if (v && k !== "sort" && k !== "direction") qs.set(k, v); }); qs.set("sort", key); qs.set("direction", activeSort.key === key && activeSort.direction === "asc" ? "desc" : "asc"); const query = qs.toString(); return `${basePath}${query ? `?${query}` : ""}`; };
+  const header = (key: UrlSortKey, label: string, className = "") => { const active = activeSort.key === key; const nextDirection = active && activeSort.direction === "asc" ? "descending" : "ascending"; return <th className={className || undefined}><Link aria-label={`Sort by ${label} ${nextDirection}`} aria-sort={active ? (activeSort.direction === "asc" ? "ascending" : "descending") : undefined} className={`inline-flex items-center gap-1 py-3 pr-3 font-semibold ${active ? "text-blue-700" : "text-slate-700 hover:text-blue-700"}`} href={href(key)}>{label}<span aria-hidden="true" className={active ? "text-blue-700" : "text-slate-400"}>{active ? (activeSort.direction === "asc" ? "↑" : "↓") : "↕"}</span></Link></th>; };
+  return <div><div className="overflow-auto rounded-xl border bg-white"><table className="w-full text-sm"><thead className="bg-slate-100 text-left"><tr>{header("url", "URL", "p-3")}{header("project", "Project")}<th>Member</th>{header("clicks", "Clicks")}{header("impressions", "Impr.")}{header("ctr", "CTR")}{header("position", "Pos.")}{header("click_growth_pct", "Click Growth")}{header("impression_growth_pct", "Impr. Growth")}{header("growth_status", "Status")}<th>Opportunity</th>{header("refreshed_at", "Refreshed")}</tr></thead><tbody>{sortedRows(rows, activeSort.key, activeSort.direction).map((row) => { const r = row as SortableUrlPerformance; return <tr className="border-t" key={r.id}><td className="max-w-xl p-3 break-all"><Link className="text-blue-700" href={`/url/${r.id}`}>{r.url}</Link>{r.warning && <div className="text-xs text-amber-700">{r.warning}</div>}</td><td>{r.project}</td><td>{r.member_name}</td><td>{fmtNum(r.clicks)}</td><td>{fmtNum(r.impressions)}</td><td>{fmtPct(r.ctr)}</td><td>{fmtPos(r.position)}</td><td>{r.click_growth_pct === undefined ? "—" : fmtGrowth(r.click_growth_pct)}</td><td>{r.impression_growth_pct === undefined ? "—" : fmtGrowth(r.impression_growth_pct)}</td><td>{r.status ? <StatusBadge status={r.status} /> : "—"}</td><td><span className="rounded-full bg-slate-100 px-2 py-1 text-xs">{labelText(r.opportunity)}</span></td><td>{fmtDateTime(r.refreshed_at)}</td></tr>; })}{rows.length === 0 && <tr><td className="p-3 text-slate-500" colSpan={12}>No URLs found for this account.</td></tr>}</tbody></table></div></div>;
 }
 
 export function fmtGrowth(n: number | null) { return n === null ? "New growth" : `${n >= 0 ? "+" : ""}${(n * 100).toFixed(1)}%`; }
