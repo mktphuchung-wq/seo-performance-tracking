@@ -8,7 +8,7 @@ export const REQUIRED_TABLES = [
   "sync_runs",
 ];
 
-export const REQUIRED_VIEWS = ["dashboard_url_performance", "dashboard_member_performance"];
+export const REQUIRED_VIEWS = ["dashboard_url_performance", "dashboard_member_performance", "member_performance_final_view", "member_performance_summary"];
 
 export const REQUIRED_COLUMNS: Record<string, string[]> = {
   content_urls: ["id", "url_hash", "project", "url", "member_name", "member_email", "gsc_property", "is_active", "source", "first_seen_at", "last_seen_at", "created_at", "updated_at"],
