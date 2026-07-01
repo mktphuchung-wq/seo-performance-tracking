@@ -6,7 +6,7 @@ import { getDateRange } from "../../lib/dates";
 import { aggregateCompared, type ComparedUrlPerformance } from "../../lib/growth";
 import { filterRowsForEmail } from "../../lib/google";
 import { getDbContentUrls, getDbPerformance, getMemberPerformanceFinalByMember } from "../../lib/postgres";
-import { fmtGrowth, fmtNum, fmtPct, fmtPos, DataTableContainer, MetricSection, RefreshDataButton, SectionGrid, Shell, StatusBadge, WarningList } from "../../components/ui";
+import { fmtGrowth, fmtNum, fmtPct, fmtPos, DataTableContainer, MetricSection, PerformanceKpiPanel, RefreshDataButton, SectionGrid, Shell, StatusBadge, WarningList } from "../../components/ui";
 import { getGrowthClassName } from "../../lib/format";
 
 const insightRanges = [
@@ -91,7 +91,7 @@ export default async function MemberInsights({ searchParams }: { searchParams?: 
 
     {!selectedMember ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-950">Choose a member to load insights. All members are intentionally hidden until a member is selected.</div> : <>
       <SectionGrid>
-        <MetricSection title="Final SEO Performance KPI" description="Weighted final KPI from current month (50%), last 3 months (30%), and last 6 months (20%)." metrics={[{ label: "Final KPI %", value: finalPerformance?.performance_final_pct == null ? "—" : `${finalPerformance.performance_final_pct.toFixed(2)}%` }, { label: "Status", value: finalPerformance?.performance_final_status?.replace(/_/g, " ") || "insufficient data" }, { label: "Coverage", value: finalPerformance ? fmtPct(finalPerformance.performance_final_coverage) : "—" }, { label: "Confidence", value: finalPerformance?.performance_confidence || "none" }, { label: "1M KPI", value: finalPerformance?.performance_kpi_1m_pct == null ? "—" : `${finalPerformance.performance_kpi_1m_pct.toFixed(2)}%` }, { label: "3M KPI", value: finalPerformance?.performance_kpi_3m_pct == null ? "—" : `${finalPerformance.performance_kpi_3m_pct.toFixed(2)}%` }, { label: "6M KPI", value: finalPerformance?.performance_kpi_6m_pct == null ? "—" : `${finalPerformance.performance_kpi_6m_pct.toFixed(2)}%` }, { label: "Refreshed", value: finalPerformance?.refreshed_at ? finalPerformance.refreshed_at.slice(0, 19) : "—" }]} />
+        <PerformanceKpiPanel finalPerformance={finalPerformance} memberName={selectedMember} />
         <MetricSection title="KPI overview" description={`Portfolio metrics for ${selectedMember}.`} metrics={[{ label: "Active URLs", value: memberRows.length }, { label: "URLs With Data", value: memberRows.length - summary.noData }, { label: "Current Clicks", value: fmtNum(summary.clicks) }, { label: "Previous Clicks", value: fmtNum(summary.previous_clicks) }, { label: "Current Impressions", value: fmtNum(summary.impressions) }, { label: "Previous Impressions", value: fmtNum(summary.previous_impressions) }, { label: "CTR", value: fmtPct(summary.ctr) }, { label: "Avg Position", value: fmtPos(summary.position) }]} />
         <MetricSection title="Trend summary" description="Growth and health signals for the selected range." tone="quality" metrics={[{ label: "Click Growth %", value: <span className={getGrowthClassName(summary.click_growth_pct)}>{fmtGrowth(summary.click_growth_pct)}</span> }, { label: "Impression Growth %", value: <span className={getGrowthClassName(summary.impression_growth_pct)}>{fmtGrowth(summary.impression_growth_pct)}</span> }, { label: "Growing URLs", value: summary.growing }, { label: "Declining URLs", value: summary.declining }, { label: "No Data URLs", value: summary.noData }]} />
       </SectionGrid>
@@ -99,7 +99,7 @@ export default async function MemberInsights({ searchParams }: { searchParams?: 
       <Section title="Top growing URLs" rows={topGrowing} />
       <Section title="Top declining URLs" rows={topDeclining} />
       <Section title="High impressions but low CTR URLs" description="URLs with at least 100 impressions and CTR below 1%." rows={highImpressionLowCtr} />
-      <Section title="No data URLs" rows={noData} />
+      <Section title="Not enough data to evaluate URLs" rows={noData} />
     </>}
   </Shell>;
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { UrlMetrics, UrlPerformance } from "../lib/google";
 import { labelText, type OpportunityLabel } from "../lib/metrics";
 import { formatNumber, formatPercent, formatSignedPercent, getGrowthClassName } from "../lib/format";
+import type { MemberPerformanceFinalSummary } from "../lib/postgres";
 
 export type UrlSortKey = "url" | "project" | "clicks" | "impressions" | "ctr" | "position" | "click_growth_pct" | "impression_growth_pct" | "growth_status" | "refreshed_at";
 export type UrlSortDirection = "asc" | "desc";
@@ -59,7 +60,7 @@ export function DateRangePicker({ range = "current_month", startDate, endDate, p
   return <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div className="mb-4 flex flex-wrap gap-2">{items.map(([key, label]) => <Link className={`rounded-full border px-3 py-1 text-sm ${range === key ? "bg-blue-700 text-white" : "bg-white"}`} href={href(key)} key={key}>{label}</Link>)}</div><form className="flex flex-wrap items-end gap-3">{Object.entries(preserve).filter(([k, v]) => v && k !== "range" && k !== "startDate" && k !== "endDate").map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}<input type="hidden" name="range" value="custom" /><label className="text-sm text-slate-600">Custom start<input className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2 sm:ml-2 sm:mt-0 sm:w-auto" name="startDate" type="date" defaultValue={startDate} /></label><label className="text-sm text-slate-600">End<input className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2 sm:ml-2 sm:mt-0 sm:w-auto" name="endDate" type="date" defaultValue={endDate} /></label><button className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white" type="submit">Apply custom range</button></form></div>;
 }
 
-export type MetricTone = "neutral" | "quantity" | "growth-positive" | "growth-negative" | "growth-neutral";
+export type MetricTone = "neutral" | "quantity" | "growth-positive" | "growth-negative" | "growth-neutral" | "kpi-excellent" | "kpi-good" | "kpi-monitor" | "kpi-support" | "kpi-risk" | "kpi-null";
 export type MetricItem = { label: string; value: React.ReactNode; tone?: MetricTone };
 
 const metricToneStyles: Record<MetricTone, { card: string; label: string; value: string }> = {
@@ -68,6 +69,12 @@ const metricToneStyles: Record<MetricTone, { card: string; label: string; value:
   "growth-positive": { card: "border-green-100 bg-green-50/70", label: "text-green-700", value: "text-green-800" },
   "growth-negative": { card: "border-red-100 bg-red-50/70", label: "text-red-700", value: "text-red-800" },
   "growth-neutral": { card: "border-slate-200 bg-slate-50/80", label: "text-slate-500", value: "text-slate-700" },
+  "kpi-excellent": { card: "border-green-200 bg-green-50", label: "text-green-700", value: "text-green-800" },
+  "kpi-good": { card: "border-blue-200 bg-blue-50", label: "text-blue-700", value: "text-blue-800" },
+  "kpi-monitor": { card: "border-yellow-200 bg-yellow-50", label: "text-yellow-700", value: "text-yellow-800" },
+  "kpi-support": { card: "border-orange-200 bg-orange-50", label: "text-orange-700", value: "text-orange-800" },
+  "kpi-risk": { card: "border-red-200 bg-red-50", label: "text-red-700", value: "text-red-800" },
+  "kpi-null": { card: "border-slate-200 bg-slate-100", label: "text-slate-500", value: "text-slate-600" },
 };
 
 export function MetricCard({ label, value, tone = "neutral" }: MetricItem) {
@@ -104,8 +111,8 @@ export function WarningList({ warnings }: { warnings: (string | undefined)[] }) 
   return <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><strong>Setup warnings:</strong><ul className="mt-2 list-disc pl-5">{unique.map((w) => <li key={w}>{w}</li>)}</ul></div>;
 }
 
-const opportunityRank: Record<OpportunityLabel, number> = { no_data: 0, ctr_opportunity: 1, ranking_opportunity: 2, winner: 3, low_visibility: 4, normal: 5 };
-const growthStatusRank: Record<string, number> = { growing: 0, new_signal: 1, declining: 2, stable: 3, no_data: 4 };
+const opportunityRank: Record<OpportunityLabel, number> = { no_data: 5, ctr_opportunity: 1, ranking_opportunity: 2, winner: 0, low_visibility: 4, normal: 3 };
+const growthStatusRank: Record<string, number> = { growing: 0, new_signal: 1, stable: 2, declining: 3, no_data: 4 };
 
 function normalizeUrlSort(sort?: LegacyUrlSortKey, direction?: UrlSortDirection): { key: UrlSortKey; direction: UrlSortDirection } {
   if (sort === "ctr_asc") return { key: "ctr", direction: "asc" };
@@ -143,10 +150,38 @@ export function UrlTable({ rows, sort = "clicks", direction, basePath = "", pres
 }
 
 export function fmtGrowth(n: number | null) { return n === null ? "—" : formatSignedPercent(n * 100); }
+export function kpiTone(value: number | null | undefined): MetricTone {
+  if (value === null || value === undefined) return "kpi-null";
+  if (value >= 85) return "kpi-excellent";
+  if (value >= 70) return "kpi-good";
+  if (value >= 50) return "kpi-monitor";
+  if (value >= 30) return "kpi-support";
+  return "kpi-risk";
+}
+
+export function fmtKpi(value: number | null | undefined) { return value == null ? "Insufficient data" : `${value.toFixed(0)}%`; }
+function statusLabel(status?: string | null) { return (status || "insufficient_data").replace(/_/g, " "); }
+function rangeMetric(finalPerformance: MemberPerformanceFinalSummary | null | undefined, key: "1m" | "3m" | "6m", weight: string) {
+  const value = finalPerformance?.[`performance_kpi_${key}_pct` as keyof MemberPerformanceFinalSummary] as number | null | undefined;
+  const eligible = finalPerformance?.[`eligible_url_count_${key}` as keyof MemberPerformanceFinalSummary] as number | null | undefined;
+  const excluded = finalPerformance?.[`excluded_no_data_url_count_${key}` as keyof MemberPerformanceFinalSummary] as number | null | undefined;
+  return { label: `${key.toUpperCase()} KPI`, value: <div><div>{fmtKpi(value)}</div><div className="mt-2 text-sm font-normal text-slate-600">Weight {weight} · eligible URLs {eligible ?? 0} · excluded no-data URLs {excluded ?? 0}</div>{value == null && <div className="mt-2 text-xs font-medium text-slate-500">Excluded from final KPI and weights are normalized.</div>}</div>, tone: kpiTone(value) };
+}
+
+export function PerformanceKpiPanel({ finalPerformance, memberName, helper }: { finalPerformance?: MemberPerformanceFinalSummary | null; memberName?: string; helper?: string }) {
+  const value = finalPerformance?.performance_final_pct;
+  return <section className={`rounded-2xl border p-5 shadow-sm sm:p-6 ${metricToneStyles[kpiTone(value)].card}`}>
+    <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Performance Final %</p><h3 className={`mt-1 text-4xl font-bold ${metricToneStyles[kpiTone(value)].value}`}>{fmtKpi(value)}</h3>{memberName && <p className="mt-1 text-sm text-slate-600">{memberName}</p>}</div><div className="grid gap-2 text-sm sm:grid-cols-3 lg:min-w-[520px]"><div className="rounded-xl bg-white/70 p-3"><span className="block text-xs uppercase text-slate-500">Status</span><strong>{statusLabel(finalPerformance?.performance_final_status)}</strong></div><div className="rounded-xl bg-white/70 p-3"><span className="block text-xs uppercase text-slate-500">Confidence</span><strong>{finalPerformance?.performance_confidence || "Low sample"}</strong></div><div className="rounded-xl bg-white/70 p-3"><span className="block text-xs uppercase text-slate-500">Coverage</span><strong>{finalPerformance ? fmtPct(finalPerformance.performance_final_coverage) : "—"}</strong></div></div></div>
+    <p className="rounded-xl border border-white/70 bg-white/70 p-3 text-sm text-slate-700"><strong>Formula:</strong> Final KPI = 1M × 50% + 3M × 30% + 6M × 20%. Missing or insufficient ranges are excluded from the final KPI and available weights are normalized.</p>
+    {helper && <p className="mt-3 text-sm text-slate-700">{helper}</p>}
+    <div className="mt-4 grid gap-4 md:grid-cols-3"><MetricCard {...rangeMetric(finalPerformance, "1m", "50%")} /><MetricCard {...rangeMetric(finalPerformance, "3m", "30%")} /><MetricCard {...rangeMetric(finalPerformance, "6m", "20%")} /></div>
+  </section>;
+}
+
 export function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string,string> = { growing: "bg-green-100 text-green-800", new_signal: "bg-emerald-100 text-emerald-800", declining: "bg-red-100 text-red-800", stable: "bg-slate-100 text-slate-700", no_data: "bg-amber-100 text-amber-800" };
+  const styles: Record<string,string> = { growing: "bg-green-100 text-green-800", new_signal: "bg-emerald-100 text-emerald-800", declining: "bg-red-100 text-red-800", stable: "bg-slate-100 text-slate-700", no_data: "bg-slate-100 text-slate-700" };
   const arrow = status === "growing" || status === "new_signal" ? "↗" : status === "declining" ? "↘" : "→";
-  const label = status === "new_signal" ? "New growth" : status.replace(/_/g, " ");
+  const label = status === "new_signal" ? "New growth" : status === "no_data" ? "Not enough data to evaluate" : status.replace(/_/g, " ");
   return <span className={`rounded-full px-2 py-1 text-xs font-medium ${styles[status] ?? styles.stable}`}>{arrow} {label}</span>;
 }
 export function RefreshDataButton({ range, startDate, endDate, returnTo, preserve = {} }: { range?: string; startDate?: string; endDate?: string; returnTo?: string; preserve?: Record<string, string | undefined> }) {

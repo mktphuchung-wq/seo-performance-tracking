@@ -6,7 +6,7 @@ import { getEnvErrors } from "../../../lib/env";
 import { filterRowsForEmail } from "../../../lib/google";
 import { getDbPerformance, getAllMemberPerformanceFinal, getMemberPerformanceFinalByMember } from "../../../lib/postgres";
 import { aggregateCompared, type GrowthStatus } from "../../../lib/growth";
-import { fmtGrowth, fmtNum, fmtPct, fmtPos, MetricSection, RefreshDataButton, SectionGrid, Shell, UrlTable, WarningList, type MetricTone } from "../../../components/ui";
+import { fmtGrowth, fmtNum, fmtPct, fmtPos, MetricSection, PerformanceKpiPanel, RefreshDataButton, SectionGrid, Shell, UrlTable, WarningList, type MetricTone } from "../../../components/ui";
 import { formatSignedNumber } from "../../../lib/format";
 import { type OpportunityLabel } from "../../../lib/metrics";
 import Link from "next/link";
@@ -36,7 +36,7 @@ const presetViews: { key: PresetView; label: string; sort?: SearchParams["sort"]
   { key: "all", label: "All URLs" },
   { key: "growing", label: "Growing URLs", sort: "click_growth_pct", direction: "desc" },
   { key: "declining", label: "Declining URLs", sort: "click_growth_pct", direction: "asc" },
-  { key: "no_data", label: "No Data URLs", sort: "impressions", direction: "asc" },
+  { key: "no_data", label: "Not Enough Data URLs", sort: "impressions", direction: "asc" },
   { key: "high_impressions_low_ctr", label: "High Impressions, Low CTR", sort: "impressions", direction: "desc" },
   { key: "top_click_growth", label: "Top Click Growth", sort: "click_growth_pct", direction: "desc" },
   { key: "top_impression_growth", label: "Top Impression Growth", sort: "impression_growth_pct", direction: "desc" },
@@ -127,16 +127,7 @@ export default async function MemberDashboard({ searchParams }: { searchParams?:
         { label: "Previous Impressions", value: fmtNum(summary.previous_impressions) },
         { label: "Impression Delta", value: formatSignedNumber(summary.impression_delta), tone: growthMetricTone(summary.impression_delta) },
       ]} />
-      <MetricSection title="Final SEO Performance KPI" description="Weighted KPI from 1M, 3M, and 6M member cache ranges." tone="quality" metrics={[
-        { label: "Final KPI %", value: selectedFinalPerformance?.performance_final_pct == null ? "—" : `${selectedFinalPerformance.performance_final_pct.toFixed(2)}%` },
-        { label: "Final Status", value: selectedFinalPerformance?.performance_final_status?.replace(/_/g, " ") || "insufficient data" },
-        { label: "Coverage", value: selectedFinalPerformance ? fmtPct(selectedFinalPerformance.performance_final_coverage) : "—" },
-        { label: "Confidence", value: selectedFinalPerformance?.performance_confidence || "none" },
-        { label: "1M KPI", value: selectedFinalPerformance?.performance_kpi_1m_pct == null ? "—" : `${selectedFinalPerformance.performance_kpi_1m_pct.toFixed(2)}%` },
-        { label: "3M KPI", value: selectedFinalPerformance?.performance_kpi_3m_pct == null ? "—" : `${selectedFinalPerformance.performance_kpi_3m_pct.toFixed(2)}%` },
-        { label: "6M KPI", value: selectedFinalPerformance?.performance_kpi_6m_pct == null ? "—" : `${selectedFinalPerformance.performance_kpi_6m_pct.toFixed(2)}%` },
-        { label: "Refreshed", value: selectedFinalPerformance?.refreshed_at ? selectedFinalPerformance.refreshed_at.slice(0, 19) : "—" },
-      ]} />
+      <PerformanceKpiPanel finalPerformance={selectedFinalPerformance} memberName={selectedFinalPerformance?.member_name} helper="No-data URLs are excluded from KPI until they have enough data to evaluate. New growth is counted as positive." />
       <MetricSection title="SEO Performance Growth" description="Growth and efficiency metrics for the selected URLs." tone="quality" metrics={[
         { label: "Click Growth %", value: fmtGrowth(summary.click_growth_pct), tone: growthMetricTone(summary.click_growth_pct) },
         { label: "Impression Growth %", value: fmtGrowth(summary.impression_growth_pct), tone: growthMetricTone(summary.impression_growth_pct) },
@@ -144,7 +135,7 @@ export default async function MemberDashboard({ searchParams }: { searchParams?:
         { label: "Avg Position", value: fmtPos(summary.position), tone: "growth-neutral" },
       ]} />
     </SectionGrid>
-    {memberInsightName && <p className="mt-4"><Link className="text-blue-700" href={`/member-insights/${encodeURIComponent(memberInsightName)}`}>Open 1m/3m/6m detail page</Link></p>}
+    {memberInsightName && <p className="mt-4"><Link className="text-blue-700" href={`/member-insights?member=${encodeURIComponent(memberInsightName)}`}>Open 1m/3m/6m detail page</Link></p>}
 
     <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between"><div><h3 className="text-xl font-semibold">URL performance</h3><p className="text-sm text-slate-500">One filtered table powered by dashboard_url_performance snapshots.</p></div><Link className="text-sm text-blue-700" href="/dashboard">Reset filters</Link></div>

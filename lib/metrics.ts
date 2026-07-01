@@ -12,5 +12,6 @@ export function classifyOpportunity(metrics: UrlMetrics): OpportunityLabel {
 }
 
 export function labelText(label: OpportunityLabel) {
+  if (label === "no_data") return "Not enough data to evaluate";
   return label.replace(/_/g, " ");
 }
