@@ -4,7 +4,7 @@ import { authOptions } from "../../../lib/auth";
 import { getDashboardMetricPeriods, getDateRange, normalizeDateRangeKey } from "../../../lib/dates";
 import { getEnvErrors } from "../../../lib/env";
 import { filterRowsForEmail } from "../../../lib/google";
-import { getDbPerformance } from "../../../lib/postgres";
+import { getDbPerformance, getAllMemberPerformanceFinal, getMemberPerformanceFinalByMember } from "../../../lib/postgres";
 import { aggregateCompared, type GrowthStatus } from "../../../lib/growth";
 import { fmtGrowth, fmtNum, fmtPct, fmtPos, MetricSection, RefreshDataButton, SectionGrid, Shell, UrlTable, WarningList, type MetricTone } from "../../../components/ui";
 import { formatSignedNumber } from "../../../lib/format";
@@ -92,9 +92,10 @@ export default async function MemberDashboard({ searchParams }: { searchParams?:
   const rangeKey = normalizeDateRangeKey(params.range);
   const range = getDateRange({ range: rangeKey, startDate: params.startDate, endDate: params.endDate });
   const metricPeriods = getDashboardMetricPeriods();
-  const [dbRows, currentMonthRows] = await Promise.all([
+  const [dbRows, currentMonthRows, finalPerformanceData] = await Promise.all([
     getDbPerformance(rangeKey, range),
     getDbPerformance("current_month", metricPeriods.current_month),
+    session.user.isAdmin ? getAllMemberPerformanceFinal().catch(() => []) : getMemberPerformanceFinalByMember(session.user.email).catch(() => null),
   ]);
   const visibleRows = session.user.isAdmin ? dbRows : filterRowsForEmail(dbRows, session.user.email, false);
   const selectedRows = filterPerformance(visibleRows, params);
@@ -106,6 +107,8 @@ export default async function MemberDashboard({ searchParams }: { searchParams?:
   const activePreset = params.view || "all";
   const memberInsightName = session.user.isAdmin ? params.member || selectedRows[0]?.member_name || "" : selectedRows[0]?.member_name || "";
   const selectedRangeLabel = range.label;
+  const finalPerformanceList = Array.isArray(finalPerformanceData) ? finalPerformanceData : (finalPerformanceData ? [finalPerformanceData] : []);
+  const selectedFinalPerformance = finalPerformanceList.find((row) => !params.member || row.member_name === params.member) ?? finalPerformanceList[0] ?? null;
 
   return <Shell email={session.user.email} isAdmin={session.user.isAdmin}>
     <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -123,6 +126,16 @@ export default async function MemberDashboard({ searchParams }: { searchParams?:
         { label: "Current Impressions", value: fmtNum(summary.impressions) },
         { label: "Previous Impressions", value: fmtNum(summary.previous_impressions) },
         { label: "Impression Delta", value: formatSignedNumber(summary.impression_delta), tone: growthMetricTone(summary.impression_delta) },
+      ]} />
+      <MetricSection title="Final SEO Performance KPI" description="Weighted KPI from 1M, 3M, and 6M member cache ranges." tone="quality" metrics={[
+        { label: "Final KPI %", value: selectedFinalPerformance?.performance_final_pct == null ? "—" : `${selectedFinalPerformance.performance_final_pct.toFixed(2)}%` },
+        { label: "Final Status", value: selectedFinalPerformance?.performance_final_status?.replace(/_/g, " ") || "insufficient data" },
+        { label: "Coverage", value: selectedFinalPerformance ? fmtPct(selectedFinalPerformance.performance_final_coverage) : "—" },
+        { label: "Confidence", value: selectedFinalPerformance?.performance_confidence || "none" },
+        { label: "1M KPI", value: selectedFinalPerformance?.performance_kpi_1m_pct == null ? "—" : `${selectedFinalPerformance.performance_kpi_1m_pct.toFixed(2)}%` },
+        { label: "3M KPI", value: selectedFinalPerformance?.performance_kpi_3m_pct == null ? "—" : `${selectedFinalPerformance.performance_kpi_3m_pct.toFixed(2)}%` },
+        { label: "6M KPI", value: selectedFinalPerformance?.performance_kpi_6m_pct == null ? "—" : `${selectedFinalPerformance.performance_kpi_6m_pct.toFixed(2)}%` },
+        { label: "Refreshed", value: selectedFinalPerformance?.refreshed_at ? selectedFinalPerformance.refreshed_at.slice(0, 19) : "—" },
       ]} />
       <MetricSection title="SEO Performance Growth" description="Growth and efficiency metrics for the selected URLs." tone="quality" metrics={[
         { label: "Click Growth %", value: fmtGrowth(summary.click_growth_pct), tone: growthMetricTone(summary.click_growth_pct) },

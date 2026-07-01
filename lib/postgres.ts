@@ -36,6 +36,60 @@ export async function getDbPerformance(rangeKey: string, range: DateRange): Prom
   });
 }
 
+export type MemberPerformanceFinalSummary = {
+  member_name: string;
+  member_email: string | null;
+  performance_kpi_1m_pct: number | null;
+  performance_kpi_3m_pct: number | null;
+  performance_kpi_6m_pct: number | null;
+  performance_final_pct: number | null;
+  performance_final_status: "complete" | "partial" | "insufficient_data" | "pending_refresh";
+  performance_final_coverage: number;
+  performance_confidence: string;
+  eligible_url_count_1m: number | null;
+  eligible_url_count_3m: number | null;
+  eligible_url_count_6m: number | null;
+  excluded_no_data_url_count_1m: number | null;
+  excluded_no_data_url_count_3m: number | null;
+  excluded_no_data_url_count_6m: number | null;
+  refreshed_at: string | null;
+};
+
+const nullableNum = (v: unknown) => v === null || v === undefined ? null : (Number.isFinite(Number(v)) ? Number(v) : null);
+
+function mapMemberPerformanceFinal(row: any): MemberPerformanceFinalSummary {
+  return {
+    member_name: row.member_name ?? "",
+    member_email: row.member_email ? String(row.member_email).toLowerCase() : null,
+    performance_kpi_1m_pct: nullableNum(row.performance_kpi_1m_pct),
+    performance_kpi_3m_pct: nullableNum(row.performance_kpi_3m_pct),
+    performance_kpi_6m_pct: nullableNum(row.performance_kpi_6m_pct),
+    performance_final_pct: nullableNum(row.performance_final_pct),
+    performance_final_status: row.performance_final_status || "insufficient_data",
+    performance_final_coverage: num(row.performance_final_coverage),
+    performance_confidence: row.performance_confidence || "none",
+    eligible_url_count_1m: nullableNum(row.eligible_url_count_1m),
+    eligible_url_count_3m: nullableNum(row.eligible_url_count_3m),
+    eligible_url_count_6m: nullableNum(row.eligible_url_count_6m),
+    excluded_no_data_url_count_1m: nullableNum(row.excluded_no_data_url_count_1m),
+    excluded_no_data_url_count_3m: nullableNum(row.excluded_no_data_url_count_3m),
+    excluded_no_data_url_count_6m: nullableNum(row.excluded_no_data_url_count_6m),
+    refreshed_at: row.refreshed_at ? String(row.refreshed_at) : null,
+  };
+}
+
+export async function getMemberPerformanceFinalByMember(memberNameOrEmail: string): Promise<MemberPerformanceFinalSummary | null> {
+  const key = memberNameOrEmail.trim().toLowerCase();
+  if (!key) return null;
+  const res = await query<any>(`select * from member_performance_final_view where lower(member_name) = $1 or lower(coalesce(member_email, '')) = $1 limit 1`, [key]);
+  return res.rows[0] ? mapMemberPerformanceFinal(res.rows[0]) : null;
+}
+
+export async function getAllMemberPerformanceFinal(): Promise<MemberPerformanceFinalSummary[]> {
+  const res = await query<any>(`select * from member_performance_final_view order by member_name`);
+  return res.rows.map(mapMemberPerformanceFinal);
+}
+
 export async function getUrlDetailFromDb(id: string, rangeKey: string, range: DateRange) {
   const rows = await getDbPerformance(rangeKey, range);
   const overview = rows.find(r => r.id === id || r.url === id);
@@ -52,7 +106,7 @@ export type AdminDiagnostic = {
   latestRefreshRun: any | null;
 };
 
-export type AdminMemberRow = ReturnType<typeof scoreMembers>[number] & { snapshotStatus: string; snapshotUpdatedAt?: string | null };
+export type AdminMemberRow = ReturnType<typeof scoreMembers>[number] & { snapshotStatus: string; snapshotUpdatedAt?: string | null; finalPerformance?: MemberPerformanceFinalSummary | null };
 
 export async function getAdminDiagnostics(): Promise<AdminDiagnostic> {
   const [counts, projects, syncRuns, refreshJobs] = await Promise.all([
@@ -77,14 +131,19 @@ export async function getAdminDiagnostics(): Promise<AdminDiagnostic> {
 
 export async function getAdminMemberRows(rangeKey: string, range: DateRange, performanceRows: ComparedUrlPerformance[]): Promise<AdminMemberRow[]> {
   const scored = scoreMembers(performanceRows);
-  const snapshotRows = await query<any>(`select member_name, max(updated_at) updated_at
-    from seo_performance_cache
-    where range_key=$1
-    group by member_name`, [rangeKey]).catch(() => ({ rows: [] }));
+  const [snapshotRows, finalRows] = await Promise.all([
+    query<any>(`select member_name, max(updated_at) updated_at
+      from seo_performance_cache
+      where range_key=$1
+      group by member_name`, [rangeKey]).catch(() => ({ rows: [] })),
+    getAllMemberPerformanceFinal().catch(() => []),
+  ]);
   const snapshotMap = new Map(snapshotRows.rows.map((row: any) => [String(row.member_name), row.updated_at ? String(row.updated_at) : null]));
+  const finalMap = new Map(finalRows.map((row) => [row.member_name, row]));
   return scored.map((member) => ({
     ...member,
     snapshotStatus: snapshotMap.has(member.member_name) ? "Refreshed" : "Not refreshed yet",
     snapshotUpdatedAt: snapshotMap.get(member.member_name) ?? null,
+    finalPerformance: finalMap.get(member.member_name) ?? null,
   }));
 }
