@@ -55,6 +55,13 @@ const nullableNum = (v: unknown) => v === null || v === undefined || v === "" ? 
 const bool = (v: unknown) => v === true || v === "true" || v === "on" || v === "1";
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
 
+export const PROJECT_KPI_SETTINGS_MISSING_MESSAGE = "Project KPI Settings table is missing. Run migrations/20260707_project_kpi_settings.sql in Neon.";
+
+export function isProjectKpiSettingsMissingError(error: unknown) {
+  const err = error as { code?: string; message?: string };
+  return err?.code === "42P01" || /relation ["']?(public\.)?project_kpi_settings["']? does not exist/i.test(err?.message || "");
+}
+
 function mapSettings(row: any): ProjectKpiSettings {
   return { ...defaultProjectKpiSettings(row.project), ...row,
     performance_floor_pct: nullableNum(row.performance_floor_pct), performance_cap_pct: nullableNum(row.performance_cap_pct),
@@ -67,13 +74,13 @@ function mapSettings(row: any): ProjectKpiSettings {
 
 export async function getProjectKpiSettings(): Promise<ProjectKpiSettings[]> {
   const res = await query<any>(`with projects as (select project, count(*)::int active_urls from content_urls where coalesce(is_active,true)=true and nullif(project,'') is not null group by project)
-    select p.project, p.active_urls, s.* from projects p left join project_kpi_settings s on s.project=p.project order by p.project`);
+    select p.project, p.active_urls, s.* from projects p left join public.project_kpi_settings s on s.project=p.project order by p.project`);
   return res.rows.map((r) => mapSettings({ ...r, ...Object.fromEntries(Object.entries(defaultProjectKpiSettings(r.project)).filter(([k]) => r[k] === undefined || r[k] === null)) }));
 }
 
 export async function upsertProjectKpiSettings(input: Partial<ProjectKpiSettings> & { project: string }) {
   const s = { ...defaultProjectKpiSettings(input.project), ...input };
-  const res = await query<any>(`insert into project_kpi_settings (project, project_kpi_type, project_start_date, is_kpi_protection_enabled, performance_floor_pct, performance_cap_pct, min_coverage_required, min_eligible_urls, max_excluded_no_data_rate, allow_auto_floor_when_low_confidence, allow_auto_floor_when_partial_coverage, allow_auto_floor_when_high_no_data, require_pm_review_below_pct, pm_override_enabled, pm_override_adjusted_pct, pm_override_reason, notes)
+  const res = await query<any>(`insert into public.project_kpi_settings (project, project_kpi_type, project_start_date, is_kpi_protection_enabled, performance_floor_pct, performance_cap_pct, min_coverage_required, min_eligible_urls, max_excluded_no_data_rate, allow_auto_floor_when_low_confidence, allow_auto_floor_when_partial_coverage, allow_auto_floor_when_high_no_data, require_pm_review_below_pct, pm_override_enabled, pm_override_adjusted_pct, pm_override_reason, notes)
     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
     on conflict (project) do update set project_kpi_type=excluded.project_kpi_type, project_start_date=excluded.project_start_date, is_kpi_protection_enabled=excluded.is_kpi_protection_enabled, performance_floor_pct=excluded.performance_floor_pct, performance_cap_pct=excluded.performance_cap_pct, min_coverage_required=excluded.min_coverage_required, min_eligible_urls=excluded.min_eligible_urls, max_excluded_no_data_rate=excluded.max_excluded_no_data_rate, allow_auto_floor_when_low_confidence=excluded.allow_auto_floor_when_low_confidence, allow_auto_floor_when_partial_coverage=excluded.allow_auto_floor_when_partial_coverage, allow_auto_floor_when_high_no_data=excluded.allow_auto_floor_when_high_no_data, require_pm_review_below_pct=excluded.require_pm_review_below_pct, pm_override_enabled=excluded.pm_override_enabled, pm_override_adjusted_pct=excluded.pm_override_adjusted_pct, pm_override_reason=excluded.pm_override_reason, notes=excluded.notes returning *`,
     [s.project, s.project_kpi_type, s.project_start_date || null, bool(s.is_kpi_protection_enabled), s.performance_floor_pct, s.performance_cap_pct, Number(s.min_coverage_required), Number(s.min_eligible_urls), Number(s.max_excluded_no_data_rate), bool(s.allow_auto_floor_when_low_confidence), bool(s.allow_auto_floor_when_partial_coverage), bool(s.allow_auto_floor_when_high_no_data), Number(s.require_pm_review_below_pct), bool(s.pm_override_enabled), s.pm_override_adjusted_pct, s.pm_override_reason || null, s.notes || null]);

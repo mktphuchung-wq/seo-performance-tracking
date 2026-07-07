@@ -6,6 +6,7 @@ export const REQUIRED_TABLES = [
   "member_performance_cache",
   "refresh_runs",
   "sync_runs",
+  "project_kpi_settings",
 ];
 
 export const REQUIRED_VIEWS = ["dashboard_url_performance", "dashboard_member_performance", "member_performance_final_view", "member_performance_summary"];
@@ -16,6 +17,7 @@ export const REQUIRED_COLUMNS: Record<string, string[]> = {
   member_performance_cache: ["id", "cache_key", "member_name", "member_email", "range_key", "start_date", "end_date", "previous_start_date", "previous_end_date", "url_count", "urls_with_data", "growing_urls", "stable_urls", "declining_urls", "no_data_urls", "clicks", "impressions", "ctr", "position", "previous_clicks", "previous_impressions", "click_delta", "click_growth_pct", "impression_delta", "impression_growth_pct", "quantity_index", "quality_index", "performance_kpi_pct", "impression_performance_score", "click_performance_score", "growth_coverage_score", "portfolio_health_score", "eligible_url_count", "excluded_no_data_url_count", "positive_url_count", "new_growth_url_count", "declining_url_count", "performance_kpi_status", "performance_confidence", "support_signal", "main_strength", "main_risk", "suggested_support", "refreshed_at", "created_at", "updated_at"],
   refresh_runs: ["id", "status", "triggered_by", "range_key", "start_date", "end_date", "previous_start_date", "previous_end_date", "total_urls", "processed_urls", "urls_with_data", "no_data_urls", "failed_urls", "error_message", "started_at", "finished_at", "created_at", "updated_at"],
   sync_runs: ["id", "source", "status", "total_rows", "inserted_rows", "updated_rows", "deactivated_rows", "failed_rows", "triggered_by", "error_message", "started_at", "finished_at", "created_at", "updated_at"],
+  project_kpi_settings: ["id", "project", "project_kpi_type", "project_start_date", "is_kpi_protection_enabled", "performance_floor_pct", "performance_cap_pct", "min_coverage_required", "min_eligible_urls", "max_excluded_no_data_rate", "allow_auto_floor_when_low_confidence", "allow_auto_floor_when_partial_coverage", "allow_auto_floor_when_high_no_data", "require_pm_review_below_pct", "pm_override_enabled", "pm_override_adjusted_pct", "pm_override_reason", "notes", "created_at", "updated_at"],
 };
 
 export type DbSchemaHealth = { ok: boolean; missingTables: string[]; missingViews: string[]; missingColumns: string[]; missing: string[] };
