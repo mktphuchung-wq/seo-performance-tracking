@@ -112,15 +112,52 @@ export async function getProjectKpiSettingsDiagnosticMessage(error?: unknown) {
 }
 
 function mapSettings(row: any): ProjectKpiSettings {
-  return { ...defaultProjectKpiSettings(row.project), ...row,
-    performance_floor_pct: nullableNum(row.performance_floor_pct), performance_cap_pct: nullableNum(row.performance_cap_pct),
-    min_coverage_required: Number(row.min_coverage_required ?? 0.8), min_eligible_urls: Number(row.min_eligible_urls ?? 5),
-    max_excluded_no_data_rate: Number(row.max_excluded_no_data_rate ?? 0.5), require_pm_review_below_pct: Number(row.require_pm_review_below_pct ?? 40),
-    pm_override_adjusted_pct: nullableNum(row.pm_override_adjusted_pct), active_urls: Number(row.active_urls ?? 0),
+  const project = String(row.project || "").trim();
+
+  return {
+    ...defaultProjectKpiSettings(project),
+    ...row,
+
+    project,
+    project_kpi_type: row.project_kpi_type || "growth_project",
+    is_kpi_protection_enabled: row.is_kpi_protection_enabled ?? true,
+
+    performance_floor_pct: nullableNum(row.performance_floor_pct),
+    performance_cap_pct: nullableNum(row.performance_cap_pct),
+
+    min_coverage_required: Number(row.min_coverage_required ?? 0.8),
+    min_eligible_urls: Number(row.min_eligible_urls ?? 5),
+    max_excluded_no_data_rate: Number(row.max_excluded_no_data_rate ?? 0.5),
+
+    allow_auto_floor_when_low_confidence: row.allow_auto_floor_when_low_confidence ?? true,
+    allow_auto_floor_when_partial_coverage: row.allow_auto_floor_when_partial_coverage ?? true,
+    allow_auto_floor_when_high_no_data: row.allow_auto_floor_when_high_no_data ?? true,
+
+    require_pm_review_below_pct: Number(row.require_pm_review_below_pct ?? 40),
+
+    pm_override_enabled: row.pm_override_enabled ?? false,
+    pm_override_adjusted_pct: nullableNum(row.pm_override_adjusted_pct),
+
+    performance_weight_1m_pct: Number(row.performance_weight_1m_pct ?? 30),
+    performance_weight_3m_pct: Number(row.performance_weight_3m_pct ?? 40),
+    performance_weight_6m_pct: Number(row.performance_weight_6m_pct ?? 20),
+    performance_weight_all_time_pct: Number(row.performance_weight_all_time_pct ?? 10),
+
+    normalize_missing_ranges: row.normalize_missing_ranges ?? true,
+    enable_long_term_trend_protection: row.enable_long_term_trend_protection ?? true,
+
+    trend_protection_floor_pct: Number(row.trend_protection_floor_pct ?? 70),
+    trend_protection_required_3m_pct: Number(row.trend_protection_required_3m_pct ?? 70),
+    trend_protection_required_all_time_pct: Number(row.trend_protection_required_all_time_pct ?? 70),
+
+    not_enough_data_policy: row.not_enough_data_policy || "neutral_score",
+    neutral_no_data_score_pct: Number(row.neutral_no_data_score_pct ?? 70),
+    min_url_age_days_for_penalty: Number(row.min_url_age_days_for_penalty ?? 90),
+    max_no_data_penalty_pct: Number(row.max_no_data_penalty_pct ?? 10),
+    no_data_rate_pm_review_pct: Number(row.no_data_rate_pm_review_pct ?? 50),
+
+    active_urls: Number(row.active_urls ?? 0),
     project_start_date: row.project_start_date ? String(row.project_start_date).slice(0, 10) : null,
-    performance_weight_1m_pct: Number(row.performance_weight_1m_pct ?? 30), performance_weight_3m_pct: Number(row.performance_weight_3m_pct ?? 40), performance_weight_6m_pct: Number(row.performance_weight_6m_pct ?? 20), performance_weight_all_time_pct: Number(row.performance_weight_all_time_pct ?? 10),
-    trend_protection_floor_pct: Number(row.trend_protection_floor_pct ?? 70), trend_protection_required_3m_pct: Number(row.trend_protection_required_3m_pct ?? 70), trend_protection_required_all_time_pct: Number(row.trend_protection_required_all_time_pct ?? 70),
-    neutral_no_data_score_pct: Number(row.neutral_no_data_score_pct ?? 70), min_url_age_days_for_penalty: Number(row.min_url_age_days_for_penalty ?? 90), max_no_data_penalty_pct: Number(row.max_no_data_penalty_pct ?? 10), no_data_rate_pm_review_pct: Number(row.no_data_rate_pm_review_pct ?? 50),
   };
 }
 
