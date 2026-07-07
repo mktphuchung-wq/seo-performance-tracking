@@ -11,7 +11,7 @@ export async function PATCH(request: Request, { params }: { params: { project: s
     const input = (request.headers.get("content-type") || "").includes("application/json") ? await request.json() : parseProjectKpiForm(await request.formData(), decodeURIComponent(params.project));
     return NextResponse.json({ setting: await upsertProjectKpiSettings({ ...input, project: decodeURIComponent(params.project) }) });
   } catch (error) {
-    const message = isProjectKpiSettingsMissingError(error) ? PROJECT_KPI_SETTINGS_MISSING_MESSAGE : "Failed to save Project KPI Settings.";
+    const message = isProjectKpiSettingsMissingError(error) ? PROJECT_KPI_SETTINGS_MISSING_MESSAGE : error instanceof Error ? error.message : "Failed to save Project KPI Settings.";
     return NextResponse.json({ error: message }, { status: isProjectKpiSettingsMissingError(error) ? 503 : 500 });
   }
 }

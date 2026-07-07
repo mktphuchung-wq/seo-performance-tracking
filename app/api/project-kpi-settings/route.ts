@@ -23,9 +23,9 @@ export async function POST(request: Request) {
     const input = contentType.includes("application/json") ? await request.json() : parseProjectKpiForm(await request.formData());
     const saved = await upsertProjectKpiSettings(input);
     if (contentType.includes("application/json")) return NextResponse.json({ setting: saved });
-    return NextResponse.redirect(new URL("/admin/project-kpi-settings", request.url));
+    return NextResponse.redirect(new URL(`/admin/project-kpi-settings?project=${encodeURIComponent(saved.project)}`, request.url));
   } catch (error) {
-    const message = isProjectKpiSettingsMissingError(error) ? PROJECT_KPI_SETTINGS_MISSING_MESSAGE : "Failed to save Project KPI Settings.";
+    const message = isProjectKpiSettingsMissingError(error) ? PROJECT_KPI_SETTINGS_MISSING_MESSAGE : error instanceof Error ? error.message : "Failed to save Project KPI Settings.";
     return NextResponse.json({ error: message }, { status: isProjectKpiSettingsMissingError(error) ? 503 : 500 });
   }
 }
