@@ -4,6 +4,7 @@ import { classifyOpportunity } from "./metrics";
 import { type ContentUrl, type UrlPerformance, type UrlMetrics, type QueryMetric, type DailyMetric } from "./google";
 import type { DateRange } from "./dates";
 import { scoreMembers } from "./scoring";
+import { adjustMemberFinal, defaultProjectKpiSettings } from "./project-kpi";
 
 const num = (v: unknown) => Number.isFinite(Number(v)) ? Number(v) : 0;
 const normalizeMetric = (r: any): UrlMetrics => ({ clicks: num(r.clicks), impressions: num(r.impressions), ctr: num(r.ctr), position: num(r.position) });
@@ -53,6 +54,13 @@ export type MemberPerformanceFinalSummary = {
   excluded_no_data_url_count_3m: number | null;
   excluded_no_data_url_count_6m: number | null;
   refreshed_at: string | null;
+  raw_performance_final_pct?: number | null;
+  adjusted_performance_final_pct?: number | null;
+  adjustment_status?: string;
+  adjustment_reason?: string;
+  project_kpi_type?: string;
+  kpi_protection_applied?: boolean;
+  pm_review_required?: boolean;
 };
 
 const nullableNum = (v: unknown) => v === null || v === undefined ? null : (Number.isFinite(Number(v)) ? Number(v) : null);
@@ -82,12 +90,12 @@ export async function getMemberPerformanceFinalByMember(memberNameOrEmail: strin
   const key = memberNameOrEmail.trim().toLowerCase();
   if (!key) return null;
   const res = await query<any>(`select * from member_performance_final_view where lower(member_name) = $1 or lower(coalesce(member_email, '')) = $1 limit 1`, [key]);
-  return res.rows[0] ? mapMemberPerformanceFinal(res.rows[0]) : null;
+  return res.rows[0] ? adjustMemberFinal(mapMemberPerformanceFinal(res.rows[0]), defaultProjectKpiSettings("default")) : null;
 }
 
 export async function getAllMemberPerformanceFinal(): Promise<MemberPerformanceFinalSummary[]> {
   const res = await query<any>(`select * from member_performance_final_view order by member_name`);
-  return res.rows.map(mapMemberPerformanceFinal);
+  return res.rows.map((row) => adjustMemberFinal(mapMemberPerformanceFinal(row), defaultProjectKpiSettings("default")));
 }
 
 export async function getUrlDetailFromDb(id: string, rangeKey: string, range: DateRange) {
