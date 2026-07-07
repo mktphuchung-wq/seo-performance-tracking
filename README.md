@@ -52,7 +52,7 @@ MEMBER_EMAIL_MAP={"Hưng":"hung@company.com","Linh":"linh@company.com"}
 PROJECT_GSC_MAP={"Tartan Vibes Clothing":"sc-domain:tartanvibesclothing.com"}
 ALL_TIME_START_DATE=2024-01-01
 CACHE_TTL_SECONDS=21600
-DATABASE_URL=postgres://USER:PASSWORD@HOST/DB?sslmode=require
+DATABASE_URL=postgres://USER:PASSWORD@HOST/DB?sslmode=verify-full
 ```
 
 Invalid JSON in `MEMBER_EMAIL_MAP` or `PROJECT_GSC_MAP` is surfaced as a clear setup warning instead of crashing the UI.
