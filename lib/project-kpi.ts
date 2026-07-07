@@ -125,15 +125,69 @@ function mapSettings(row: any): ProjectKpiSettings {
 }
 
 export async function getProjectKpiSettings(): Promise<ProjectKpiSettings[]> {
-  const res = await query<any>(`with projects as (select project, count(*)::int active_urls from content_urls where coalesce(is_active,true)=true and nullif(project,'') is not null group by project)
-    select p.project as project, p.active_urls, s.* from projects p left join public.project_kpi_settings s on s.project=p.project order by p.project`);
-  return res.rows.map((r) => mapSettings({ ...r, ...Object.fromEntries(Object.entries(defaultProjectKpiSettings(r.project)).filter(([k]) => r[k] === undefined || r[k] === null)) }));
+  const res = await query<any>(`
+    with projects as (
+      select
+        trim(project) as project,
+        count(*)::int as active_urls
+      from public.content_urls
+      where coalesce(is_active, true) = true
+        and nullif(trim(project), '') is not null
+      group by trim(project)
+    )
+    select
+      p.project as project,
+      p.active_urls as active_urls,
+      s.id as id,
+      s.project_kpi_type as project_kpi_type,
+      s.project_start_date as project_start_date,
+      s.is_kpi_protection_enabled as is_kpi_protection_enabled,
+      s.performance_floor_pct as performance_floor_pct,
+      s.performance_cap_pct as performance_cap_pct,
+      s.min_coverage_required as min_coverage_required,
+      s.min_eligible_urls as min_eligible_urls,
+      s.max_excluded_no_data_rate as max_excluded_no_data_rate,
+      s.allow_auto_floor_when_low_confidence as allow_auto_floor_when_low_confidence,
+      s.allow_auto_floor_when_partial_coverage as allow_auto_floor_when_partial_coverage,
+      s.allow_auto_floor_when_high_no_data as allow_auto_floor_when_high_no_data,
+      s.require_pm_review_below_pct as require_pm_review_below_pct,
+      s.pm_override_enabled as pm_override_enabled,
+      s.pm_override_adjusted_pct as pm_override_adjusted_pct,
+      s.pm_override_reason as pm_override_reason,
+      s.performance_weight_1m_pct as performance_weight_1m_pct,
+      s.performance_weight_3m_pct as performance_weight_3m_pct,
+      s.performance_weight_6m_pct as performance_weight_6m_pct,
+      s.performance_weight_all_time_pct as performance_weight_all_time_pct,
+      s.normalize_missing_ranges as normalize_missing_ranges,
+      s.enable_long_term_trend_protection as enable_long_term_trend_protection,
+      s.trend_protection_floor_pct as trend_protection_floor_pct,
+      s.trend_protection_required_3m_pct as trend_protection_required_3m_pct,
+      s.trend_protection_required_all_time_pct as trend_protection_required_all_time_pct,
+      s.not_enough_data_policy as not_enough_data_policy,
+      s.neutral_no_data_score_pct as neutral_no_data_score_pct,
+      s.min_url_age_days_for_penalty as min_url_age_days_for_penalty,
+      s.max_no_data_penalty_pct as max_no_data_penalty_pct,
+      s.no_data_rate_pm_review_pct as no_data_rate_pm_review_pct,
+      s.notes as notes,
+      s.created_at as created_at,
+      s.updated_at as updated_at
+    from projects p
+    left join public.project_kpi_settings s
+      on trim(s.project) = p.project
+    order by p.project
+  `);
+
+  return res.rows.map((r) => mapSettings({
+    ...defaultProjectKpiSettings(r.project),
+    ...r,
+    project: r.project,
+  }));
 }
 
 export async function upsertProjectKpiSettings(input: Partial<ProjectKpiSettings> & { project: string }) {
   const project = String(input.project || "").trim();
   if (!project) throw new Error("Project is required to save KPI settings.");
-  const activeProject = await query<{ exists: boolean }>(`select exists(select 1 from content_urls where project=$1 and coalesce(is_active,true)=true)`, [project]);
+  const activeProject = await query<{ exists: boolean }>(`select exists(select 1 from public.content_urls where trim(project)=$1 and coalesce(is_active,true)=true)`, [project]);
   if (!activeProject.rows[0]?.exists) throw new Error("Choose a valid active project to save KPI settings.");
   const s = { ...defaultProjectKpiSettings(project), ...input, project };
   const totalWeight = Number(s.performance_weight_1m_pct) + Number(s.performance_weight_3m_pct) + Number(s.performance_weight_6m_pct) + Number(s.performance_weight_all_time_pct);
