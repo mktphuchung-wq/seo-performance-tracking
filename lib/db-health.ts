@@ -11,21 +11,82 @@ export const REQUIRED_TABLES = [
 
 export const REQUIRED_VIEWS = ["dashboard_url_performance", "dashboard_member_performance", "member_performance_final_view", "member_performance_summary"];
 
+export const PROJECT_KPI_SETTINGS_REQUIRED_COLUMNS = [
+  "id", "project", "project_kpi_type", "project_start_date", "is_kpi_protection_enabled", "performance_floor_pct", "performance_cap_pct",
+  "min_coverage_required", "min_eligible_urls", "max_excluded_no_data_rate", "allow_auto_floor_when_low_confidence",
+  "allow_auto_floor_when_partial_coverage", "allow_auto_floor_when_high_no_data", "require_pm_review_below_pct", "pm_override_enabled",
+  "pm_override_adjusted_pct", "pm_override_reason", "performance_weight_1m_pct", "performance_weight_3m_pct", "performance_weight_6m_pct",
+  "performance_weight_all_time_pct", "normalize_missing_ranges", "enable_long_term_trend_protection", "trend_protection_floor_pct",
+  "trend_protection_required_3m_pct", "trend_protection_required_all_time_pct", "not_enough_data_policy", "neutral_no_data_score_pct",
+  "min_url_age_days_for_penalty", "max_no_data_penalty_pct", "no_data_rate_pm_review_pct", "notes", "created_at", "updated_at",
+];
+
 export const REQUIRED_COLUMNS: Record<string, string[]> = {
   content_urls: ["id", "url_hash", "project", "url", "member_name", "member_email", "gsc_property", "is_active", "source", "first_seen_at", "last_seen_at", "created_at", "updated_at"],
   seo_performance_cache: ["id", "cache_key", "content_url_id", "url_hash", "project", "url", "member_name", "member_email", "gsc_property", "range_key", "start_date", "end_date", "previous_start_date", "previous_end_date", "clicks", "impressions", "ctr", "position", "previous_clicks", "previous_impressions", "previous_ctr", "previous_position", "click_delta", "click_growth_pct", "impression_delta", "impression_growth_pct", "ctr_delta", "position_delta", "growth_status", "opportunity_status", "recommendation", "refreshed_at", "created_at", "updated_at"],
   member_performance_cache: ["id", "cache_key", "member_name", "member_email", "range_key", "start_date", "end_date", "previous_start_date", "previous_end_date", "url_count", "urls_with_data", "growing_urls", "stable_urls", "declining_urls", "no_data_urls", "clicks", "impressions", "ctr", "position", "previous_clicks", "previous_impressions", "click_delta", "click_growth_pct", "impression_delta", "impression_growth_pct", "quantity_index", "quality_index", "performance_kpi_pct", "impression_performance_score", "click_performance_score", "growth_coverage_score", "portfolio_health_score", "eligible_url_count", "excluded_no_data_url_count", "positive_url_count", "new_growth_url_count", "declining_url_count", "performance_kpi_status", "performance_confidence", "support_signal", "main_strength", "main_risk", "suggested_support", "refreshed_at", "created_at", "updated_at"],
   refresh_runs: ["id", "status", "triggered_by", "range_key", "start_date", "end_date", "previous_start_date", "previous_end_date", "total_urls", "processed_urls", "urls_with_data", "no_data_urls", "failed_urls", "error_message", "started_at", "finished_at", "created_at", "updated_at"],
   sync_runs: ["id", "source", "status", "total_rows", "inserted_rows", "updated_rows", "deactivated_rows", "failed_rows", "triggered_by", "error_message", "started_at", "finished_at", "created_at", "updated_at"],
-  project_kpi_settings: ["id", "project", "project_kpi_type", "project_start_date", "is_kpi_protection_enabled", "performance_floor_pct", "performance_cap_pct", "min_coverage_required", "min_eligible_urls", "max_excluded_no_data_rate", "allow_auto_floor_when_low_confidence", "allow_auto_floor_when_partial_coverage", "allow_auto_floor_when_high_no_data", "require_pm_review_below_pct", "pm_override_enabled", "pm_override_adjusted_pct", "pm_override_reason", "notes", "created_at", "updated_at"],
+  project_kpi_settings: PROJECT_KPI_SETTINGS_REQUIRED_COLUMNS,
 };
 
-export type DbSchemaHealth = { ok: boolean; missingTables: string[]; missingViews: string[]; missingColumns: string[]; missing: string[] };
+export type DbSchemaHealth = { ok: boolean; missingTables: string[]; missingViews: string[]; missingColumns: string[]; missing: string[]; projectKpiSettings: ProjectKpiSettingsDiagnostic };
+export type ProjectKpiSettingsDiagnostic = {
+  current_database: string | null;
+  current_schema: string | null;
+  current_user: string | null;
+  project_kpi_settings_exists: boolean;
+  project_kpi_settings_schema: string | null;
+  missing_project_kpi_columns: string[];
+  raw_error_code: string | null;
+  raw_error_message: string | null;
+};
+
+const clean = (message: unknown) => String(message || "").replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[redacted database url]");
+
+export function getDbErrorCode(error: unknown) {
+  return (error as { code?: string } | null)?.code || null;
+}
+
+export function getDbErrorMessage(error: unknown) {
+  return error instanceof Error ? clean(error.message) : clean(error);
+}
+
+export async function getProjectKpiSettingsDiagnostic(error?: unknown): Promise<ProjectKpiSettingsDiagnostic> {
+  const base: ProjectKpiSettingsDiagnostic = {
+    current_database: null,
+    current_schema: null,
+    current_user: null,
+    project_kpi_settings_exists: false,
+    project_kpi_settings_schema: null,
+    missing_project_kpi_columns: [],
+    raw_error_code: error ? getDbErrorCode(error) : null,
+    raw_error_message: error ? getDbErrorMessage(error) : null,
+  };
+  try {
+    const [identity, table, columns] = await Promise.all([
+      query<{ current_database: string; current_schema: string; current_user: string }>(`select current_database(), current_schema(), current_user`),
+      query<{ table_schema: string; table_type: string }>(`select table_schema, table_type from information_schema.tables where table_schema='public' and table_name='project_kpi_settings' limit 1`),
+      query<{ column_name: string }>(`select column_name from information_schema.columns where table_schema='public' and table_name='project_kpi_settings'`),
+    ]);
+    const foundColumns = new Set(columns.rows.map((row) => row.column_name));
+    return {
+      ...base,
+      ...identity.rows[0],
+      project_kpi_settings_exists: table.rows.length > 0,
+      project_kpi_settings_schema: table.rows[0]?.table_schema || null,
+      missing_project_kpi_columns: PROJECT_KPI_SETTINGS_REQUIRED_COLUMNS.filter((column) => !foundColumns.has(column)),
+    };
+  } catch (diagnosticError) {
+    return { ...base, raw_error_code: getDbErrorCode(diagnosticError) || base.raw_error_code, raw_error_message: getDbErrorMessage(diagnosticError) || base.raw_error_message };
+  }
+}
 
 export async function checkDbSchemaHealth(): Promise<DbSchemaHealth> {
-  const [relations, columns] = await Promise.all([
+  const [relations, columns, projectKpiSettings] = await Promise.all([
     query<{ table_name: string; table_type: string }>(`select table_name, table_type from information_schema.tables where table_schema='public' and table_name = any($1::text[])`, [[...REQUIRED_TABLES, ...REQUIRED_VIEWS]]),
     query<{ table_name: string; column_name: string }>(`select table_name, column_name from information_schema.columns where table_schema='public' and table_name = any($1::text[])`, [Object.keys(REQUIRED_COLUMNS)]),
+    getProjectKpiSettingsDiagnostic(),
   ]);
   const relationMap = new Map(relations.rows.map((row) => [row.table_name, row.table_type]));
   const columnMap = columns.rows.reduce<Record<string, Set<string>>>((acc, row) => { (acc[row.table_name] ??= new Set()).add(row.column_name); return acc; }, {});
@@ -33,5 +94,5 @@ export async function checkDbSchemaHealth(): Promise<DbSchemaHealth> {
   const missingViews = REQUIRED_VIEWS.filter((name) => !relationMap.has(name));
   const missingColumns = Object.entries(REQUIRED_COLUMNS).flatMap(([table, required]) => required.filter((column) => !columnMap[table]?.has(column)).map((column) => `${table}.${column}`));
   const missing = [...missingTables.map((name) => `table:${name}`), ...missingViews.map((name) => `view:${name}`), ...missingColumns];
-  return { ok: missing.length === 0, missingTables, missingViews, missingColumns, missing };
+  return { ok: missing.length === 0, missingTables, missingViews, missingColumns, missing, projectKpiSettings };
 }

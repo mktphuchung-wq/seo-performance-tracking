@@ -3,8 +3,9 @@ import { redirect } from "next/navigation";
 import { authOptions } from "../../../lib/auth";
 import { getDateRange } from "../../../lib/dates";
 import { getDbPerformance } from "../../../lib/postgres";
-import { adjustedProjectFromRows, getProjectKpiSettings, isProjectKpiSettingsMissingError, PROJECT_KPI_SETTINGS_MISSING_MESSAGE, noDataPolicies, projectKpiTypes } from "../../../lib/project-kpi";
+import { adjustedProjectFromRows, getProjectKpiSettings, getProjectKpiSettingsDiagnosticMessage, isProjectKpiSettingsColumnMissingError, isProjectKpiSettingsMissingError, noDataPolicies, projectKpiTypes } from "../../../lib/project-kpi";
 import { fmtKpi, Shell } from "../../../components/ui";
+import { getProjectKpiSettingsDiagnostic, type ProjectKpiSettingsDiagnostic } from "../../../lib/db-health";
 
 type PageProps = {
   searchParams?: { project?: string };
@@ -22,13 +23,15 @@ export default async function ProjectKpiSettingsPage({ searchParams }: PageProps
   if (!session?.user?.email) redirect("/");
   if (!session.user.isAdmin) redirect("/dashboard");
   let setupWarning: string | null = null;
+  let setupDiagnostic: ProjectKpiSettingsDiagnostic | null = null;
   let settings = [] as Awaited<ReturnType<typeof getProjectKpiSettings>>;
   let rows = [] as Awaited<ReturnType<typeof getDbPerformance>>;
   try {
     [settings, rows] = await Promise.all([getProjectKpiSettings(), getDbPerformance("current_month", getDateRange({ range: "current_month" }))]);
   } catch (error) {
-    if (!isProjectKpiSettingsMissingError(error)) throw error;
-    setupWarning = PROJECT_KPI_SETTINGS_MISSING_MESSAGE;
+    if (!isProjectKpiSettingsMissingError(error) && !isProjectKpiSettingsColumnMissingError(error)) throw error;
+    setupDiagnostic = await getProjectKpiSettingsDiagnostic(error);
+    setupWarning = await getProjectKpiSettingsDiagnosticMessage(error);
   }
   const selectedProject = (searchParams?.project || "").trim();
   const selectedSetting = selectedProject ? settings.find((s) => s.project === selectedProject) : undefined;
@@ -37,7 +40,7 @@ export default async function ProjectKpiSettingsPage({ searchParams }: PageProps
 
   return <Shell email={session.user.email} isAdmin={session.user.isAdmin}>
     <div className="mb-6"><h2 className="text-2xl font-semibold">Project KPI Settings</h2><p className="text-sm text-slate-500">Select one active project, then configure one KPI settings form for that project.</p></div>
-    {setupWarning && <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-medium text-amber-900">{setupWarning}</div>}
+    {setupWarning && <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"><p className="font-semibold">{setupWarning}</p>{setupDiagnostic && <dl className="mt-3 grid gap-2 md:grid-cols-2"><div><dt className="font-semibold">current_database</dt><dd>{setupDiagnostic.current_database || "unknown"}</dd></div><div><dt className="font-semibold">current_schema</dt><dd>{setupDiagnostic.current_schema || "unknown"}</dd></div><div><dt className="font-semibold">current_user</dt><dd>{setupDiagnostic.current_user || "unknown"}</dd></div><div><dt className="font-semibold">project_kpi_settings_exists</dt><dd>{String(setupDiagnostic.project_kpi_settings_exists)}</dd></div><div><dt className="font-semibold">project_kpi_settings_schema</dt><dd>{setupDiagnostic.project_kpi_settings_schema || "missing"}</dd></div><div><dt className="font-semibold">raw_error_code</dt><dd>{setupDiagnostic.raw_error_code || "none"}</dd></div><div className="md:col-span-2"><dt className="font-semibold">missing_project_kpi_columns</dt><dd>{setupDiagnostic.missing_project_kpi_columns.length ? setupDiagnostic.missing_project_kpi_columns.join(", ") : "none"}</dd></div><div className="md:col-span-2"><dt className="font-semibold">raw_error_message</dt><dd>{setupDiagnostic.raw_error_message || "none"}</dd></div></dl>}</div>}
 
     <form action="/admin/project-kpi-settings" className="mb-6 rounded-2xl border bg-white p-5 shadow-sm">
       <label className="block text-sm font-semibold text-slate-700" htmlFor="project">Select Project</label>
