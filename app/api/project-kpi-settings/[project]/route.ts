@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "../../../../lib/auth";
-import { isProjectKpiSettingsMissingError, parseProjectKpiForm, PROJECT_KPI_SETTINGS_MISSING_MESSAGE, upsertProjectKpiSettings } from "../../../../lib/project-kpi";
+import { getProjectKpiSettingsDiagnosticMessage, isProjectKpiSettingsColumnMissingError, isProjectKpiSettingsMissingError, parseProjectKpiForm, upsertProjectKpiSettings } from "../../../../lib/project-kpi";
 
 export async function PATCH(request: Request, { params }: { params: { project: string } }) {
   const session = await getServerSession(authOptions);
@@ -11,7 +11,8 @@ export async function PATCH(request: Request, { params }: { params: { project: s
     const input = (request.headers.get("content-type") || "").includes("application/json") ? await request.json() : parseProjectKpiForm(await request.formData(), decodeURIComponent(params.project));
     return NextResponse.json({ setting: await upsertProjectKpiSettings({ ...input, project: decodeURIComponent(params.project) }) });
   } catch (error) {
-    const message = isProjectKpiSettingsMissingError(error) ? PROJECT_KPI_SETTINGS_MISSING_MESSAGE : error instanceof Error ? error.message : "Failed to save Project KPI Settings.";
-    return NextResponse.json({ error: message }, { status: isProjectKpiSettingsMissingError(error) ? 503 : 500 });
+    const isSchemaError = isProjectKpiSettingsMissingError(error) || isProjectKpiSettingsColumnMissingError(error);
+    const message = isSchemaError ? await getProjectKpiSettingsDiagnosticMessage(error) : error instanceof Error ? error.message : "Failed to save Project KPI Settings.";
+    return NextResponse.json({ error: message }, { status: isSchemaError ? 503 : 500 });
   }
 }

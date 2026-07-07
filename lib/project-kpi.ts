@@ -1,4 +1,5 @@
 import { query } from "./db";
+import { getDbErrorCode, getProjectKpiSettingsDiagnostic, type ProjectKpiSettingsDiagnostic } from "./db-health";
 import { calculateRangePerformanceKpi } from "./scoring";
 import type { ComparedUrlPerformance } from "./growth";
 import type { MemberPerformanceFinalSummary } from "./postgres";
@@ -86,10 +87,28 @@ const bool = (v: unknown) => v === true || v === "true" || v === "on" || v === "
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
 
 export const PROJECT_KPI_SETTINGS_MISSING_MESSAGE = "Project KPI Settings table is missing. Run migrations/20260707_project_kpi_settings.sql in Neon.";
+export const PROJECT_KPI_SETTINGS_INCOMPLETE_MESSAGE = "Project KPI Settings table exists but migration is incomplete.";
 
 export function isProjectKpiSettingsMissingError(error: unknown) {
-  const err = error as { code?: string; message?: string };
-  return err?.code === "42P01" || /relation ["']?(public\.)?project_kpi_settings["']? does not exist/i.test(err?.message || "");
+  return getDbErrorCode(error) === "42P01";
+}
+
+export function isProjectKpiSettingsColumnMissingError(error: unknown) {
+  return getDbErrorCode(error) === "42703";
+}
+
+export function projectKpiDiagnosticMessage(diagnostic: ProjectKpiSettingsDiagnostic) {
+  if (diagnostic.raw_error_code === "42P01" || (!diagnostic.raw_error_code && !diagnostic.raw_error_message && !diagnostic.project_kpi_settings_exists)) return PROJECT_KPI_SETTINGS_MISSING_MESSAGE;
+  if (diagnostic.missing_project_kpi_columns.length > 0 || diagnostic.raw_error_code === "42703") {
+    const missing = diagnostic.missing_project_kpi_columns.length ? diagnostic.missing_project_kpi_columns.join(", ") : "unknown column from query error";
+    return `${PROJECT_KPI_SETTINGS_INCOMPLETE_MESSAGE} Missing columns: ${missing}.`;
+  }
+  if (diagnostic.raw_error_code || diagnostic.raw_error_message) return `Project KPI Settings query failed (code: ${diagnostic.raw_error_code || "unknown"}): ${diagnostic.raw_error_message || "No error message returned."}`;
+  return "Project KPI Settings diagnostics did not find a schema issue. Confirm the app is connected to the expected Neon database/branch.";
+}
+
+export async function getProjectKpiSettingsDiagnosticMessage(error?: unknown) {
+  return projectKpiDiagnosticMessage(await getProjectKpiSettingsDiagnostic(error));
 }
 
 function mapSettings(row: any): ProjectKpiSettings {
