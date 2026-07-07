@@ -43,6 +43,7 @@ export type MemberPerformanceFinalSummary = {
   performance_kpi_1m_pct: number | null;
   performance_kpi_3m_pct: number | null;
   performance_kpi_6m_pct: number | null;
+  performance_kpi_all_time_pct?: number | null;
   performance_final_pct: number | null;
   performance_final_status: "complete" | "partial" | "insufficient_data" | "pending_refresh";
   performance_final_coverage: number;
@@ -72,6 +73,7 @@ function mapMemberPerformanceFinal(row: any): MemberPerformanceFinalSummary {
     performance_kpi_1m_pct: nullableNum(row.performance_kpi_1m_pct),
     performance_kpi_3m_pct: nullableNum(row.performance_kpi_3m_pct),
     performance_kpi_6m_pct: nullableNum(row.performance_kpi_6m_pct),
+    performance_kpi_all_time_pct: nullableNum(row.performance_kpi_all_time_pct),
     performance_final_pct: nullableNum(row.performance_final_pct),
     performance_final_status: row.performance_final_status || "insufficient_data",
     performance_final_coverage: num(row.performance_final_coverage),

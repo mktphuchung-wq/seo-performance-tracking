@@ -26,7 +26,7 @@ with active_members as (
     excluded_no_data_url_count,
     refreshed_at
   from public.member_performance_cache
-  where range_key in ('current_month', 'last_3_months', 'last_6_months')
+  where range_key in ('current_month', 'last_3_months', 'last_6_months', 'all_time')
   order by member_name, range_key, refreshed_at desc nulls last, updated_at desc nulls last
 ), pivoted as (
   select
@@ -35,9 +35,11 @@ with active_members as (
     max(rc.performance_kpi_pct) filter (where rc.range_key = 'current_month') as performance_kpi_1m_pct,
     max(rc.performance_kpi_pct) filter (where rc.range_key = 'last_3_months') as performance_kpi_3m_pct,
     max(rc.performance_kpi_pct) filter (where rc.range_key = 'last_6_months') as performance_kpi_6m_pct,
+    max(rc.performance_kpi_pct) filter (where rc.range_key = 'all_time') as performance_kpi_all_time_pct,
     max(rc.performance_kpi_status) filter (where rc.range_key = 'current_month') as performance_kpi_1m_status,
     max(rc.performance_kpi_status) filter (where rc.range_key = 'last_3_months') as performance_kpi_3m_status,
     max(rc.performance_kpi_status) filter (where rc.range_key = 'last_6_months') as performance_kpi_6m_status,
+    max(rc.performance_kpi_status) filter (where rc.range_key = 'all_time') as performance_kpi_all_time_status,
     max(rc.performance_confidence) filter (where rc.range_key = 'current_month') as performance_confidence_1m,
     max(rc.performance_confidence) filter (where rc.range_key = 'last_3_months') as performance_confidence_3m,
     max(rc.performance_confidence) filter (where rc.range_key = 'last_6_months') as performance_confidence_6m,
@@ -57,12 +59,14 @@ with active_members as (
 ), weighted as (
   select
     *,
-    (case when performance_kpi_1m_pct is not null and coalesce(performance_kpi_1m_status, '') <> 'insufficient_data' then 0.5 else 0 end) +
-    (case when performance_kpi_3m_pct is not null and coalesce(performance_kpi_3m_status, '') <> 'insufficient_data' then 0.3 else 0 end) +
-    (case when performance_kpi_6m_pct is not null and coalesce(performance_kpi_6m_status, '') <> 'insufficient_data' then 0.2 else 0 end) as performance_final_coverage,
-    (case when performance_kpi_1m_pct is not null and coalesce(performance_kpi_1m_status, '') <> 'insufficient_data' then performance_kpi_1m_pct * 0.5 else 0 end) +
-    (case when performance_kpi_3m_pct is not null and coalesce(performance_kpi_3m_status, '') <> 'insufficient_data' then performance_kpi_3m_pct * 0.3 else 0 end) +
-    (case when performance_kpi_6m_pct is not null and coalesce(performance_kpi_6m_status, '') <> 'insufficient_data' then performance_kpi_6m_pct * 0.2 else 0 end) as weighted_performance_sum
+    (case when performance_kpi_1m_pct is not null and coalesce(performance_kpi_1m_status, '') <> 'insufficient_data' then 0.3 else 0 end) +
+    (case when performance_kpi_3m_pct is not null and coalesce(performance_kpi_3m_status, '') <> 'insufficient_data' then 0.4 else 0 end) +
+    (case when performance_kpi_6m_pct is not null and coalesce(performance_kpi_6m_status, '') <> 'insufficient_data' then 0.2 else 0 end) +
+    (case when performance_kpi_all_time_pct is not null and coalesce(performance_kpi_all_time_status, '') <> 'insufficient_data' then 0.1 else 0 end) as performance_final_coverage,
+    (case when performance_kpi_1m_pct is not null and coalesce(performance_kpi_1m_status, '') <> 'insufficient_data' then performance_kpi_1m_pct * 0.3 else 0 end) +
+    (case when performance_kpi_3m_pct is not null and coalesce(performance_kpi_3m_status, '') <> 'insufficient_data' then performance_kpi_3m_pct * 0.4 else 0 end) +
+    (case when performance_kpi_6m_pct is not null and coalesce(performance_kpi_6m_status, '') <> 'insufficient_data' then performance_kpi_6m_pct * 0.2 else 0 end) +
+    (case when performance_kpi_all_time_pct is not null and coalesce(performance_kpi_all_time_status, '') <> 'insufficient_data' then performance_kpi_all_time_pct * 0.1 else 0 end) as weighted_performance_sum
   from pivoted
 )
 select
@@ -71,6 +75,7 @@ select
   performance_kpi_1m_pct,
   performance_kpi_3m_pct,
   performance_kpi_6m_pct,
+  performance_kpi_all_time_pct,
   case when performance_final_coverage > 0 then round(weighted_performance_sum / performance_final_coverage, 2) else null end as performance_final_pct,
   case
     when performance_final_coverage = 0 then 'insufficient_data'
