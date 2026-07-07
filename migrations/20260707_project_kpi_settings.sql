@@ -47,3 +47,27 @@ create table if not exists public.project_kpi_settings (
 
 create index if not exists idx_project_kpi_settings_type
 on public.project_kpi_settings (project_kpi_type);
+
+alter table public.project_kpi_settings
+  add column if not exists performance_weight_1m_pct numeric not null default 30,
+  add column if not exists performance_weight_3m_pct numeric not null default 40,
+  add column if not exists performance_weight_6m_pct numeric not null default 20,
+  add column if not exists performance_weight_all_time_pct numeric not null default 10,
+  add column if not exists normalize_missing_ranges boolean not null default true,
+  add column if not exists enable_long_term_trend_protection boolean not null default true,
+  add column if not exists trend_protection_floor_pct numeric not null default 70,
+  add column if not exists trend_protection_required_3m_pct numeric not null default 70,
+  add column if not exists trend_protection_required_all_time_pct numeric not null default 70,
+  add column if not exists not_enough_data_policy text not null default 'neutral_score',
+  add column if not exists neutral_no_data_score_pct numeric not null default 70,
+  add column if not exists min_url_age_days_for_penalty integer not null default 90,
+  add column if not exists max_no_data_penalty_pct numeric not null default 10,
+  add column if not exists no_data_rate_pm_review_pct numeric not null default 50;
+
+alter table public.project_kpi_settings
+  drop constraint if exists project_kpi_settings_weights_total_check,
+  add constraint project_kpi_settings_weights_total_check
+    check (performance_weight_1m_pct + performance_weight_3m_pct + performance_weight_6m_pct + performance_weight_all_time_pct = 100),
+  drop constraint if exists project_kpi_settings_no_data_policy_check,
+  add constraint project_kpi_settings_no_data_policy_check
+    check (not_enough_data_policy in ('exclude_from_performance', 'neutral_score', 'mild_penalty', 'pm_review_required'));
