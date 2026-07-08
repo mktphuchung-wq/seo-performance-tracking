@@ -121,7 +121,11 @@ function statusClassName(status: RefreshWorkflowStepStatus) {
 
 function resultSummary(data: any) {
   if (!data) return "";
-  if (typeof data.insertedRows !== "undefined") return `Inserted ${data.insertedRows}, updated ${data.updatedRows}, deactivated ${data.deactivatedRows}, failed ${data.failedRows}.`;
+  if (typeof data.insertedRows !== "undefined") {
+    const stats = data.dateStats;
+    const dateSummary = stats ? ` Dates parsed ${stats.parsedContentWorkedAtRows}/${stats.totalRows}; missing ${stats.missingContentWorkedAtRows}; range ${stats.minContentWorkedAt || "—"} → ${stats.maxContentWorkedAt || "—"}.` : "";
+    return `Inserted ${data.insertedRows}, updated ${data.updatedRows}, deactivated ${data.deactivatedRows}, failed ${data.failedRows}.${dateSummary}`;
+  }
   if (data.status === "not_enough_data") return data.message || "Not enough data to evaluate.";
   if (typeof data.totalUrls !== "undefined") return `Processed ${data.processedUrls}/${data.totalUrls}; ${data.urlsWithData} with data, ${data.noDataUrls} no data, ${data.failedUrls} failed.`;
   return "Completed.";
@@ -130,11 +134,14 @@ function resultSummary(data: any) {
 function CohortDiagnostics({ result }: { result: any }) {
   const diagnostics = result?.diagnostics;
   if (!diagnostics) return null;
+  const cohortRange = [diagnostics.cohort_start_date, diagnostics.cohort_end_date].filter(Boolean).join(" → ") || diagnostics.cohort_label || "All active URLs";
+  const workedRange = diagnostics.db_worked_date_min && diagnostics.db_worked_date_max ? `${diagnostics.db_worked_date_min} → ${diagnostics.db_worked_date_max}` : "No worked dates found";
   return <div className="mt-2 grid gap-1 text-xs text-amber-800 sm:grid-cols-2">
     <div>Active URLs: {diagnostics.total_active_urls_before_cohort}</div>
-    <div>Eligible cohort URLs: {diagnostics.eligible_urls_after_cohort}</div>
     <div>Missing worked date URLs: {diagnostics.missing_worked_date_urls}</div>
-    <div>Cohort: {diagnostics.cohort_label || [diagnostics.cohort_start_date, diagnostics.cohort_end_date].filter(Boolean).join(" to ") || "All active URLs"}</div>
+    <div>Worked date range in DB: {workedRange}</div>
+    <div>Cohort: {cohortRange}</div>
+    <div>Eligible cohort URLs: {diagnostics.eligible_urls_after_cohort}</div>
   </div>;
 }
 
