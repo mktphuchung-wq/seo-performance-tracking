@@ -20,6 +20,10 @@ export type CohortWindow = { startDate: string | null; endDate: string | null; l
 export type CohortResult<T> = { eligible: T[]; excluded: T[]; window: CohortWindow; status: "scored" | "not_enough_data"; missingWorkedDateUrls: number; minAgeMonths: number; cutoffDate: string | null; cohortReason: string };
 
 const iso = (date: Date) => date.toISOString().slice(0, 10);
+const currentUtcDate = () => {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+};
 const subtractMonths = (date: Date, months: number) => {
   const year = date.getUTCFullYear();
   const month = date.getUTCMonth() - months;
@@ -47,8 +51,8 @@ export function getCohortWindow(rangeKey: CohortRangeKey, _measurementRange: Dat
   if (rangeKey === "all_time") return { startDate: null, endDate: null, label: "All active URLs are included.", mode: "all_active_urls" };
   const minAgeMonths = getMinAgeMonthsForRange(rangeKey);
   if (!minAgeMonths) return { startDate: null, endDate: null, label: "All active URLs are included.", mode: "all_active_urls" };
-  const cutoffDate = subtractMonths(new Date(), minAgeMonths);
-  return { startDate: null, endDate: iso(cutoffDate), label: `URLs with worked date older than ${minAgeMonths} month(s)`, mode: "lagged_before_window" };
+  const cutoffDate = subtractMonths(currentUtcDate(), minAgeMonths);
+  return { startDate: null, endDate: iso(cutoffDate), label: `Minimum URL age required: ${minAgeMonths} month${minAgeMonths === 1 ? "" : "s"}`, mode: "lagged_before_window" };
 }
 
 export function parseContentWorkedAt(value: unknown): Date | null {
@@ -70,7 +74,8 @@ export function parseContentWorkedAt(value: unknown): Date | null {
 
 export function getUrlWorkDate(url: UrlWithWorkDate, preferredField = "content_worked_at") {
   const value = (url as Record<string, unknown>)[preferredField] || url.content_worked_at;
-  return value ? String(value).slice(0, 10) : null;
+  const parsed = parseContentWorkedAt(value);
+  return parsed ? iso(parsed) : null;
 }
 
 export function getEligibleUrlsForRange<T extends UrlWithWorkDate>(urls: T[], rangeKey: CohortRangeKey, measurementRange: DateRange, settings: CohortSettings = {}): CohortResult<T> {
@@ -87,7 +92,7 @@ export function getEligibleUrlsForRange<T extends UrlWithWorkDate>(urls: T[], ra
   }
 
   const minAgeMonths = getMinAgeMonthsForRange(rangeKey);
-  const cutoff = subtractMonths(new Date(), minAgeMonths);
+  const cutoff = subtractMonths(currentUtcDate(), minAgeMonths);
   const cutoffDate = iso(cutoff);
   const eligible: T[] = [];
   const excluded: T[] = [];
@@ -104,5 +109,5 @@ export function getEligibleUrlsForRange<T extends UrlWithWorkDate>(urls: T[], ra
     else excluded.push(url);
   }
 
-  return { eligible, excluded, window: { startDate: null, endDate: cutoffDate, label: `URLs with worked date older than ${minAgeMonths} month(s)`, mode: "lagged_before_window" }, status: eligible.length < min ? "not_enough_data" : "scored", missingWorkedDateUrls, minAgeMonths, cutoffDate, cohortReason: `URLs must be at least ${minAgeMonths} month(s) old to be eligible.` };
+  return { eligible, excluded, window: { startDate: null, endDate: cutoffDate, label: `Minimum URL age required: ${minAgeMonths} month${minAgeMonths === 1 ? "" : "s"}`, mode: "lagged_before_window" }, status: eligible.length < min ? "not_enough_data" : "scored", missingWorkedDateUrls, minAgeMonths, cutoffDate, cohortReason: `Minimum URL age required: ${minAgeMonths} month${minAgeMonths === 1 ? "" : "s"}. Cutoff date: ${cutoffDate}.` };
 }

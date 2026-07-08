@@ -131,7 +131,7 @@ function resultSummary(data: any) {
   return "Completed.";
 }
 
-function CohortDiagnostics({ result }: { result: any }) {
+function EligibilityDiagnostics({ result }: { result: any }) {
   const diagnostics = result?.diagnostics;
   if (!diagnostics) return null;
   const workedRange = diagnostics.db_worked_date_min && diagnostics.db_worked_date_max ? `${diagnostics.db_worked_date_min} → ${diagnostics.db_worked_date_max}` : "No worked dates found";
@@ -144,7 +144,7 @@ function CohortDiagnostics({ result }: { result: any }) {
     {minimumAge ? <div>Minimum URL age required: {minimumAge}</div> : <div>All active URLs are included.</div>}
     <div>Cutoff date: {diagnostics.cutoff_date || "—"}</div>
     <div>Worked date range in DB: {workedRange}</div>
-    <div>Cohort: {diagnostics.cohort_reason || diagnostics.cohort_label}</div>
+    <div>Eligibility rule: {diagnostics.cohort_reason || diagnostics.cohort_label}</div>
   </div>;
 }
 
@@ -179,7 +179,7 @@ export function AdminDataControls({ range = "current_month" }: { range?: string;
       const baseSteps = startIndex === 0 ? createWorkflowSteps() : workflowSteps;
       const result = await runRefreshWorkflow({ initialSteps: baseSteps, startIndex, onStepsChange: setWorkflowSteps });
       setLastWorkflowResult(result);
-      if (result.ok) setMessage("Sync and all performance refresh ranges completed. Ranges with empty cohorts were marked not enough data.");
+      if (result.ok) setMessage("Sync and all performance refresh ranges completed. Ranges without eligible URLs were marked not enough data.");
       else setError(`${result.failedStep.label} failed: ${result.error}`);
       await loadStatus();
     } catch (err) {
@@ -209,7 +209,7 @@ export function AdminDataControls({ range = "current_month" }: { range?: string;
         </div>
         {showWorkflow && <div className="mt-5 rounded-xl border border-white/80 bg-white p-4 shadow-sm">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h4 className="font-semibold text-slate-900">Refresh progress</h4><span className="text-sm text-slate-600">{completedCount} / {workflowSteps.length} steps completed</span></div>
-          <ol className="space-y-2">{workflowSteps.map((step) => <li key={step.id} className="rounded-lg border border-slate-100 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-medium text-slate-900">{step.label}</span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${statusClassName(step.status)}`}>{step.status === "not_enough_data" ? "Not enough data to evaluate" : step.status}</span></div>{(step.status === "success" || step.status === "not_enough_data") && <p className="mt-1 text-xs text-slate-500">{resultSummary(step.result)}</p>}{step.status === "not_enough_data" && <CohortDiagnostics result={step.result} />}{step.status === "failed" && step.error && <p className="mt-1 text-xs text-red-700">{step.error}</p>}</li>)}</ol>
+          <ol className="space-y-2">{workflowSteps.map((step) => <li key={step.id} className="rounded-lg border border-slate-100 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-medium text-slate-900">{step.label}</span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${statusClassName(step.status)}`}>{step.status === "not_enough_data" ? "Not enough data to evaluate" : step.status}</span></div>{(step.status === "success" || step.status === "not_enough_data") && <p className="mt-1 text-xs text-slate-500">{resultSummary(step.result)}</p>}{(step.status === "success" || step.status === "not_enough_data") && <EligibilityDiagnostics result={step.result} />}{step.status === "failed" && step.error && <p className="mt-1 text-xs text-red-700">{step.error}</p>}</li>)}</ol>
           {failedStepIndex >= 0 && <button className="mt-4 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-50 disabled:opacity-60" onClick={() => runWorkflowFrom(failedStepIndex)} disabled={!!loading}>Retry from failed step</button>}
         </div>}
         {message && <p className="mt-3 text-sm text-emerald-800">{message}</p>}

@@ -7,7 +7,7 @@ import { dbContentUrl } from "./postgres";
 import { classifyOpportunity } from "./metrics";
 import { scoreMembers } from "./scoring";
 import { getMemberEmailMap, getProjectGscMap } from "./env";
-import { getCohortWindow, getEligibleUrlsForRange, getUrlWorkDate } from "./cohorts";
+import { getCohortWindow, getMinAgeMonthsForRange } from "./cohorts";
 import { getProjectKpiSettings, defaultProjectKpiSettings } from "./project-kpi";
 
 export type SheetSyncDateStats = {
@@ -171,6 +171,42 @@ function recommendationFor(status: string) {
   return "Monitor performance.";
 }
 
+async function getPostgresEligibility(rangeKey: string, allActive: ReturnType<typeof dbContentUrl>[]) {
+  const minAgeMonths = getMinAgeMonthsForRange(rangeKey);
+  if (rangeKey === "all_time" || !minAgeMonths) {
+    const stats = await query<{ missing_worked_date_urls: number; db_worked_date_min: string | null; db_worked_date_max: string | null }>(`select
+      count(*) filter (where content_worked_at is null)::int missing_worked_date_urls,
+      min(content_worked_at)::text db_worked_date_min,
+      max(content_worked_at)::text db_worked_date_max
+      from public.content_urls where coalesce(is_active,true)=true`);
+    return { active: allActive, missingWorkedDateUrls: Number(stats.rows[0]?.missing_worked_date_urls ?? 0), excludedUrls: 0, minAgeMonths: 0, cutoffDate: null, dbWorkedDateMin: stats.rows[0]?.db_worked_date_min ?? null, dbWorkedDateMax: stats.rows[0]?.db_worked_date_max ?? null };
+  }
+
+  const [eligible, stats] = await Promise.all([
+    query<{ id: string }>(`select id::text from public.content_urls
+      where coalesce(is_active,true)=true
+        and content_worked_at is not null
+        and content_worked_at <= current_date - ($1::int * interval '1 month')`, [minAgeMonths]),
+    query<{ missing_worked_date_urls: number; cutoff_date: string; db_worked_date_min: string | null; db_worked_date_max: string | null }>(`select
+      count(*) filter (where content_worked_at is null)::int missing_worked_date_urls,
+      (current_date - ($1::int * interval '1 month'))::date::text cutoff_date,
+      min(content_worked_at)::text db_worked_date_min,
+      max(content_worked_at)::text db_worked_date_max
+      from public.content_urls where coalesce(is_active,true)=true`, [minAgeMonths]),
+  ]);
+  const eligibleIds = new Set(eligible.rows.map((row) => String(row.id)));
+  const active = allActive.filter((url) => eligibleIds.has(String(url.id)));
+  return {
+    active,
+    missingWorkedDateUrls: Number(stats.rows[0]?.missing_worked_date_urls ?? 0),
+    excludedUrls: Math.max(0, allActive.length - active.length),
+    minAgeMonths,
+    cutoffDate: stats.rows[0]?.cutoff_date ?? null,
+    dbWorkedDateMin: stats.rows[0]?.db_worked_date_min ?? null,
+    dbWorkedDateMax: stats.rows[0]?.db_worked_date_max ?? null,
+  };
+}
+
 export async function refreshPerformanceCache(accessToken: string, rangeKey: string, range: DateRange, triggeredBy?: string): Promise<CacheRefreshResult> {
   let runId: string | null = null;
   const previousRange = getPreviousRange(range);
@@ -180,13 +216,11 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
     const settingsByProject = new Map(settings.map((s) => [s.project, s]));
     const firstSettings = allActive[0] ? settingsByProject.get(allActive[0].project) || defaultProjectKpiSettings(allActive[0].project) : undefined;
     const defaultWindow = getCohortWindow(rangeKey, range, firstSettings?.seo_lag_days ?? 30, firstSettings);
-    const activeWorkedDates = allActive.map((url) => getUrlWorkDate(url, settingsByProject.get(url.project)?.url_work_date_field || "content_worked_at")).filter((date): date is string => Boolean(date));
-    const dbWorkedDateMin = activeWorkedDates.length ? activeWorkedDates.reduce((min, date) => date < min ? date : min, activeWorkedDates[0]) : null;
-    const dbWorkedDateMax = activeWorkedDates.length ? activeWorkedDates.reduce((max, date) => date > max ? date : max, activeWorkedDates[0]) : null;
+    const eligibility = await getPostgresEligibility(rangeKey, allActive);
     const diagnosticsBase: CacheRefreshDiagnostics = {
       total_active_urls_before_cohort: allActive.length,
       eligible_urls_after_cohort: 0,
-      missing_worked_date_urls: allActive.filter((url) => !getUrlWorkDate(url, settingsByProject.get(url.project)?.url_work_date_field || "content_worked_at")).length,
+      missing_worked_date_urls: eligibility.missingWorkedDateUrls,
       range_key: rangeKey,
       cohort_start_date: defaultWindow.startDate,
       cohort_end_date: defaultWindow.endDate,
@@ -195,34 +229,24 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
       min_url_age_months: rangeKey === "all_time" ? null : null,
       cutoff_date: defaultWindow.endDate,
       cohort_reason: defaultWindow.label,
-      db_worked_date_min: dbWorkedDateMin,
-      db_worked_date_max: dbWorkedDateMax,
+      db_worked_date_min: eligibility.dbWorkedDateMin,
+      db_worked_date_max: eligibility.dbWorkedDateMax,
     };
 
     if (allActive.length === 0) return { ok: false, status: "failed", totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: "No active URLs found. Run Sync URLs from Sheet first.", diagnostics: diagnosticsBase };
 
-    const cohortGroups = new Map<string, typeof allActive>();
-    for (const url of allActive) (cohortGroups.get(url.project) ?? cohortGroups.set(url.project, []).get(url.project)!).push(url);
-
-    const cohortResults = [...cohortGroups.entries()].map(([project, urls]) => {
-      const s = settingsByProject.get(project) || defaultProjectKpiSettings(project);
-      return getEligibleUrlsForRange(urls, rangeKey, range, s);
-    });
-    const active = cohortResults.flatMap((result) => result.eligible);
-    const missingWorkedDateUrls = cohortResults.reduce((sum, result) => sum + result.missingWorkedDateUrls, 0);
-    const excludedUrls = cohortResults.reduce((sum, result) => sum + result.excluded.length, 0);
-    const firstResult = cohortResults[0];
+    const active = eligibility.active;
     const diagnostics = {
       ...diagnosticsBase,
       eligible_urls_after_cohort: active.length,
-      excluded_urls_after_cohort: excludedUrls,
-      missing_worked_date_urls: missingWorkedDateUrls,
-      min_url_age_months: firstResult?.minAgeMonths ? firstResult.minAgeMonths : null,
-      cutoff_date: firstResult?.cutoffDate ?? null,
-      cohort_label: firstResult?.window.label ?? diagnosticsBase.cohort_label,
-      cohort_reason: firstResult?.cohortReason ?? diagnosticsBase.cohort_reason,
-      cohort_start_date: firstResult?.window.startDate ?? diagnosticsBase.cohort_start_date,
-      cohort_end_date: firstResult?.window.endDate ?? diagnosticsBase.cohort_end_date,
+      excluded_urls_after_cohort: eligibility.excludedUrls,
+      missing_worked_date_urls: eligibility.missingWorkedDateUrls,
+      min_url_age_months: eligibility.minAgeMonths || null,
+      cutoff_date: eligibility.cutoffDate,
+      cohort_label: defaultWindow.label,
+      cohort_reason: rangeKey === "all_time" ? "All time includes all active URLs." : `Minimum URL age required: ${eligibility.minAgeMonths} month${eligibility.minAgeMonths === 1 ? "" : "s"}. Cutoff date: ${eligibility.cutoffDate}.`,
+      cohort_start_date: defaultWindow.startDate,
+      cohort_end_date: eligibility.cutoffDate ?? defaultWindow.endDate,
     };
 
     if (active.length === 0) {
