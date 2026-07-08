@@ -2,7 +2,7 @@ import { aggregateCompared, type ComparedUrlPerformance } from "./growth";
 
 export type MemberScore = ReturnType<typeof scoreMember>;
 export type PerformanceConfidence = "Low sample" | "Medium sample" | "High confidence";
-export type PerformanceKpiStatus = "insufficient_data" | "scored";
+export type PerformanceKpiStatus = "insufficient_data" | "not_enough_data" | "scored";
 
 export type RangePerformanceKpi = {
   performance_kpi_pct: number | null;
@@ -92,7 +92,7 @@ function isNewGrowthUrl(row: ComparedUrlPerformance) {
   return (row.previous_clicks + row.previous_impressions) === 0 && (row.clicks > 0 || row.impressions > 0);
 }
 
-export function calculateRangePerformanceKpi(memberRows: ComparedUrlPerformance[]): RangePerformanceKpi {
+export function calculateRangePerformanceKpi(memberRows: ComparedUrlPerformance[], minEligibleUrls = 1): RangePerformanceKpi {
   const eligibleRows = memberRows.filter(isEligibleUrl);
   const eligible_url_count = eligibleRows.length;
   const excluded_no_data_url_count = memberRows.filter(isNoDataUrl).length;
@@ -100,7 +100,7 @@ export function calculateRangePerformanceKpi(memberRows: ComparedUrlPerformance[
   const new_growth_url_count = eligibleRows.filter(isNewGrowthUrl).length;
   const declining_url_count = eligibleRows.filter((row) => row.status === "declining").length;
 
-  if (eligible_url_count === 0) {
+  if (eligible_url_count === 0 || eligible_url_count < minEligibleUrls) {
     return {
       performance_kpi_pct: null,
       impression_performance_score: null,
@@ -112,7 +112,7 @@ export function calculateRangePerformanceKpi(memberRows: ComparedUrlPerformance[
       positive_url_count,
       new_growth_url_count,
       declining_url_count,
-      performance_kpi_status: "insufficient_data",
+      performance_kpi_status: eligible_url_count === 0 ? "insufficient_data" : "not_enough_data",
       performance_confidence: null,
     };
   }
@@ -145,7 +145,7 @@ export function calculateRangePerformanceKpi(memberRows: ComparedUrlPerformance[
   };
 }
 
-export function scoreMember(member_name: string, rows: ComparedUrlPerformance[], maxClicks: number, maxImpressions: number, maxUrls: number) {
+export function scoreMember(member_name: string, rows: ComparedUrlPerformance[], maxClicks: number, maxImpressions: number, maxUrls: number, minEligibleUrls = 1) {
   const a = aggregateCompared(rows);
   const urlCount = rows.length || 1;
   const decliningRate = a.declining / urlCount;
@@ -170,15 +170,15 @@ export function scoreMember(member_name: string, rows: ComparedUrlPerformance[],
   const activeUrls = rows.length;
   const urlsThisMonth = rows.length;
   const urlsWithData = rows.length - a.noData;
-  const performanceKpi = calculateRangePerformanceKpi(rows);
+  const performanceKpi = calculateRangePerformanceKpi(rows, minEligibleUrls);
   return { member_name, urlCount: rows.length, activeUrls, urlsThisMonth, urlsWithData, ...a, quantityIndex: Math.round(quantityIndex), qualityIndex: Math.round(qualityIndex), portfolioHealth: healthLabel(decliningRate, noDataRate, a.click_growth_pct), priorityActions, supportSignal, ...performanceKpi };
 }
 
-export function scoreMembers(rows: ComparedUrlPerformance[]) {
+export function scoreMembers(rows: ComparedUrlPerformance[], minEligibleUrls = 1) {
   const grouped = Object.entries(rows.reduce<Record<string, ComparedUrlPerformance[]>>((acc, r) => { (acc[r.member_name] ??= []).push(r); return acc; }, {}));
   const aggs = grouped.map(([name, list]) => [name, list, aggregateCompared(list)] as const);
   const maxClicks = Math.max(1, ...aggs.map(([, , a]) => a.clicks));
   const maxImpressions = Math.max(1, ...aggs.map(([, , a]) => a.impressions));
   const maxUrls = Math.max(1, ...aggs.map(([, list]) => list.length));
-  return aggs.map(([name, list]) => scoreMember(name, list, maxClicks, maxImpressions, maxUrls)).sort((a, b) => b.qualityIndex - a.qualityIndex || b.quantityIndex - a.quantityIndex);
+  return aggs.map(([name, list]) => scoreMember(name, list, maxClicks, maxImpressions, maxUrls, minEligibleUrls)).sort((a, b) => b.qualityIndex - a.qualityIndex || b.quantityIndex - a.quantityIndex);
 }

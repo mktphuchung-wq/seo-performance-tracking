@@ -3,7 +3,7 @@ import { appConfig, getMemberEmailMap, getProjectGscMap } from "./env";
 import { getDateRange, type DateRange } from "./dates";
 import { classifyOpportunity, type OpportunityLabel } from "./metrics";
 
-export type ContentUrl = { id: string; urlHash?: string; project: string; url: string; member_name: string; memberEmail: string; gscProperty?: string; warning?: string };
+export type ContentUrl = { id: string; urlHash?: string; project: string; url: string; member_name: string; memberEmail: string; gscProperty?: string; content_worked_at?: string | null; last_updated_at?: string | null; created_at?: string | null; warning?: string };
 export type UrlMetrics = { clicks: number; impressions: number; ctr: number; position: number };
 export type UrlPerformance = ContentUrl & UrlMetrics & { opportunity: OpportunityLabel };
 export type QueryMetric = { query: string; opportunity: OpportunityLabel } & UrlMetrics;
@@ -30,28 +30,28 @@ function auth(accessToken: string) {
   return oauth2;
 }
 
-export type SheetContentUrlRow = { project: string; url: string; member_name: string };
+export type SheetContentUrlRow = { project: string; url: string; member_name: string; content_worked_at?: string | null };
 
 export async function getSheetContentUrlRows(accessToken: string): Promise<SheetContentUrlRow[]> {
   if (!appConfig.sheetId) return [];
   const sheets = google.sheets({ version: "v4", auth: auth(accessToken) });
-  const result = await sheets.spreadsheets.values.get({ spreadsheetId: appConfig.sheetId, range: `${appConfig.contentTab}!A:C` });
+  const result = await sheets.spreadsheets.values.get({ spreadsheetId: appConfig.sheetId, range: `${appConfig.contentTab}!A:D` });
   const rows = result.data.values ?? [];
   return rows.slice(1).map((row) => {
-    const [project = "", url = "", member_name = ""] = row as string[];
-    return { project, url, member_name };
+    const [project = "", url = "", member_name = "", content_worked_at = ""] = row as string[];
+    return { project, url, member_name, content_worked_at: content_worked_at || null };
   });
 }
 
 export async function getContentUrls(accessToken: string): Promise<ContentUrl[]> {
   if (!appConfig.sheetId) return [];
   const sheets = google.sheets({ version: "v4", auth: auth(accessToken) });
-  const result = await sheets.spreadsheets.values.get({ spreadsheetId: appConfig.sheetId, range: `${appConfig.contentTab}!A:C` });
+  const result = await sheets.spreadsheets.values.get({ spreadsheetId: appConfig.sheetId, range: `${appConfig.contentTab}!A:D` });
   const rows = result.data.values ?? [];
   const memberMap = getMemberEmailMap();
   const projectMap = getProjectGscMap();
   return rows.slice(1).map((row, index) => {
-    const [project = "", url = "", member_name = ""] = row as string[];
+    const [project = "", url = "", member_name = "", content_worked_at = ""] = row as string[];
     const gscProperty = projectMap[project];
     return {
       id: String(index),
@@ -60,6 +60,7 @@ export async function getContentUrls(accessToken: string): Promise<ContentUrl[]>
       member_name,
       memberEmail: (memberMap[member_name] ?? "").toLowerCase(),
       gscProperty,
+      content_worked_at: content_worked_at || null,
       warning: gscProperty ? undefined : `Missing PROJECT_GSC_MAP entry for project: ${project}`
     };
   }).filter((row) => row.project && row.url && row.member_name);

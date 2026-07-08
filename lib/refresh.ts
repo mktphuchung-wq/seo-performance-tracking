@@ -7,6 +7,8 @@ import { dbContentUrl } from "./postgres";
 import { classifyOpportunity } from "./metrics";
 import { scoreMembers } from "./scoring";
 import { getMemberEmailMap, getProjectGscMap } from "./env";
+import { getEligibleUrlsForRange } from "./cohorts";
+import { getProjectKpiSettings, defaultProjectKpiSettings } from "./project-kpi";
 
 export type SheetSyncResult = {
   status: "success" | "failed";
@@ -64,23 +66,23 @@ export async function syncSheetToDb(accessToken: string): Promise<SheetSyncResul
       activeHashes.add(hash);
       const memberEmail = (memberMap[memberName] ?? "").toLowerCase();
       const gscProperty = projectMap[project] ?? null;
-      const existing = await query<{ id: string; project: string; url: string; member_name: string; member_email: string | null; gsc_property: string | null; is_active: boolean | null }>(
-        "select id, project, url, member_name, member_email, gsc_property, is_active from content_urls where url_hash=$1",
+      const existing = await query<{ id: string; project: string; url: string; member_name: string; member_email: string | null; gsc_property: string | null; is_active: boolean | null; content_worked_at: string | null }>(
+        "select id, project, url, member_name, member_email, gsc_property, is_active, content_worked_at from content_urls where url_hash=$1",
         [hash]
       );
 
-      await query(`insert into content_urls (url_hash, project, url, member_name, member_email, gsc_property, is_active, source, last_seen_at, created_at, updated_at)
-        values ($1,$2,$3,$4,$5,$6,true,'google_sheet',now(),now(),now())
+      await query(`insert into content_urls (url_hash, project, url, member_name, member_email, gsc_property, content_worked_at, is_active, source, last_seen_at, created_at, updated_at)
+        values ($1,$2,$3,$4,$5,$6,$7,true,'google_sheet',now(),now(),now())
         on conflict (url_hash) do update set project=excluded.project, url=excluded.url, member_name=excluded.member_name, member_email=excluded.member_email,
-          gsc_property=excluded.gsc_property, is_active=true, source='google_sheet', last_seen_at=now(), updated_at=now()`,
-        [hash, project, normalizedUrl, memberName, memberEmail, gscProperty]);
+          gsc_property=excluded.gsc_property, content_worked_at=coalesce(excluded.content_worked_at, content_urls.content_worked_at), is_active=true, source='google_sheet', last_seen_at=now(), updated_at=now()`,
+        [hash, project, normalizedUrl, memberName, memberEmail, gscProperty, row.content_worked_at || null]);
 
       if (existing.rows.length === 0) {
         result.insertedRows += 1;
       } else {
         const current = existing.rows[0];
         const changed = current.project !== project || current.url !== normalizedUrl || current.member_name !== memberName ||
-          String(current.member_email ?? "") !== memberEmail || String(current.gsc_property ?? "") !== String(gscProperty ?? "") || current.is_active !== true;
+          String(current.member_email ?? "") !== memberEmail || String(current.gsc_property ?? "") !== String(gscProperty ?? "") || String(current.content_worked_at ?? "").slice(0,10) !== String(row.content_worked_at ?? "") || current.is_active !== true;
         if (changed) result.updatedRows += 1;
       }
     }
@@ -116,7 +118,16 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
   let runId: string | null = null;
   const previousRange = getPreviousRange(range);
   try {
-    const active = (await query<any>(`select id, url_hash, project, url, member_name, member_email, gsc_property from content_urls where coalesce(is_active,true)=true order by project, member_name, url`)).rows.map(dbContentUrl);
+    const allActive = (await query<any>(`select id, url_hash, project, url, member_name, member_email, gsc_property, content_worked_at, updated_at, created_at, is_active from content_urls where coalesce(is_active,true)=true order by project, member_name, url`)).rows.map((row) => ({ ...dbContentUrl(row), is_active: row.is_active }));
+    const settings = await getProjectKpiSettings().catch(() => []);
+    const settingsByProject = new Map(settings.map((s) => [s.project, s]));
+    const cohortGroups = new Map<string, typeof allActive>();
+    for (const url of allActive) {
+      const s = settingsByProject.get(url.project) || defaultProjectKpiSettings(url.project);
+      const cohort = getEligibleUrlsForRange([url], rangeKey, range, s);
+      if (cohort.eligible.length) (cohortGroups.get(url.project) ?? cohortGroups.set(url.project, []).get(url.project)!).push(url);
+    }
+    const active = [...cohortGroups.values()].flat();
     if (active.length === 0) return { ok: false, totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: "No active URLs found. Run Sync URLs from Sheet first." };
     const missingHash = active.filter((u) => !u.urlHash);
     if (missingHash.length) return { ok: false, totalUrls: active.length, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: active.length, errorMessage: `${missingHash.length} active URLs are missing url_hash.` };
@@ -143,7 +154,8 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
     const compared = comparePerformance(currentRows, previousRows, rangeKey, range);
     const urlsWithData = compared.filter((r) => r.clicks > 0 || r.impressions > 0).length;
     const noDataUrls = compared.length - urlsWithData;
-    const members = scoreMembers(compared);
+    const minEligibleUrls = rangeKey === "all_time" ? 1 : Math.min(...settings.map((s) => Number(s.min_eligible_urls || 5)), 5);
+    const members = scoreMembers(compared, minEligibleUrls);
 
     await transaction(async (client) => {
       await client.query("delete from seo_performance_cache where range_key=$1", [rangeKey]);

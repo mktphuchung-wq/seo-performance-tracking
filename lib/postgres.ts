@@ -10,16 +10,16 @@ const num = (v: unknown) => Number.isFinite(Number(v)) ? Number(v) : 0;
 const normalizeMetric = (r: any): UrlMetrics => ({ clicks: num(r.clicks), impressions: num(r.impressions), ctr: num(r.ctr), position: num(r.position) });
 
 export function dbContentUrl(row: any): ContentUrl {
-  return { id: String(row.id), urlHash: row.url_hash ? String(row.url_hash) : undefined, project: row.project ?? "", url: row.url ?? "", member_name: row.member_name ?? "", memberEmail: String(row.member_email ?? "").toLowerCase(), gscProperty: row.gsc_property ?? undefined };
+  return { id: String(row.id), urlHash: row.url_hash ? String(row.url_hash) : undefined, project: row.project ?? "", url: row.url ?? "", member_name: row.member_name ?? "", memberEmail: String(row.member_email ?? "").toLowerCase(), gscProperty: row.gsc_property ?? undefined, content_worked_at: row.content_worked_at ? String(row.content_worked_at).slice(0, 10) : null, last_updated_at: row.updated_at ? String(row.updated_at).slice(0, 10) : null, created_at: row.created_at ? String(row.created_at).slice(0, 10) : null };
 }
 
 export async function getDbContentUrls(): Promise<ContentUrl[]> {
-  const res = await query("select id, project, url, member_name, member_email, gsc_property from content_urls where coalesce(is_active,true) = true order by project, member_name, url");
+  const res = await query("select id, project, url, member_name, member_email, gsc_property, content_worked_at, updated_at, created_at from content_urls where coalesce(is_active,true) = true order by project, member_name, url");
   return res.rows.map(dbContentUrl);
 }
 
 export async function getDbPerformance(rangeKey: string, range: DateRange): Promise<ComparedUrlPerformance[]> {
-  const sql = `select c.id, c.url_hash, c.project, c.url, c.member_name, c.member_email, c.gsc_property,
+  const sql = `select c.id, c.url_hash, c.project, c.url, c.member_name, c.member_email, c.gsc_property, c.content_worked_at, c.updated_at, c.created_at,
     coalesce(v.clicks,0) clicks, coalesce(v.impressions,0) impressions, coalesce(v.ctr,0) ctr, coalesce(v.position,0) position,
     coalesce(v.previous_clicks,0) previous_clicks, coalesce(v.previous_impressions,0) previous_impressions, coalesce(v.previous_ctr,0) previous_ctr, coalesce(v.previous_position,0) previous_position,
     v.growth_status, v.opportunity_status, v.click_delta, v.click_growth_pct, v.impression_delta, v.impression_growth_pct, v.ctr_delta, v.position_delta, v.refreshed_at
