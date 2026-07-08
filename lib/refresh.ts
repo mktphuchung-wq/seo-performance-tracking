@@ -7,7 +7,7 @@ import { dbContentUrl } from "./postgres";
 import { classifyOpportunity } from "./metrics";
 import { scoreMembers } from "./scoring";
 import { getMemberEmailMap, getProjectGscMap } from "./env";
-import { getEligibleUrlsForRange } from "./cohorts";
+import { getCohortWindow, getEligibleUrlsForRange, getUrlWorkDate } from "./cohorts";
 import { getProjectKpiSettings, defaultProjectKpiSettings } from "./project-kpi";
 
 export type SheetSyncResult = {
@@ -102,7 +102,17 @@ export async function syncSheetToDb(accessToken: string): Promise<SheetSyncResul
     return result;
   }
 }
-export type CacheRefreshResult = { ok: boolean; runId?: string | null; totalUrls: number; processedUrls: number; urlsWithData: number; noDataUrls: number; failedUrls: number; errorMessage?: string | null };
+export type CacheRefreshStatus = "success" | "failed" | "not_enough_data";
+export type CacheRefreshDiagnostics = {
+  total_active_urls_before_cohort: number;
+  eligible_urls_after_cohort: number;
+  missing_worked_date_urls: number;
+  range_key: string;
+  cohort_start_date: string | null;
+  cohort_end_date: string | null;
+  cohort_label?: string;
+};
+export type CacheRefreshResult = { ok: boolean; status: CacheRefreshStatus; runId?: string | null; totalUrls: number; processedUrls: number; urlsWithData: number; noDataUrls: number; failedUrls: number; errorMessage?: string | null; message?: string | null; diagnostics?: CacheRefreshDiagnostics };
 
 const zeroMetrics: UrlMetrics = { clicks: 0, impressions: 0, ctr: 0, position: 0 };
 
@@ -121,18 +131,39 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
     const allActive = (await query<any>(`select id, url_hash, project, url, member_name, member_email, gsc_property, content_worked_at, updated_at, created_at, is_active from public.content_urls where coalesce(is_active,true)=true order by project, member_name, url`)).rows.map((row) => ({ ...dbContentUrl(row), is_active: row.is_active }));
     const settings = await getProjectKpiSettings().catch(() => []);
     const settingsByProject = new Map(settings.map((s) => [s.project, s]));
+    const firstSettings = allActive[0] ? settingsByProject.get(allActive[0].project) || defaultProjectKpiSettings(allActive[0].project) : undefined;
+    const defaultWindow = getCohortWindow(rangeKey, range, firstSettings?.seo_lag_days ?? 30, firstSettings);
+    const diagnosticsBase: CacheRefreshDiagnostics = {
+      total_active_urls_before_cohort: allActive.length,
+      eligible_urls_after_cohort: 0,
+      missing_worked_date_urls: allActive.filter((url) => !getUrlWorkDate(url, settingsByProject.get(url.project)?.url_work_date_field || "content_worked_at")).length,
+      range_key: rangeKey,
+      cohort_start_date: defaultWindow.startDate,
+      cohort_end_date: defaultWindow.endDate,
+      cohort_label: defaultWindow.label,
+    };
+
+    if (allActive.length === 0) return { ok: false, status: "failed", totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: "No active URLs found. Run Sync URLs from Sheet first.", diagnostics: diagnosticsBase };
+
     const cohortGroups = new Map<string, typeof allActive>();
-    for (const url of allActive) {
-      const s = settingsByProject.get(url.project) || defaultProjectKpiSettings(url.project);
-      const cohort = getEligibleUrlsForRange([url], rangeKey, range, s);
-      if (cohort.eligible.length) (cohortGroups.get(url.project) ?? cohortGroups.set(url.project, []).get(url.project)!).push(url);
+    for (const url of allActive) (cohortGroups.get(url.project) ?? cohortGroups.set(url.project, []).get(url.project)!).push(url);
+
+    const active = rangeKey === "all_time" ? allActive : [...cohortGroups.entries()].flatMap(([project, urls]) => {
+      const s = settingsByProject.get(project) || defaultProjectKpiSettings(project);
+      return getEligibleUrlsForRange(urls, rangeKey, range, s).eligible;
+    });
+    const diagnostics = { ...diagnosticsBase, eligible_urls_after_cohort: active.length };
+
+    if (active.length === 0) {
+      const message = "Not enough eligible URLs for this range cohort.";
+      const run = await query<{ id: string }>(`insert into refresh_runs (status, triggered_by, range_key, start_date, end_date, previous_start_date, previous_end_date, total_urls, processed_urls, urls_with_data, no_data_urls, failed_urls, error_message, started_at, finished_at, created_at, updated_at) values ('not_enough_data',$1,$2,$3,$4,$5,$6,$7,0,0,0,0,$8,now(),now(),now(),now()) returning id`, [triggeredBy ?? null, rangeKey, range.startDate, range.endDate, previousRange.startDate, previousRange.endDate, allActive.length, "No eligible URLs for this range cohort."]).catch(() => ({ rows: [] }));
+      runId = run.rows[0]?.id ?? null;
+      return { ok: true, status: "not_enough_data", runId, totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: null, message, diagnostics };
     }
-    const active = [...cohortGroups.values()].flat();
-    if (active.length === 0) return { ok: false, totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: "No active URLs found. Run Sync URLs from Sheet first." };
     const missingHash = active.filter((u) => !u.urlHash);
-    if (missingHash.length) return { ok: false, totalUrls: active.length, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: active.length, errorMessage: `${missingHash.length} active URLs are missing url_hash.` };
+    if (missingHash.length) return { ok: false, status: "failed", totalUrls: active.length, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: active.length, errorMessage: `${missingHash.length} active URLs are missing url_hash.`, diagnostics };
     const missingGsc = active.filter((u) => !u.gscProperty);
-    if (missingGsc.length) return { ok: false, totalUrls: active.length, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: active.length, errorMessage: `${missingGsc.length} active URLs are missing gsc_property.` };
+    if (missingGsc.length) return { ok: false, status: "failed", totalUrls: active.length, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: active.length, errorMessage: `${missingGsc.length} active URLs are missing gsc_property.`, diagnostics };
 
     const run = await query<{ id: string }>(`insert into refresh_runs (status, triggered_by, range_key, start_date, end_date, previous_start_date, previous_end_date, total_urls, processed_urls, urls_with_data, no_data_urls, failed_urls, started_at, created_at, updated_at) values ('running',$1,$2,$3,$4,$5,$6,$7,0,0,0,0,now(),now(),now()) returning id`, [triggeredBy ?? null, rangeKey, range.startDate, range.endDate, previousRange.startDate, previousRange.endDate, active.length]);
     runId = run.rows[0]?.id ?? null;
@@ -170,10 +201,10 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
       }
       await client.query("update refresh_runs set status='success', processed_urls=$2, urls_with_data=$3, no_data_urls=$4, failed_urls=0, finished_at=now(), updated_at=now() where id=$1", [runId, compared.length, urlsWithData, noDataUrls]);
     });
-    return { ok: true, runId, totalUrls: active.length, processedUrls: active.length, urlsWithData, noDataUrls, failedUrls: 0, errorMessage: null };
+    return { ok: true, status: "success", runId, totalUrls: active.length, processedUrls: active.length, urlsWithData, noDataUrls, failedUrls: 0, errorMessage: null, diagnostics };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Google Search Console refresh failed";
     if (runId) await query("update refresh_runs set status='failed', failed_urls=total_urls, error_message=$2, finished_at=now(), updated_at=now() where id=$1", [runId, message]).catch(() => undefined);
-    return { ok: false, runId, totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: message };
+    return { ok: false, status: "failed", runId, totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: message };
   }
 }
