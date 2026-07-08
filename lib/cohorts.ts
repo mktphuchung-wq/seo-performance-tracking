@@ -2,7 +2,7 @@ import type { DateRange } from "./dates";
 import type { ContentUrl } from "./google";
 
 export type CohortRangeKey = "current_month" | "previous_month" | "last_3_months" | "last_6_months" | "all_time" | string;
-export type CohortMode = "previous_month_work" | "previous_3_month_work" | "previous_6_month_work" | "all_active_urls" | "lagged_before_window";
+export type CohortMode = "url_age_1m" | "url_age_3m" | "url_age_6m" | "previous_month_work" | "previous_3_month_work" | "previous_6_month_work" | "all_active_urls" | "lagged_before_window";
 
 export type CohortSettings = {
   enable_cohort_based_measurement?: boolean;
@@ -34,9 +34,9 @@ const subtractMonths = (date: Date, months: number) => {
 
 export function getRangeCohortMode(rangeKey: CohortRangeKey, settings: CohortSettings = {}): CohortMode {
   if (rangeKey === "all_time") return settings.cohort_mode_all_time || "all_active_urls";
-  if (rangeKey === "last_6_months") return settings.cohort_mode_6m || "previous_6_month_work";
-  if (rangeKey === "last_3_months") return settings.cohort_mode_3m || "previous_3_month_work";
-  return settings.cohort_mode_1m || "previous_month_work";
+  if (rangeKey === "last_6_months") return settings.cohort_mode_6m || "url_age_6m";
+  if (rangeKey === "last_3_months") return settings.cohort_mode_3m || "url_age_3m";
+  return settings.cohort_mode_1m || "url_age_1m";
 }
 
 export function getMinAgeMonthsForRange(rangeKey: CohortRangeKey) {
