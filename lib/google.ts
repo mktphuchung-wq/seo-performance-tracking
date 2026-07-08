@@ -33,27 +33,67 @@ function auth(accessToken: string) {
 export type SheetContentUrlRow = { project: string; url: string; member_name: string; content_worked_at?: string | null };
 
 export function parseSheetDate(value: unknown): string | null {
-  if (!value) return null;
+  if (value === null || value === undefined || value === "") return null;
 
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return value.toISOString().slice(0, 10);
   }
 
+  // Google Sheets serial date number.
+  // Google Sheets day 1 = 1899-12-31, but JS conversion commonly uses 1899-12-30.
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const excelEpoch = Date.UTC(1899, 11, 30);
+    const date = new Date(excelEpoch + value * 24 * 60 * 60 * 1000);
+    if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+    return null;
+  }
+
   const raw = String(value).trim();
   if (!raw) return null;
 
-  const parsed = new Date(raw);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toISOString().slice(0, 10);
+  // yyyy-mm-dd
+  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) {
+    const year = Number(iso[1]);
+    const month = Number(iso[2]);
+    const day = Number(iso[3]);
+    return validDateParts(year, month, day);
+  }
+
+  // m/d/yyyy or mm/dd/yyyy
+  // Source Sheet uses m/d/yyyy.
+  const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (us) {
+    const month = Number(us[1]);
+    const day = Number(us[2]);
+    const year = Number(us[3]);
+    return validDateParts(year, month, day);
   }
 
   return null;
 }
 
+function validDateParts(year: number, month: number, day: number): string | null {
+  if (!year || !month || !day) return null;
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > 31) return null;
+
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return date.toISOString().slice(0, 10);
+}
+
 export async function getSheetContentUrlRows(accessToken: string): Promise<SheetContentUrlRow[]> {
   if (!appConfig.sheetId) return [];
   const sheets = google.sheets({ version: "v4", auth: auth(accessToken) });
-  const result = await sheets.spreadsheets.values.get({ spreadsheetId: appConfig.sheetId, range: `${appConfig.contentTab}!A:D` });
+  const result = await sheets.spreadsheets.values.get({ spreadsheetId: appConfig.sheetId, range: `${appConfig.contentTab}!A:D`, valueRenderOption: "UNFORMATTED_VALUE", dateTimeRenderOption: "FORMATTED_STRING" });
   const rows = result.data.values ?? [];
   return rows.slice(1).map((row) => {
     const [project = "", url = "", member_name = "", content_worked_at = ""] = row as unknown[];
@@ -64,7 +104,7 @@ export async function getSheetContentUrlRows(accessToken: string): Promise<Sheet
 export async function getContentUrls(accessToken: string): Promise<ContentUrl[]> {
   if (!appConfig.sheetId) return [];
   const sheets = google.sheets({ version: "v4", auth: auth(accessToken) });
-  const result = await sheets.spreadsheets.values.get({ spreadsheetId: appConfig.sheetId, range: `${appConfig.contentTab}!A:D` });
+  const result = await sheets.spreadsheets.values.get({ spreadsheetId: appConfig.sheetId, range: `${appConfig.contentTab}!A:D`, valueRenderOption: "UNFORMATTED_VALUE", dateTimeRenderOption: "FORMATTED_STRING" });
   const rows = result.data.values ?? [];
   const memberMap = getMemberEmailMap();
   const projectMap = getProjectGscMap();

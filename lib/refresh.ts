@@ -10,6 +10,15 @@ import { getMemberEmailMap, getProjectGscMap } from "./env";
 import { getCohortWindow, getEligibleUrlsForRange, getUrlWorkDate } from "./cohorts";
 import { getProjectKpiSettings, defaultProjectKpiSettings } from "./project-kpi";
 
+export type SheetSyncDateStats = {
+  totalRows: number;
+  parsedContentWorkedAtRows: number;
+  missingContentWorkedAtRows: number;
+  minContentWorkedAt: string | null;
+  maxContentWorkedAt: string | null;
+  workedMonthDistribution: Record<string, number>;
+};
+
 export type SheetSyncResult = {
   status: "success" | "failed";
   totalRows: number;
@@ -17,6 +26,7 @@ export type SheetSyncResult = {
   updatedRows: number;
   deactivatedRows: number;
   failedRows: number;
+  dateStats?: SheetSyncDateStats;
   errorMessage?: string;
 };
 
@@ -28,6 +38,35 @@ function normalizeSheetUrl(value: string): string {
 
 function urlHash(project: string, normalizedUrl: string, memberName: string): string {
   return crypto.createHash("sha256").update(`${project}|${normalizedUrl}|${memberName}`).digest("hex");
+}
+
+function buildSheetSyncDateStats(rows: { content_worked_at?: string | null }[]): SheetSyncDateStats {
+  const parsedDates = rows.map((row) => row.content_worked_at).filter((date): date is string => Boolean(date));
+  const workedMonthDistribution = parsedDates.reduce<Record<string, number>>((acc, date) => {
+    const month = date.slice(0, 7);
+    acc[month] = (acc[month] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    totalRows: rows.length,
+    parsedContentWorkedAtRows: parsedDates.length,
+    missingContentWorkedAtRows: rows.length - parsedDates.length,
+    minContentWorkedAt: parsedDates.length ? parsedDates.reduce((min, date) => date < min ? date : min, parsedDates[0]) : null,
+    maxContentWorkedAt: parsedDates.length ? parsedDates.reduce((max, date) => date > max ? date : max, parsedDates[0]) : null,
+    workedMonthDistribution,
+  };
+}
+
+function logSheetSyncDateStats(stats: SheetSyncDateStats) {
+  console.info("Google Sheet content_worked_at sync stats", {
+    totalRows: stats.totalRows,
+    parsedContentWorkedAtRows: stats.parsedContentWorkedAtRows,
+    missingContentWorkedAtRows: stats.missingContentWorkedAtRows,
+    minContentWorkedAt: stats.minContentWorkedAt,
+    maxContentWorkedAt: stats.maxContentWorkedAt,
+    workedMonthDistribution: stats.workedMonthDistribution,
+  });
 }
 
 async function recordSheetSyncRun(result: SheetSyncResult) {
@@ -45,6 +84,8 @@ export async function syncSheetToDb(accessToken: string): Promise<SheetSyncResul
     const activeHashes = new Set<string>();
 
     result.totalRows = rows.length;
+    result.dateStats = buildSheetSyncDateStats(rows);
+    logSheetSyncDateStats(result.dateStats);
 
     for (const row of rows) {
       const project = row.project.trim();
@@ -111,6 +152,8 @@ export type CacheRefreshDiagnostics = {
   cohort_start_date: string | null;
   cohort_end_date: string | null;
   cohort_label?: string;
+  db_worked_date_min: string | null;
+  db_worked_date_max: string | null;
 };
 export type CacheRefreshResult = { ok: boolean; status: CacheRefreshStatus; runId?: string | null; totalUrls: number; processedUrls: number; urlsWithData: number; noDataUrls: number; failedUrls: number; errorMessage?: string | null; message?: string | null; diagnostics?: CacheRefreshDiagnostics };
 
@@ -133,6 +176,9 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
     const settingsByProject = new Map(settings.map((s) => [s.project, s]));
     const firstSettings = allActive[0] ? settingsByProject.get(allActive[0].project) || defaultProjectKpiSettings(allActive[0].project) : undefined;
     const defaultWindow = getCohortWindow(rangeKey, range, firstSettings?.seo_lag_days ?? 30, firstSettings);
+    const activeWorkedDates = allActive.map((url) => getUrlWorkDate(url, settingsByProject.get(url.project)?.url_work_date_field || "content_worked_at")).filter((date): date is string => Boolean(date));
+    const dbWorkedDateMin = activeWorkedDates.length ? activeWorkedDates.reduce((min, date) => date < min ? date : min, activeWorkedDates[0]) : null;
+    const dbWorkedDateMax = activeWorkedDates.length ? activeWorkedDates.reduce((max, date) => date > max ? date : max, activeWorkedDates[0]) : null;
     const diagnosticsBase: CacheRefreshDiagnostics = {
       total_active_urls_before_cohort: allActive.length,
       eligible_urls_after_cohort: 0,
@@ -141,6 +187,8 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
       cohort_start_date: defaultWindow.startDate,
       cohort_end_date: defaultWindow.endDate,
       cohort_label: defaultWindow.label,
+      db_worked_date_min: dbWorkedDateMin,
+      db_worked_date_max: dbWorkedDateMax,
     };
 
     if (allActive.length === 0) return { ok: false, status: "failed", totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: "No active URLs found. Run Sync URLs from Sheet first.", diagnostics: diagnosticsBase };
