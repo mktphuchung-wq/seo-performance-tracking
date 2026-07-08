@@ -152,6 +152,10 @@ export type CacheRefreshDiagnostics = {
   cohort_start_date: string | null;
   cohort_end_date: string | null;
   cohort_label?: string;
+  excluded_urls_after_cohort: number;
+  min_url_age_months: number | null;
+  cutoff_date: string | null;
+  cohort_reason: string;
   db_worked_date_min: string | null;
   db_worked_date_max: string | null;
 };
@@ -187,6 +191,10 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
       cohort_start_date: defaultWindow.startDate,
       cohort_end_date: defaultWindow.endDate,
       cohort_label: defaultWindow.label,
+      excluded_urls_after_cohort: 0,
+      min_url_age_months: rangeKey === "all_time" ? null : null,
+      cutoff_date: defaultWindow.endDate,
+      cohort_reason: defaultWindow.label,
       db_worked_date_min: dbWorkedDateMin,
       db_worked_date_max: dbWorkedDateMax,
     };
@@ -196,15 +204,30 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
     const cohortGroups = new Map<string, typeof allActive>();
     for (const url of allActive) (cohortGroups.get(url.project) ?? cohortGroups.set(url.project, []).get(url.project)!).push(url);
 
-    const active = rangeKey === "all_time" ? allActive : [...cohortGroups.entries()].flatMap(([project, urls]) => {
+    const cohortResults = [...cohortGroups.entries()].map(([project, urls]) => {
       const s = settingsByProject.get(project) || defaultProjectKpiSettings(project);
-      return getEligibleUrlsForRange(urls, rangeKey, range, s).eligible;
+      return getEligibleUrlsForRange(urls, rangeKey, range, s);
     });
-    const diagnostics = { ...diagnosticsBase, eligible_urls_after_cohort: active.length };
+    const active = cohortResults.flatMap((result) => result.eligible);
+    const missingWorkedDateUrls = cohortResults.reduce((sum, result) => sum + result.missingWorkedDateUrls, 0);
+    const excludedUrls = cohortResults.reduce((sum, result) => sum + result.excluded.length, 0);
+    const firstResult = cohortResults[0];
+    const diagnostics = {
+      ...diagnosticsBase,
+      eligible_urls_after_cohort: active.length,
+      excluded_urls_after_cohort: excludedUrls,
+      missing_worked_date_urls: missingWorkedDateUrls,
+      min_url_age_months: firstResult?.minAgeMonths ? firstResult.minAgeMonths : null,
+      cutoff_date: firstResult?.cutoffDate ?? null,
+      cohort_label: firstResult?.window.label ?? diagnosticsBase.cohort_label,
+      cohort_reason: firstResult?.cohortReason ?? diagnosticsBase.cohort_reason,
+      cohort_start_date: firstResult?.window.startDate ?? diagnosticsBase.cohort_start_date,
+      cohort_end_date: firstResult?.window.endDate ?? diagnosticsBase.cohort_end_date,
+    };
 
     if (active.length === 0) {
-      const message = "Not enough eligible URLs for this range cohort.";
-      const run = await query<{ id: string }>(`insert into refresh_runs (status, triggered_by, range_key, start_date, end_date, previous_start_date, previous_end_date, total_urls, processed_urls, urls_with_data, no_data_urls, failed_urls, error_message, started_at, finished_at, created_at, updated_at) values ('not_enough_data',$1,$2,$3,$4,$5,$6,$7,0,0,0,0,$8,now(),now(),now(),now()) returning id`, [triggeredBy ?? null, rangeKey, range.startDate, range.endDate, previousRange.startDate, previousRange.endDate, allActive.length, "No eligible URLs for this range cohort."]).catch(() => ({ rows: [] }));
+      const message = "Not enough eligible URLs for this range. URLs may be newer than the minimum age requirement.";
+      const run = await query<{ id: string }>(`insert into refresh_runs (status, triggered_by, range_key, start_date, end_date, previous_start_date, previous_end_date, total_urls, processed_urls, urls_with_data, no_data_urls, failed_urls, error_message, started_at, finished_at, created_at, updated_at) values ('not_enough_data',$1,$2,$3,$4,$5,$6,$7,0,0,0,0,$8,now(),now(),now(),now()) returning id`, [triggeredBy ?? null, rangeKey, range.startDate, range.endDate, previousRange.startDate, previousRange.endDate, allActive.length, "No eligible URLs after URL age filtering."]).catch(() => ({ rows: [] }));
       runId = run.rows[0]?.id ?? null;
       return { ok: true, status: "not_enough_data", runId, totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: null, message, diagnostics };
     }
