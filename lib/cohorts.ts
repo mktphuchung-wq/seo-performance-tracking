@@ -74,7 +74,8 @@ export function parseContentWorkedAt(value: unknown): Date | null {
 
 export function getUrlWorkDate(url: UrlWithWorkDate, preferredField = "content_worked_at") {
   const value = (url as Record<string, unknown>)[preferredField] || url.content_worked_at;
-  return value ? String(value).slice(0, 10) : null;
+  const parsed = parseContentWorkedAt(value);
+  return parsed ? iso(parsed) : null;
 }
 
 export function getEligibleUrlsForRange<T extends UrlWithWorkDate>(urls: T[], rangeKey: CohortRangeKey, measurementRange: DateRange, settings: CohortSettings = {}): CohortResult<T> {

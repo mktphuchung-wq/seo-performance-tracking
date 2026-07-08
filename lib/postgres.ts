@@ -8,9 +8,18 @@ import { adjustMemberFinal, defaultProjectKpiSettings } from "./project-kpi";
 
 const num = (v: unknown) => Number.isFinite(Number(v)) ? Number(v) : 0;
 const normalizeMetric = (r: any): UrlMetrics => ({ clicks: num(r.clicks), impressions: num(r.impressions), ctr: num(r.ctr), position: num(r.position) });
+const normalizeDbDate = (value: unknown) => {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  const raw = String(value).trim();
+  const iso = raw.match(/^(\d{4})-\d{2}-\d{2}/);
+  if (iso) return raw.slice(0, 10);
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+};
 
 export function dbContentUrl(row: any): ContentUrl {
-  return { id: String(row.id), urlHash: row.url_hash ? String(row.url_hash) : undefined, project: row.project ?? "", url: row.url ?? "", member_name: row.member_name ?? "", memberEmail: String(row.member_email ?? "").toLowerCase(), gscProperty: row.gsc_property ?? undefined, content_worked_at: row.content_worked_at ? String(row.content_worked_at).slice(0, 10) : null, last_updated_at: row.updated_at ? String(row.updated_at).slice(0, 10) : null, created_at: row.created_at ? String(row.created_at).slice(0, 10) : null };
+  return { id: String(row.id), urlHash: row.url_hash ? String(row.url_hash) : undefined, project: row.project ?? "", url: row.url ?? "", member_name: row.member_name ?? "", memberEmail: String(row.member_email ?? "").toLowerCase(), gscProperty: row.gsc_property ?? undefined, content_worked_at: normalizeDbDate(row.content_worked_at), last_updated_at: normalizeDbDate(row.updated_at), created_at: normalizeDbDate(row.created_at) };
 }
 
 export async function getDbContentUrls(): Promise<ContentUrl[]> {
