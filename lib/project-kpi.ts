@@ -6,6 +6,8 @@ import type { MemberPerformanceFinalSummary } from "./postgres";
 
 export const projectKpiTypes = ["new_project", "growth_project", "stable_project"] as const;
 export type ProjectKpiType = typeof projectKpiTypes[number];
+export const cohortModes = ["previous_month_work", "previous_3_month_work", "previous_6_month_work", "lagged_before_window", "all_active_urls"] as const;
+export type CohortMode = typeof cohortModes[number];
 export const noDataPolicies = ["exclude_from_performance", "neutral_score", "mild_penalty", "pm_review_required"] as const;
 export type NoDataPolicy = typeof noDataPolicies[number];
 export type AdjustmentStatus = "not_applicable" | "raw_kept" | "auto_adjusted" | "pm_review_required" | "pm_override_applied" | "protection_disabled" | "insufficient_data";
@@ -33,6 +35,13 @@ export type ProjectKpiSettings = {
   performance_weight_6m_pct: number;
   performance_weight_all_time_pct: number;
   normalize_missing_ranges: boolean;
+  enable_cohort_based_measurement: boolean;
+  url_work_date_field: string;
+  seo_lag_days: number;
+  cohort_mode_1m: CohortMode;
+  cohort_mode_3m: CohortMode;
+  cohort_mode_6m: CohortMode;
+  cohort_mode_all_time: CohortMode;
   enable_long_term_trend_protection: boolean;
   trend_protection_floor_pct: number;
   trend_protection_required_3m_pct: number;
@@ -70,6 +79,13 @@ export const defaultProjectKpiSettings = (project = ""): ProjectKpiSettings => (
   performance_weight_6m_pct: 20,
   performance_weight_all_time_pct: 10,
   normalize_missing_ranges: true,
+  enable_cohort_based_measurement: true,
+  url_work_date_field: "content_worked_at",
+  seo_lag_days: 30,
+  cohort_mode_1m: "previous_month_work",
+  cohort_mode_3m: "previous_3_month_work",
+  cohort_mode_6m: "previous_6_month_work",
+  cohort_mode_all_time: "all_active_urls",
   enable_long_term_trend_protection: true,
   trend_protection_floor_pct: 70,
   trend_protection_required_3m_pct: 70,
@@ -144,6 +160,13 @@ function mapSettings(row: any): ProjectKpiSettings {
     performance_weight_all_time_pct: Number(row.performance_weight_all_time_pct ?? 10),
 
     normalize_missing_ranges: row.normalize_missing_ranges ?? true,
+    enable_cohort_based_measurement: row.enable_cohort_based_measurement ?? true,
+    url_work_date_field: row.url_work_date_field || "content_worked_at",
+    seo_lag_days: Number(row.seo_lag_days ?? 30),
+    cohort_mode_1m: row.cohort_mode_1m || "previous_month_work",
+    cohort_mode_3m: row.cohort_mode_3m || "previous_3_month_work",
+    cohort_mode_6m: row.cohort_mode_6m || "previous_6_month_work",
+    cohort_mode_all_time: row.cohort_mode_all_time || "all_active_urls",
     enable_long_term_trend_protection: row.enable_long_term_trend_protection ?? true,
 
     trend_protection_floor_pct: Number(row.trend_protection_floor_pct ?? 70),
@@ -196,6 +219,13 @@ export async function getProjectKpiSettings(): Promise<ProjectKpiSettings[]> {
       s.performance_weight_6m_pct as performance_weight_6m_pct,
       s.performance_weight_all_time_pct as performance_weight_all_time_pct,
       s.normalize_missing_ranges as normalize_missing_ranges,
+      s.enable_cohort_based_measurement as enable_cohort_based_measurement,
+      s.url_work_date_field as url_work_date_field,
+      s.seo_lag_days as seo_lag_days,
+      s.cohort_mode_1m as cohort_mode_1m,
+      s.cohort_mode_3m as cohort_mode_3m,
+      s.cohort_mode_6m as cohort_mode_6m,
+      s.cohort_mode_all_time as cohort_mode_all_time,
       s.enable_long_term_trend_protection as enable_long_term_trend_protection,
       s.trend_protection_floor_pct as trend_protection_floor_pct,
       s.trend_protection_required_3m_pct as trend_protection_required_3m_pct,
@@ -229,10 +259,10 @@ export async function upsertProjectKpiSettings(input: Partial<ProjectKpiSettings
   const s = { ...defaultProjectKpiSettings(project), ...input, project };
   const totalWeight = Number(s.performance_weight_1m_pct) + Number(s.performance_weight_3m_pct) + Number(s.performance_weight_6m_pct) + Number(s.performance_weight_all_time_pct);
   if (Math.round(totalWeight * 100) / 100 !== 100) throw new Error("Total enabled Performance Final % weights must equal 100%.");
-  const res = await query<any>(`insert into public.project_kpi_settings (project, project_kpi_type, project_start_date, is_kpi_protection_enabled, performance_floor_pct, performance_cap_pct, min_coverage_required, min_eligible_urls, max_excluded_no_data_rate, allow_auto_floor_when_low_confidence, allow_auto_floor_when_partial_coverage, allow_auto_floor_when_high_no_data, require_pm_review_below_pct, pm_override_enabled, pm_override_adjusted_pct, pm_override_reason, performance_weight_1m_pct, performance_weight_3m_pct, performance_weight_6m_pct, performance_weight_all_time_pct, normalize_missing_ranges, enable_long_term_trend_protection, trend_protection_floor_pct, trend_protection_required_3m_pct, trend_protection_required_all_time_pct, not_enough_data_policy, neutral_no_data_score_pct, min_url_age_days_for_penalty, max_no_data_penalty_pct, no_data_rate_pm_review_pct, notes)
-    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
-    on conflict (project) do update set project_kpi_type=excluded.project_kpi_type, project_start_date=excluded.project_start_date, is_kpi_protection_enabled=excluded.is_kpi_protection_enabled, performance_floor_pct=excluded.performance_floor_pct, performance_cap_pct=excluded.performance_cap_pct, min_coverage_required=excluded.min_coverage_required, min_eligible_urls=excluded.min_eligible_urls, max_excluded_no_data_rate=excluded.max_excluded_no_data_rate, allow_auto_floor_when_low_confidence=excluded.allow_auto_floor_when_low_confidence, allow_auto_floor_when_partial_coverage=excluded.allow_auto_floor_when_partial_coverage, allow_auto_floor_when_high_no_data=excluded.allow_auto_floor_when_high_no_data, require_pm_review_below_pct=excluded.require_pm_review_below_pct, pm_override_enabled=excluded.pm_override_enabled, pm_override_adjusted_pct=excluded.pm_override_adjusted_pct, pm_override_reason=excluded.pm_override_reason, performance_weight_1m_pct=excluded.performance_weight_1m_pct, performance_weight_3m_pct=excluded.performance_weight_3m_pct, performance_weight_6m_pct=excluded.performance_weight_6m_pct, performance_weight_all_time_pct=excluded.performance_weight_all_time_pct, normalize_missing_ranges=excluded.normalize_missing_ranges, enable_long_term_trend_protection=excluded.enable_long_term_trend_protection, trend_protection_floor_pct=excluded.trend_protection_floor_pct, trend_protection_required_3m_pct=excluded.trend_protection_required_3m_pct, trend_protection_required_all_time_pct=excluded.trend_protection_required_all_time_pct, not_enough_data_policy=excluded.not_enough_data_policy, neutral_no_data_score_pct=excluded.neutral_no_data_score_pct, min_url_age_days_for_penalty=excluded.min_url_age_days_for_penalty, max_no_data_penalty_pct=excluded.max_no_data_penalty_pct, no_data_rate_pm_review_pct=excluded.no_data_rate_pm_review_pct, notes=excluded.notes returning *`,
-    [s.project, s.project_kpi_type, s.project_start_date || null, bool(s.is_kpi_protection_enabled), s.performance_floor_pct, s.performance_cap_pct, Number(s.min_coverage_required), Number(s.min_eligible_urls), Number(s.max_excluded_no_data_rate), bool(s.allow_auto_floor_when_low_confidence), bool(s.allow_auto_floor_when_partial_coverage), bool(s.allow_auto_floor_when_high_no_data), Number(s.require_pm_review_below_pct), bool(s.pm_override_enabled), s.pm_override_adjusted_pct, s.pm_override_reason || null, Number(s.performance_weight_1m_pct), Number(s.performance_weight_3m_pct), Number(s.performance_weight_6m_pct), Number(s.performance_weight_all_time_pct), bool(s.normalize_missing_ranges), bool(s.enable_long_term_trend_protection), Number(s.trend_protection_floor_pct), Number(s.trend_protection_required_3m_pct), Number(s.trend_protection_required_all_time_pct), s.not_enough_data_policy, Number(s.neutral_no_data_score_pct), Number(s.min_url_age_days_for_penalty), Number(s.max_no_data_penalty_pct), Number(s.no_data_rate_pm_review_pct), s.notes || null]);
+  const res = await query<any>(`insert into public.project_kpi_settings (project, project_kpi_type, project_start_date, is_kpi_protection_enabled, performance_floor_pct, performance_cap_pct, min_coverage_required, min_eligible_urls, max_excluded_no_data_rate, allow_auto_floor_when_low_confidence, allow_auto_floor_when_partial_coverage, allow_auto_floor_when_high_no_data, require_pm_review_below_pct, pm_override_enabled, pm_override_adjusted_pct, pm_override_reason, performance_weight_1m_pct, performance_weight_3m_pct, performance_weight_6m_pct, performance_weight_all_time_pct, normalize_missing_ranges, enable_cohort_based_measurement, url_work_date_field, seo_lag_days, cohort_mode_1m, cohort_mode_3m, cohort_mode_6m, cohort_mode_all_time, enable_long_term_trend_protection, trend_protection_floor_pct, trend_protection_required_3m_pct, trend_protection_required_all_time_pct, not_enough_data_policy, neutral_no_data_score_pct, min_url_age_days_for_penalty, max_no_data_penalty_pct, no_data_rate_pm_review_pct, notes)
+    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38)
+    on conflict (project) do update set project_kpi_type=excluded.project_kpi_type, project_start_date=excluded.project_start_date, is_kpi_protection_enabled=excluded.is_kpi_protection_enabled, performance_floor_pct=excluded.performance_floor_pct, performance_cap_pct=excluded.performance_cap_pct, min_coverage_required=excluded.min_coverage_required, min_eligible_urls=excluded.min_eligible_urls, max_excluded_no_data_rate=excluded.max_excluded_no_data_rate, allow_auto_floor_when_low_confidence=excluded.allow_auto_floor_when_low_confidence, allow_auto_floor_when_partial_coverage=excluded.allow_auto_floor_when_partial_coverage, allow_auto_floor_when_high_no_data=excluded.allow_auto_floor_when_high_no_data, require_pm_review_below_pct=excluded.require_pm_review_below_pct, pm_override_enabled=excluded.pm_override_enabled, pm_override_adjusted_pct=excluded.pm_override_adjusted_pct, pm_override_reason=excluded.pm_override_reason, performance_weight_1m_pct=excluded.performance_weight_1m_pct, performance_weight_3m_pct=excluded.performance_weight_3m_pct, performance_weight_6m_pct=excluded.performance_weight_6m_pct, performance_weight_all_time_pct=excluded.performance_weight_all_time_pct, normalize_missing_ranges=excluded.normalize_missing_ranges, enable_cohort_based_measurement=excluded.enable_cohort_based_measurement, url_work_date_field=excluded.url_work_date_field, seo_lag_days=excluded.seo_lag_days, cohort_mode_1m=excluded.cohort_mode_1m, cohort_mode_3m=excluded.cohort_mode_3m, cohort_mode_6m=excluded.cohort_mode_6m, cohort_mode_all_time=excluded.cohort_mode_all_time, enable_long_term_trend_protection=excluded.enable_long_term_trend_protection, trend_protection_floor_pct=excluded.trend_protection_floor_pct, trend_protection_required_3m_pct=excluded.trend_protection_required_3m_pct, trend_protection_required_all_time_pct=excluded.trend_protection_required_all_time_pct, not_enough_data_policy=excluded.not_enough_data_policy, neutral_no_data_score_pct=excluded.neutral_no_data_score_pct, min_url_age_days_for_penalty=excluded.min_url_age_days_for_penalty, max_no_data_penalty_pct=excluded.max_no_data_penalty_pct, no_data_rate_pm_review_pct=excluded.no_data_rate_pm_review_pct, notes=excluded.notes returning *`,
+    [s.project, s.project_kpi_type, s.project_start_date || null, bool(s.is_kpi_protection_enabled), s.performance_floor_pct, s.performance_cap_pct, Number(s.min_coverage_required), Number(s.min_eligible_urls), Number(s.max_excluded_no_data_rate), bool(s.allow_auto_floor_when_low_confidence), bool(s.allow_auto_floor_when_partial_coverage), bool(s.allow_auto_floor_when_high_no_data), Number(s.require_pm_review_below_pct), bool(s.pm_override_enabled), s.pm_override_adjusted_pct, s.pm_override_reason || null, Number(s.performance_weight_1m_pct), Number(s.performance_weight_3m_pct), Number(s.performance_weight_6m_pct), Number(s.performance_weight_all_time_pct), bool(s.normalize_missing_ranges), bool(s.enable_cohort_based_measurement), s.url_work_date_field, Number(s.seo_lag_days), s.cohort_mode_1m, s.cohort_mode_3m, s.cohort_mode_6m, s.cohort_mode_all_time, bool(s.enable_long_term_trend_protection), Number(s.trend_protection_floor_pct), Number(s.trend_protection_required_3m_pct), Number(s.trend_protection_required_all_time_pct), s.not_enough_data_policy, Number(s.neutral_no_data_score_pct), Number(s.min_url_age_days_for_penalty), Number(s.max_no_data_penalty_pct), Number(s.no_data_rate_pm_review_pct), s.notes || null]);
   return mapSettings(res.rows[0]);
 }
 
@@ -242,7 +272,7 @@ export function parseProjectKpiForm(form: FormData, projectFromPath?: string) {
   if (!project) throw new Error("Project is required to save KPI settings.");
   return { project, project_kpi_type: String(get("project_kpi_type") || "growth_project") as ProjectKpiType, project_start_date: String(get("project_start_date") || "") || null,
     is_kpi_protection_enabled: bool(get("is_kpi_protection_enabled")), performance_floor_pct: nullableNum(get("performance_floor_pct")), performance_cap_pct: nullableNum(get("performance_cap_pct")), min_coverage_required: Number(get("min_coverage_required") || 0.8), min_eligible_urls: Number(get("min_eligible_urls") || 5), max_excluded_no_data_rate: Number(get("max_excluded_no_data_rate") || 0.5), allow_auto_floor_when_low_confidence: bool(get("allow_auto_floor_when_low_confidence")), allow_auto_floor_when_partial_coverage: bool(get("allow_auto_floor_when_partial_coverage")), allow_auto_floor_when_high_no_data: bool(get("allow_auto_floor_when_high_no_data")), require_pm_review_below_pct: Number(get("require_pm_review_below_pct") || 40), pm_override_enabled: bool(get("pm_override_enabled")), pm_override_adjusted_pct: nullableNum(get("pm_override_adjusted_pct")), pm_override_reason: String(get("pm_override_reason") || "") || null,
-    performance_weight_1m_pct: Number(get("performance_weight_1m_pct") || 30), performance_weight_3m_pct: Number(get("performance_weight_3m_pct") || 40), performance_weight_6m_pct: Number(get("performance_weight_6m_pct") || 20), performance_weight_all_time_pct: Number(get("performance_weight_all_time_pct") || 10), normalize_missing_ranges: bool(get("normalize_missing_ranges")), enable_long_term_trend_protection: bool(get("enable_long_term_trend_protection")), trend_protection_floor_pct: Number(get("trend_protection_floor_pct") || 70), trend_protection_required_3m_pct: Number(get("trend_protection_required_3m_pct") || 70), trend_protection_required_all_time_pct: Number(get("trend_protection_required_all_time_pct") || 70), not_enough_data_policy: String(get("not_enough_data_policy") || "neutral_score") as NoDataPolicy, neutral_no_data_score_pct: Number(get("neutral_no_data_score_pct") || 70), min_url_age_days_for_penalty: Number(get("min_url_age_days_for_penalty") || 90), max_no_data_penalty_pct: Number(get("max_no_data_penalty_pct") || 10), no_data_rate_pm_review_pct: Number(get("no_data_rate_pm_review_pct") || 50), notes: String(get("notes") || "") || null };
+    performance_weight_1m_pct: Number(get("performance_weight_1m_pct") || 30), performance_weight_3m_pct: Number(get("performance_weight_3m_pct") || 40), performance_weight_6m_pct: Number(get("performance_weight_6m_pct") || 20), performance_weight_all_time_pct: Number(get("performance_weight_all_time_pct") || 10), normalize_missing_ranges: bool(get("normalize_missing_ranges")), enable_cohort_based_measurement: bool(get("enable_cohort_based_measurement")), url_work_date_field: String(get("url_work_date_field") || "content_worked_at"), seo_lag_days: Number(get("seo_lag_days") || 30), cohort_mode_1m: String(get("cohort_mode_1m") || "previous_month_work") as CohortMode, cohort_mode_3m: String(get("cohort_mode_3m") || "previous_3_month_work") as CohortMode, cohort_mode_6m: String(get("cohort_mode_6m") || "previous_6_month_work") as CohortMode, cohort_mode_all_time: String(get("cohort_mode_all_time") || "all_active_urls") as CohortMode, enable_long_term_trend_protection: bool(get("enable_long_term_trend_protection")), trend_protection_floor_pct: Number(get("trend_protection_floor_pct") || 70), trend_protection_required_3m_pct: Number(get("trend_protection_required_3m_pct") || 70), trend_protection_required_all_time_pct: Number(get("trend_protection_required_all_time_pct") || 70), not_enough_data_policy: String(get("not_enough_data_policy") || "neutral_score") as NoDataPolicy, neutral_no_data_score_pct: Number(get("neutral_no_data_score_pct") || 70), min_url_age_days_for_penalty: Number(get("min_url_age_days_for_penalty") || 90), max_no_data_penalty_pct: Number(get("max_no_data_penalty_pct") || 10), no_data_rate_pm_review_pct: Number(get("no_data_rate_pm_review_pct") || 50), notes: String(get("notes") || "") || null };
 }
 
 export function adjustPerformance(raw: number | null | undefined, coverage: number, confidence: string | null | undefined, eligible: number, excludedNoData: number, settings?: ProjectKpiSettings, row?: MemberPerformanceFinalSummary) {
