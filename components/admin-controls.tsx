@@ -15,7 +15,7 @@ type RefreshRangeKey = "current_month" | "previous_month" | "last_3_months" | "l
 type SyncRun = { id?: string; status: string; total_rows: number; inserted_rows: number; updated_rows: number; deactivated_rows: number; failed_rows: number; error_message?: string; created_at: string };
 
 type JsonSafeResult<T = any> = { ok: true; data: T } | { ok: false; error: string; status: number; endpoint: string; rawPreview?: string };
-type RefreshWorkflowStepStatus = "pending" | "running" | "success" | "failed" | "skipped";
+type RefreshWorkflowStepStatus = "pending" | "running" | "success" | "failed" | "skipped" | "not_enough_data";
 type RefreshWorkflowStepType = "sync" | "refresh";
 export type RefreshWorkflowStep = {
   id: string;
@@ -85,7 +85,7 @@ async function postRefreshCache(rangeKey: RefreshRangeKey) {
 export async function runRefreshWorkflow({ initialSteps, startIndex = 0, onStepsChange }: { initialSteps?: RefreshWorkflowStep[]; startIndex?: number; onStepsChange: (steps: RefreshWorkflowStep[]) => void }): Promise<WorkflowResult> {
   let steps: RefreshWorkflowStep[] = (initialSteps?.length ? initialSteps : createWorkflowSteps()).map((step, index): RefreshWorkflowStep => ({
     ...step,
-    status: index < startIndex && step.status === "success" ? "success" as const : index < startIndex ? "skipped" as const : "pending" as const,
+    status: index < startIndex && (step.status === "success" || step.status === "not_enough_data") ? step.status : index < startIndex ? "skipped" as const : "pending" as const,
     error: index >= startIndex ? undefined : step.error,
   }));
   onStepsChange(steps);
@@ -97,7 +97,7 @@ export async function runRefreshWorkflow({ initialSteps, startIndex = 0, onSteps
 
     try {
       const result = currentStep.type === "sync" ? await postSyncSheet() : await postRefreshCache(currentStep.rangeKey!);
-      steps = steps.map((step, stepIndex) => stepIndex === index ? { ...step, status: "success", result } : step);
+      steps = steps.map((step, stepIndex) => stepIndex === index ? { ...step, status: result?.status === "not_enough_data" ? "not_enough_data" : "success", result } : step);
       onStepsChange(steps);
     } catch (err) {
       const message = err instanceof Error ? err.message : `${currentStep.label} failed`;
@@ -113,6 +113,7 @@ export async function runRefreshWorkflow({ initialSteps, startIndex = 0, onSteps
 function statusClassName(status: RefreshWorkflowStepStatus) {
   if (status === "success") return "bg-emerald-50 text-emerald-800 ring-emerald-200";
   if (status === "failed") return "bg-red-50 text-red-800 ring-red-200";
+  if (status === "not_enough_data") return "bg-amber-50 text-amber-800 ring-amber-200";
   if (status === "running") return "bg-blue-50 text-blue-800 ring-blue-200";
   if (status === "skipped") return "bg-amber-50 text-amber-800 ring-amber-200";
   return "bg-slate-50 text-slate-600 ring-slate-200";
@@ -121,8 +122,20 @@ function statusClassName(status: RefreshWorkflowStepStatus) {
 function resultSummary(data: any) {
   if (!data) return "";
   if (typeof data.insertedRows !== "undefined") return `Inserted ${data.insertedRows}, updated ${data.updatedRows}, deactivated ${data.deactivatedRows}, failed ${data.failedRows}.`;
+  if (data.status === "not_enough_data") return data.message || "Not enough data to evaluate.";
   if (typeof data.totalUrls !== "undefined") return `Processed ${data.processedUrls}/${data.totalUrls}; ${data.urlsWithData} with data, ${data.noDataUrls} no data, ${data.failedUrls} failed.`;
   return "Completed.";
+}
+
+function CohortDiagnostics({ result }: { result: any }) {
+  const diagnostics = result?.diagnostics;
+  if (!diagnostics) return null;
+  return <div className="mt-2 grid gap-1 text-xs text-amber-800 sm:grid-cols-2">
+    <div>Active URLs: {diagnostics.total_active_urls_before_cohort}</div>
+    <div>Eligible cohort URLs: {diagnostics.eligible_urls_after_cohort}</div>
+    <div>Missing worked date URLs: {diagnostics.missing_worked_date_urls}</div>
+    <div>Cohort: {diagnostics.cohort_label || [diagnostics.cohort_start_date, diagnostics.cohort_end_date].filter(Boolean).join(" to ") || "All active URLs"}</div>
+  </div>;
 }
 
 export function AdminDataControls({ range = "current_month" }: { range?: string; startDate?: string; endDate?: string }) {
@@ -134,7 +147,7 @@ export function AdminDataControls({ range = "current_month" }: { range?: string;
   const [workflowSteps, setWorkflowSteps] = useState<RefreshWorkflowStep[]>(createWorkflowSteps());
   const [lastWorkflowResult, setLastWorkflowResult] = useState<WorkflowResult | null>(null);
 
-  const completedCount = useMemo(() => workflowSteps.filter((step) => step.status === "success").length, [workflowSteps]);
+  const completedCount = useMemo(() => workflowSteps.filter((step) => step.status === "success" || step.status === "not_enough_data").length, [workflowSteps]);
   const failedStepIndex = workflowSteps.findIndex((step) => step.status === "failed");
   const showWorkflow = loading === "workflow" || lastWorkflowResult || workflowSteps.some((step) => step.status !== "pending");
 
@@ -156,7 +169,7 @@ export function AdminDataControls({ range = "current_month" }: { range?: string;
       const baseSteps = startIndex === 0 ? createWorkflowSteps() : workflowSteps;
       const result = await runRefreshWorkflow({ initialSteps: baseSteps, startIndex, onStepsChange: setWorkflowSteps });
       setLastWorkflowResult(result);
-      if (result.ok) setMessage("Sync and all performance refresh ranges completed successfully.");
+      if (result.ok) setMessage("Sync and all performance refresh ranges completed. Ranges with empty cohorts were marked not enough data.");
       else setError(`${result.failedStep.label} failed: ${result.error}`);
       await loadStatus();
     } catch (err) {
@@ -186,7 +199,7 @@ export function AdminDataControls({ range = "current_month" }: { range?: string;
         </div>
         {showWorkflow && <div className="mt-5 rounded-xl border border-white/80 bg-white p-4 shadow-sm">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h4 className="font-semibold text-slate-900">Refresh progress</h4><span className="text-sm text-slate-600">{completedCount} / {workflowSteps.length} steps completed</span></div>
-          <ol className="space-y-2">{workflowSteps.map((step) => <li key={step.id} className="rounded-lg border border-slate-100 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-medium text-slate-900">{step.label}</span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${statusClassName(step.status)}`}>{step.status}</span></div>{step.status === "success" && <p className="mt-1 text-xs text-slate-500">{resultSummary(step.result)}</p>}{step.status === "failed" && step.error && <p className="mt-1 text-xs text-red-700">{step.error}</p>}</li>)}</ol>
+          <ol className="space-y-2">{workflowSteps.map((step) => <li key={step.id} className="rounded-lg border border-slate-100 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-medium text-slate-900">{step.label}</span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${statusClassName(step.status)}`}>{step.status === "not_enough_data" ? "Not enough data to evaluate" : step.status}</span></div>{(step.status === "success" || step.status === "not_enough_data") && <p className="mt-1 text-xs text-slate-500">{resultSummary(step.result)}</p>}{step.status === "not_enough_data" && <CohortDiagnostics result={step.result} />}{step.status === "failed" && step.error && <p className="mt-1 text-xs text-red-700">{step.error}</p>}</li>)}</ol>
           {failedStepIndex >= 0 && <button className="mt-4 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-50 disabled:opacity-60" onClick={() => runWorkflowFrom(failedStepIndex)} disabled={!!loading}>Retry from failed step</button>}
         </div>}
         {message && <p className="mt-3 text-sm text-emerald-800">{message}</p>}

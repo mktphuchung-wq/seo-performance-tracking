@@ -61,7 +61,7 @@ create table public.refresh_runs (
   finished_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint refresh_runs_status_check check (status in ('running', 'success', 'failed'))
+  constraint refresh_runs_status_check check (status in ('running', 'success', 'failed', 'not_enough_data'))
 );
 
 -- Current Google Sheet sync audit table.

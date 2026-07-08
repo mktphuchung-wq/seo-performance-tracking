@@ -30,6 +30,6 @@ export async function POST(request: Request) {
     return NextResponse.json(result, { status: result.ok ? 200 : 500 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Refresh failed";
-    return NextResponse.json({ ok: false, error: message, totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: message }, { status: 500 });
+    return NextResponse.json({ ok: false, status: "failed", error: message, totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: message }, { status: 500 });
   }
 }
