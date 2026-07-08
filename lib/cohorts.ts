@@ -48,7 +48,7 @@ export function getCohortWindow(rangeKey: CohortRangeKey, measurementRange: Date
 }
 
 export function getUrlWorkDate(url: UrlWithWorkDate, preferredField = "content_worked_at") {
-  const value = (url as Record<string, unknown>)[preferredField] || url.content_worked_at || url.last_updated_at || url.created_at;
+  const value = (url as Record<string, unknown>)[preferredField] || url.content_worked_at;
   return value ? String(value).slice(0, 10) : null;
 }
 

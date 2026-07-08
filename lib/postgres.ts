@@ -14,7 +14,7 @@ export function dbContentUrl(row: any): ContentUrl {
 }
 
 export async function getDbContentUrls(): Promise<ContentUrl[]> {
-  const res = await query("select id, project, url, member_name, member_email, gsc_property, content_worked_at, updated_at, created_at from content_urls where coalesce(is_active,true) = true order by project, member_name, url");
+  const res = await query("select id, project, url, member_name, member_email, gsc_property, content_worked_at, updated_at, created_at from public.content_urls where coalesce(is_active,true) = true order by project, member_name, url");
   return res.rows.map(dbContentUrl);
 }
 
@@ -23,8 +23,8 @@ export async function getDbPerformance(rangeKey: string, range: DateRange): Prom
     coalesce(v.clicks,0) clicks, coalesce(v.impressions,0) impressions, coalesce(v.ctr,0) ctr, coalesce(v.position,0) position,
     coalesce(v.previous_clicks,0) previous_clicks, coalesce(v.previous_impressions,0) previous_impressions, coalesce(v.previous_ctr,0) previous_ctr, coalesce(v.previous_position,0) previous_position,
     v.growth_status, v.opportunity_status, v.click_delta, v.click_growth_pct, v.impression_delta, v.impression_growth_pct, v.ctr_delta, v.position_delta, v.refreshed_at
-    from content_urls c
-    left join dashboard_url_performance v on (v.content_url_id = c.id or (v.content_url_id is null and v.url_hash = c.url_hash)) and v.range_key = $1
+    from public.content_urls c
+    left join public.dashboard_url_performance v on (v.content_url_id = c.id or (v.content_url_id is null and v.url_hash = c.url_hash)) and v.range_key = $1
     where coalesce(c.is_active,true) = true
     order by c.project, c.member_name, c.url`;
   const res = await query(sql, [rangeKey]);
@@ -91,12 +91,12 @@ function mapMemberPerformanceFinal(row: any): MemberPerformanceFinalSummary {
 export async function getMemberPerformanceFinalByMember(memberNameOrEmail: string): Promise<MemberPerformanceFinalSummary | null> {
   const key = memberNameOrEmail.trim().toLowerCase();
   if (!key) return null;
-  const res = await query<any>(`select * from member_performance_final_view where lower(member_name) = $1 or lower(coalesce(member_email, '')) = $1 limit 1`, [key]);
+  const res = await query<any>(`select * from public.member_performance_final_view where lower(member_name) = $1 or lower(coalesce(member_email, '')) = $1 limit 1`, [key]);
   return res.rows[0] ? adjustMemberFinal(mapMemberPerformanceFinal(res.rows[0]), defaultProjectKpiSettings("default")) : null;
 }
 
 export async function getAllMemberPerformanceFinal(): Promise<MemberPerformanceFinalSummary[]> {
-  const res = await query<any>(`select * from member_performance_final_view order by member_name`);
+  const res = await query<any>(`select * from public.member_performance_final_view order by member_name`);
   return res.rows.map((row) => adjustMemberFinal(mapMemberPerformanceFinal(row), defaultProjectKpiSettings("default")));
 }
 
@@ -111,6 +111,8 @@ export type AdminDiagnostic = {
   activeUrls: number;
   missingMemberEmail: number;
   missingGscProperty: number;
+  contentWorkedAtColumnExists: boolean;
+  urlsMissingContentWorkedAt: number;
   missingGscProjects: string[];
   latestSyncRun: any | null;
   latestRefreshRun: any | null;
@@ -119,20 +121,25 @@ export type AdminDiagnostic = {
 export type AdminMemberRow = ReturnType<typeof scoreMembers>[number] & { snapshotStatus: string; snapshotUpdatedAt?: string | null; finalPerformance?: MemberPerformanceFinalSummary | null };
 
 export async function getAdminDiagnostics(): Promise<AdminDiagnostic> {
-  const [counts, projects, syncRuns, refreshJobs] = await Promise.all([
-    query<{ active_urls: number; missing_member_email: number; missing_gsc_property: number }>(`select count(*)::int active_urls,
+  const [contentWorkedAtColumn, counts, projects, syncRuns, refreshJobs] = await Promise.all([
+    query<{ exists: boolean }>(`select exists (select 1 from information_schema.columns where table_schema='public' and table_name='content_urls' and column_name='content_worked_at')`).catch(() => ({ rows: [{ exists: false }] })),
+    query<{ active_urls: number; missing_member_email: number; missing_gsc_property: number; urls_missing_content_worked_at: number }>(`select count(*)::int active_urls,
       count(*) filter (where nullif(member_email,'') is null)::int missing_member_email,
-      count(*) filter (where nullif(gsc_property,'') is null)::int missing_gsc_property
-      from content_urls where coalesce(is_active,true)=true`),
-    query<{ project: string }>(`select distinct project from content_urls where coalesce(is_active,true)=true and nullif(gsc_property,'') is null order by project`),
-    query<any>("select * from sync_runs order by created_at desc limit 1").catch(() => ({ rows: [] })),
-    query<any>("select * from refresh_runs order by created_at desc limit 1").catch(() => ({ rows: [] })),
+      count(*) filter (where nullif(gsc_property,'') is null)::int missing_gsc_property,
+      count(*) filter (where content_worked_at is null)::int urls_missing_content_worked_at
+      from public.content_urls where coalesce(is_active,true)=true`).catch(() => ({ rows: [{ active_urls: 0, missing_member_email: 0, missing_gsc_property: 0, urls_missing_content_worked_at: 0 }] })),
+    query<{ project: string }>(`select distinct project from public.content_urls where coalesce(is_active,true)=true and nullif(gsc_property,'') is null order by project`),
+    query<any>("select * from public.sync_runs order by created_at desc limit 1").catch(() => ({ rows: [] })),
+    query<any>("select * from public.refresh_runs order by created_at desc limit 1").catch(() => ({ rows: [] })),
   ]);
-  const row = counts.rows[0] ?? { active_urls: 0, missing_member_email: 0, missing_gsc_property: 0 };
+  const row = counts.rows[0] ?? { active_urls: 0, missing_member_email: 0, missing_gsc_property: 0, urls_missing_content_worked_at: 0 };
+  const contentWorkedAtColumnExists = Boolean(contentWorkedAtColumn.rows[0]?.exists);
   return {
     activeUrls: Number(row.active_urls ?? 0),
     missingMemberEmail: Number(row.missing_member_email ?? 0),
     missingGscProperty: Number(row.missing_gsc_property ?? 0),
+    contentWorkedAtColumnExists,
+    urlsMissingContentWorkedAt: contentWorkedAtColumnExists ? Number(row.urls_missing_content_worked_at ?? 0) : 0,
     missingGscProjects: projects.rows.map((r) => r.project).filter(Boolean),
     latestSyncRun: syncRuns.rows[0] ?? null,
     latestRefreshRun: refreshJobs.rows[0] ?? null,
@@ -143,7 +150,7 @@ export async function getAdminMemberRows(rangeKey: string, range: DateRange, per
   const scored = scoreMembers(performanceRows);
   const [snapshotRows, finalRows] = await Promise.all([
     query<any>(`select member_name, max(updated_at) updated_at
-      from seo_performance_cache
+      from public.seo_performance_cache
       where range_key=$1
       group by member_name`, [rangeKey]).catch(() => ({ rows: [] })),
     getAllMemberPerformanceFinal().catch(() => []),
