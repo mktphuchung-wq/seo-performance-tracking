@@ -67,14 +67,14 @@ export async function syncSheetToDb(accessToken: string): Promise<SheetSyncResul
       const memberEmail = (memberMap[memberName] ?? "").toLowerCase();
       const gscProperty = projectMap[project] ?? null;
       const existing = await query<{ id: string; project: string; url: string; member_name: string; member_email: string | null; gsc_property: string | null; is_active: boolean | null; content_worked_at: string | null }>(
-        "select id, project, url, member_name, member_email, gsc_property, is_active, content_worked_at from content_urls where url_hash=$1",
+        "select id, project, url, member_name, member_email, gsc_property, is_active, content_worked_at from public.content_urls where url_hash=$1",
         [hash]
       );
 
-      await query(`insert into content_urls (url_hash, project, url, member_name, member_email, gsc_property, content_worked_at, is_active, source, last_seen_at, created_at, updated_at)
+      await query(`insert into public.content_urls (url_hash, project, url, member_name, member_email, gsc_property, content_worked_at, is_active, source, last_seen_at, created_at, updated_at)
         values ($1,$2,$3,$4,$5,$6,$7,true,'google_sheet',now(),now(),now())
         on conflict (url_hash) do update set project=excluded.project, url=excluded.url, member_name=excluded.member_name, member_email=excluded.member_email,
-          gsc_property=excluded.gsc_property, content_worked_at=coalesce(excluded.content_worked_at, content_urls.content_worked_at), is_active=true, source='google_sheet', last_seen_at=now(), updated_at=now()`,
+          gsc_property=excluded.gsc_property, content_worked_at=excluded.content_worked_at, is_active=true, source='google_sheet', last_seen_at=now(), updated_at=now()`,
         [hash, project, normalizedUrl, memberName, memberEmail, gscProperty, row.content_worked_at || null]);
 
       if (existing.rows.length === 0) {
@@ -89,8 +89,8 @@ export async function syncSheetToDb(accessToken: string): Promise<SheetSyncResul
 
     const hashes = [...activeHashes];
     const deactivated = hashes.length
-      ? await query("update content_urls set is_active=false, updated_at=now() where coalesce(is_active,true)=true and not (url_hash = any($1::text[]))", [hashes])
-      : await query("update content_urls set is_active=false, updated_at=now() where coalesce(is_active,true)=true");
+      ? await query("update public.content_urls set is_active=false, updated_at=now() where coalesce(is_active,true)=true and not (url_hash = any($1::text[]))", [hashes])
+      : await query("update public.content_urls set is_active=false, updated_at=now() where coalesce(is_active,true)=true");
     result.deactivatedRows = deactivated.rowCount ?? 0;
     await recordSheetSyncRun(result);
     return result;
@@ -118,7 +118,7 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
   let runId: string | null = null;
   const previousRange = getPreviousRange(range);
   try {
-    const allActive = (await query<any>(`select id, url_hash, project, url, member_name, member_email, gsc_property, content_worked_at, updated_at, created_at, is_active from content_urls where coalesce(is_active,true)=true order by project, member_name, url`)).rows.map((row) => ({ ...dbContentUrl(row), is_active: row.is_active }));
+    const allActive = (await query<any>(`select id, url_hash, project, url, member_name, member_email, gsc_property, content_worked_at, updated_at, created_at, is_active from public.content_urls where coalesce(is_active,true)=true order by project, member_name, url`)).rows.map((row) => ({ ...dbContentUrl(row), is_active: row.is_active }));
     const settings = await getProjectKpiSettings().catch(() => []);
     const settingsByProject = new Map(settings.map((s) => [s.project, s]));
     const cohortGroups = new Map<string, typeof allActive>();

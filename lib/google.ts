@@ -32,14 +32,32 @@ function auth(accessToken: string) {
 
 export type SheetContentUrlRow = { project: string; url: string; member_name: string; content_worked_at?: string | null };
 
+export function parseSheetDate(value: unknown): string | null {
+  if (!value) return null;
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  return null;
+}
+
 export async function getSheetContentUrlRows(accessToken: string): Promise<SheetContentUrlRow[]> {
   if (!appConfig.sheetId) return [];
   const sheets = google.sheets({ version: "v4", auth: auth(accessToken) });
   const result = await sheets.spreadsheets.values.get({ spreadsheetId: appConfig.sheetId, range: `${appConfig.contentTab}!A:D` });
   const rows = result.data.values ?? [];
   return rows.slice(1).map((row) => {
-    const [project = "", url = "", member_name = "", content_worked_at = ""] = row as string[];
-    return { project, url, member_name, content_worked_at: content_worked_at || null };
+    const [project = "", url = "", member_name = "", content_worked_at = ""] = row as unknown[];
+    return { project: String(project), url: String(url), member_name: String(member_name), content_worked_at: parseSheetDate(content_worked_at) };
   });
 }
 
@@ -51,17 +69,20 @@ export async function getContentUrls(accessToken: string): Promise<ContentUrl[]>
   const memberMap = getMemberEmailMap();
   const projectMap = getProjectGscMap();
   return rows.slice(1).map((row, index) => {
-    const [project = "", url = "", member_name = "", content_worked_at = ""] = row as string[];
-    const gscProperty = projectMap[project];
+    const [project = "", url = "", member_name = "", content_worked_at = ""] = row as unknown[];
+    const normalizedProject = String(project);
+    const normalizedUrl = String(url);
+    const normalizedMemberName = String(member_name);
+    const gscProperty = projectMap[normalizedProject];
     return {
       id: String(index),
-      project,
-      url,
-      member_name,
-      memberEmail: (memberMap[member_name] ?? "").toLowerCase(),
+      project: normalizedProject,
+      url: normalizedUrl,
+      member_name: normalizedMemberName,
+      memberEmail: (memberMap[normalizedMemberName] ?? "").toLowerCase(),
       gscProperty,
-      content_worked_at: content_worked_at || null,
-      warning: gscProperty ? undefined : `Missing PROJECT_GSC_MAP entry for project: ${project}`
+      content_worked_at: parseSheetDate(content_worked_at),
+      warning: gscProperty ? undefined : `Missing PROJECT_GSC_MAP entry for project: ${normalizedProject}`
     };
   }).filter((row) => row.project && row.url && row.member_name);
 }
