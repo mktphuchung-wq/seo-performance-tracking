@@ -134,14 +134,17 @@ function resultSummary(data: any) {
 function CohortDiagnostics({ result }: { result: any }) {
   const diagnostics = result?.diagnostics;
   if (!diagnostics) return null;
-  const cohortRange = [diagnostics.cohort_start_date, diagnostics.cohort_end_date].filter(Boolean).join(" → ") || diagnostics.cohort_label || "All active URLs";
   const workedRange = diagnostics.db_worked_date_min && diagnostics.db_worked_date_max ? `${diagnostics.db_worked_date_min} → ${diagnostics.db_worked_date_max}` : "No worked dates found";
+  const minimumAge = diagnostics.min_url_age_months ? `${diagnostics.min_url_age_months} month${diagnostics.min_url_age_months === 1 ? "" : "s"}` : null;
   return <div className="mt-2 grid gap-1 text-xs text-amber-800 sm:grid-cols-2">
     <div>Active URLs: {diagnostics.total_active_urls_before_cohort}</div>
+    <div>Eligible URLs: {diagnostics.eligible_urls_after_cohort}</div>
+    <div>Excluded URLs: {diagnostics.excluded_urls_after_cohort ?? Math.max(0, diagnostics.total_active_urls_before_cohort - diagnostics.eligible_urls_after_cohort)}</div>
     <div>Missing worked date URLs: {diagnostics.missing_worked_date_urls}</div>
+    {minimumAge ? <div>Minimum URL age required: {minimumAge}</div> : <div>All active URLs are included.</div>}
+    <div>Cutoff date: {diagnostics.cutoff_date || "—"}</div>
     <div>Worked date range in DB: {workedRange}</div>
-    <div>Cohort: {cohortRange}</div>
-    <div>Eligible cohort URLs: {diagnostics.eligible_urls_after_cohort}</div>
+    <div>Cohort: {diagnostics.cohort_reason || diagnostics.cohort_label}</div>
   </div>;
 }
 
