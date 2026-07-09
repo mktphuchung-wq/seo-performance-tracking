@@ -3,7 +3,7 @@ import { appConfig, getMemberEmailMap, getProjectGscMap } from "./env";
 import { getDateRange, type DateRange } from "./dates";
 import { classifyOpportunity, type OpportunityLabel } from "./metrics";
 
-export type ContentUrl = { id: string; urlHash?: string; project: string; url: string; member_name: string; memberEmail: string; gscProperty?: string; content_worked_at?: string | null; last_updated_at?: string | null; created_at?: string | null; warning?: string };
+export type ContentUrl = { id: string; urlHash?: string; project: string; url: string; member_name: string; memberEmail: string; gscProperty?: string; content_worked_at?: string | null; content_type?: string | null; last_updated_at?: string | null; created_at?: string | null; warning?: string };
 export type UrlMetrics = { clicks: number; impressions: number; ctr: number; position: number };
 export type UrlPerformance = ContentUrl & UrlMetrics & { opportunity: OpportunityLabel };
 export type QueryMetric = { query: string; opportunity: OpportunityLabel } & UrlMetrics;
@@ -30,7 +30,31 @@ function auth(accessToken: string) {
   return oauth2;
 }
 
-export type SheetContentUrlRow = { project: string; url: string; member_name: string; content_worked_at?: string | null };
+export type SheetContentUrlRow = { project: string; url: string; member_name: string; content_worked_at?: string | null; content_type?: string | null };
+
+export function normalizeContentType(value: unknown): string | null {
+  const raw = String(value || "").trim().toLowerCase();
+
+  if (!raw) return null;
+
+  if (["audit", "audited", "audit/update", "audit optimization", "url audit"].includes(raw)) {
+    return "audit";
+  }
+
+  if (["new", "new content", "content mới", "new_content"].includes(raw)) {
+    return "new_content";
+  }
+
+  if (["update", "updated", "refresh", "content update"].includes(raw)) {
+    return "update";
+  }
+
+  if (["old", "existing", "portfolio", "stable", "long-standing"].includes(raw)) {
+    return "portfolio";
+  }
+
+  return raw.replace(/\s+/g, "_");
+}
 
 export function parseSheetDate(value: unknown): string | null {
   if (value === null || value === undefined || value === "") return null;
@@ -93,23 +117,23 @@ function validDateParts(year: number, month: number, day: number): string | null
 export async function getSheetContentUrlRows(accessToken: string): Promise<SheetContentUrlRow[]> {
   if (!appConfig.sheetId) return [];
   const sheets = google.sheets({ version: "v4", auth: auth(accessToken) });
-  const result = await sheets.spreadsheets.values.get({ spreadsheetId: appConfig.sheetId, range: `${appConfig.contentTab}!A:D`, valueRenderOption: "UNFORMATTED_VALUE", dateTimeRenderOption: "FORMATTED_STRING" });
+  const result = await sheets.spreadsheets.values.get({ spreadsheetId: appConfig.sheetId, range: `${appConfig.contentTab}!A:E`, valueRenderOption: "UNFORMATTED_VALUE", dateTimeRenderOption: "FORMATTED_STRING" });
   const rows = result.data.values ?? [];
   return rows.slice(1).map((row) => {
-    const [project = "", url = "", member_name = "", content_worked_at = ""] = row as unknown[];
-    return { project: String(project), url: String(url), member_name: String(member_name), content_worked_at: parseSheetDate(content_worked_at) };
+    const [project = "", url = "", member_name = "", content_worked_at = "", content_type = ""] = row as unknown[];
+    return { project: String(project), url: String(url), member_name: String(member_name), content_worked_at: parseSheetDate(content_worked_at), content_type: normalizeContentType(content_type) };
   });
 }
 
 export async function getContentUrls(accessToken: string): Promise<ContentUrl[]> {
   if (!appConfig.sheetId) return [];
   const sheets = google.sheets({ version: "v4", auth: auth(accessToken) });
-  const result = await sheets.spreadsheets.values.get({ spreadsheetId: appConfig.sheetId, range: `${appConfig.contentTab}!A:D`, valueRenderOption: "UNFORMATTED_VALUE", dateTimeRenderOption: "FORMATTED_STRING" });
+  const result = await sheets.spreadsheets.values.get({ spreadsheetId: appConfig.sheetId, range: `${appConfig.contentTab}!A:E`, valueRenderOption: "UNFORMATTED_VALUE", dateTimeRenderOption: "FORMATTED_STRING" });
   const rows = result.data.values ?? [];
   const memberMap = getMemberEmailMap();
   const projectMap = getProjectGscMap();
   return rows.slice(1).map((row, index) => {
-    const [project = "", url = "", member_name = "", content_worked_at = ""] = row as unknown[];
+    const [project = "", url = "", member_name = "", content_worked_at = "", content_type = ""] = row as unknown[];
     const normalizedProject = String(project);
     const normalizedUrl = String(url);
     const normalizedMemberName = String(member_name);
@@ -122,6 +146,7 @@ export async function getContentUrls(accessToken: string): Promise<ContentUrl[]>
       memberEmail: (memberMap[normalizedMemberName] ?? "").toLowerCase(),
       gscProperty,
       content_worked_at: parseSheetDate(content_worked_at),
+      content_type: normalizeContentType(content_type),
       warning: gscProperty ? undefined : `Missing PROJECT_GSC_MAP entry for project: ${normalizedProject}`
     };
   }).filter((row) => row.project && row.url && row.member_name);

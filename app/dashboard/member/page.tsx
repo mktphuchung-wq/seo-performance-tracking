@@ -6,7 +6,7 @@ import { getEnvErrors } from "../../../lib/env";
 import { filterRowsForEmail } from "../../../lib/google";
 import { getDbPerformance, getAllMemberPerformanceFinal, getMemberPerformanceFinalByMember } from "../../../lib/postgres";
 import { aggregateCompared, type GrowthStatus } from "../../../lib/growth";
-import { fmtGrowth, fmtNum, fmtPct, fmtPos, MetricSection, PerformanceKpiPanel, RefreshDataButton, SectionGrid, Shell, UrlTable, WarningList, type MetricTone } from "../../../components/ui";
+import { fmtGrowth, fmtNum, fmtPct, fmtPos, MetricSection, PerformanceKpiPanel, RefreshDataButton, SectionGrid, Shell, UrlTable, WarningList, type MetricTone, contentTypeLabel } from "../../../components/ui";
 import { formatSignedNumber } from "../../../lib/format";
 import { type OpportunityLabel } from "../../../lib/metrics";
 import Link from "next/link";
@@ -24,6 +24,7 @@ type SearchParams = {
   searchUrl?: string;
   minImpressions?: string;
   minClicks?: string;
+  contentType?: string;
   view?: PresetView;
 };
 
@@ -70,6 +71,7 @@ function filterPerformance(rows: Awaited<ReturnType<typeof getDbPerformance>>, p
     if (params.member && row.member_name !== params.member) return false;
     if (params.growthStatus && row.status !== params.growthStatus) return false;
     if (params.opportunityStatus && row.opportunity !== params.opportunityStatus) return false;
+    if (params.contentType && (row.content_type || "") !== params.contentType) return false;
     if (search && !row.url.toLowerCase().includes(search)) return false;
     if (Number.isFinite(minImpressions) && minImpressions > 0 && row.impressions < minImpressions) return false;
     if (Number.isFinite(minClicks) && minClicks > 0 && row.clicks < minClicks) return false;
@@ -104,6 +106,8 @@ export default async function MemberDashboard({ searchParams }: { searchParams?:
   const currentMonthSelectedRows = filterPerformance(currentMonthVisibleRows, params);
   const projects = uniqueValues(visibleRows, "project");
   const members = uniqueValues(visibleRows, "member_name");
+  const contentTypes = Array.from(new Set(visibleRows.map((row) => row.content_type).filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b));
+  const typeBreakdown = ["new_content", "audit", "update", "portfolio", ...contentTypes.filter((type) => !["new_content", "audit", "update", "portfolio"].includes(type))].map((type) => ({ type, rows: selectedRows.filter((row) => row.content_type === type) })).filter((entry) => entry.rows.length > 0);
   const activePreset = params.view || "all";
   const memberInsightName = session.user.isAdmin ? params.member || selectedRows[0]?.member_name || "" : selectedRows[0]?.member_name || "";
   const selectedRangeLabel = range.label;
@@ -127,6 +131,7 @@ export default async function MemberDashboard({ searchParams }: { searchParams?:
         { label: "Previous Impressions", value: fmtNum(summary.previous_impressions) },
         { label: "Impression Delta", value: formatSignedNumber(summary.impression_delta), tone: growthMetricTone(summary.impression_delta) },
       ]} />
+      <MetricSection title="URL type breakdown" description="Performance by tracked URL type for the selected filters." tone="quality" metrics={typeBreakdown.length ? typeBreakdown.flatMap(({ type, rows }) => { const metrics = aggregateCompared(rows); return [{ label: `${contentTypeLabel(type)} URLs`, value: rows.length }, { label: `${contentTypeLabel(type)} URLs with data`, value: rows.length - metrics.noData }, { label: `${contentTypeLabel(type)} clicks`, value: fmtNum(metrics.clicks) }, { label: `${contentTypeLabel(type)} impressions`, value: fmtNum(metrics.impressions) }, { label: `${contentTypeLabel(type)} growing URLs`, value: metrics.growing }, { label: `${contentTypeLabel(type)} declining URLs`, value: metrics.declining }, { label: `${contentTypeLabel(type)} no-data URLs`, value: metrics.noData }]; }) : [{ label: "Typed URLs", value: "No typed URLs" }]} />
       <PerformanceKpiPanel finalPerformance={selectedFinalPerformance} memberName={selectedFinalPerformance?.member_name} helper="No-data URLs are excluded from KPI until they have enough data to evaluate. New growth is counted as positive." />
       <MetricSection title="SEO Performance Growth" description="Growth and efficiency metrics for the selected URLs." tone="quality" metrics={[
         { label: "Click Growth %", value: fmtGrowth(summary.click_growth_pct), tone: growthMetricTone(summary.click_growth_pct) },
@@ -143,6 +148,7 @@ export default async function MemberDashboard({ searchParams }: { searchParams?:
       <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
         <label className="text-sm text-slate-600">Project<select className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2" name="project" defaultValue={params.project || ""}><option value="">All projects</option>{projects.map((project) => <option key={project} value={project}>{project}</option>)}</select></label>
         {session.user.isAdmin && <label className="text-sm text-slate-600">Member<select className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2" name="member" defaultValue={params.member || ""}><option value="">All members</option>{members.map((member) => <option key={member} value={member}>{member}</option>)}</select></label>}
+        <label className="text-sm text-slate-600">Type<select className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2" name="contentType" defaultValue={params.contentType || ""}><option value="">Any</option>{contentTypes.map((type) => <option key={type} value={type}>{contentTypeLabel(type)}</option>)}</select></label>
         <label className="text-sm text-slate-600">Growth Status<select className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2" name="growthStatus" defaultValue={params.growthStatus || ""}><option value="">Any</option>{growthStatusOptions.map((status) => <option key={status} value={status}>{status.replace(/_/g, " ")}</option>)}</select></label>
         <label className="text-sm text-slate-600">Opportunity Status<select className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2" name="opportunityStatus" defaultValue={params.opportunityStatus || ""}><option value="">Any</option>{opportunityStatusOptions.map((status) => <option key={status} value={status}>{status.replace(/_/g, " ")}</option>)}</select></label>
         <label className="text-sm text-slate-600">Date Range<select className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2" name="range" defaultValue={rangeKey}>{rangeOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>

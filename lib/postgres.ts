@@ -19,16 +19,16 @@ const normalizeDbDate = (value: unknown) => {
 };
 
 export function dbContentUrl(row: any): ContentUrl {
-  return { id: String(row.id), urlHash: row.url_hash ? String(row.url_hash) : undefined, project: row.project ?? "", url: row.url ?? "", member_name: row.member_name ?? "", memberEmail: String(row.member_email ?? "").toLowerCase(), gscProperty: row.gsc_property ?? undefined, content_worked_at: normalizeDbDate(row.content_worked_at), last_updated_at: normalizeDbDate(row.updated_at), created_at: normalizeDbDate(row.created_at) };
+  return { id: String(row.id), urlHash: row.url_hash ? String(row.url_hash) : undefined, project: row.project ?? "", url: row.url ?? "", member_name: row.member_name ?? "", memberEmail: String(row.member_email ?? "").toLowerCase(), gscProperty: row.gsc_property ?? undefined, content_worked_at: normalizeDbDate(row.content_worked_at), content_type: row.content_type ?? null, last_updated_at: normalizeDbDate(row.updated_at), created_at: normalizeDbDate(row.created_at) };
 }
 
 export async function getDbContentUrls(): Promise<ContentUrl[]> {
-  const res = await query("select id, project, url, member_name, member_email, gsc_property, content_worked_at, updated_at, created_at from public.content_urls where coalesce(is_active,true) = true order by project, member_name, url");
+  const res = await query("select id, project, url, member_name, member_email, gsc_property, content_worked_at, content_type, updated_at, created_at from public.content_urls where coalesce(is_active,true) = true order by project, member_name, url");
   return res.rows.map(dbContentUrl);
 }
 
 export async function getDbPerformance(rangeKey: string, range: DateRange): Promise<ComparedUrlPerformance[]> {
-  const sql = `select c.id, c.url_hash, c.project, c.url, c.member_name, c.member_email, c.gsc_property, c.content_worked_at, c.updated_at, c.created_at,
+  const sql = `select c.id, c.url_hash, c.project, c.url, c.member_name, c.member_email, c.gsc_property, c.content_worked_at, coalesce(v.content_type, c.content_type) content_type, c.updated_at, c.created_at,
     coalesce(v.clicks,0) clicks, coalesce(v.impressions,0) impressions, coalesce(v.ctr,0) ctr, coalesce(v.position,0) position,
     coalesce(v.previous_clicks,0) previous_clicks, coalesce(v.previous_impressions,0) previous_impressions, coalesce(v.previous_ctr,0) previous_ctr, coalesce(v.previous_position,0) previous_position,
     v.growth_status, v.opportunity_status, v.click_delta, v.click_growth_pct, v.impression_delta, v.impression_growth_pct, v.ctr_delta, v.position_delta, v.refreshed_at

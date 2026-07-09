@@ -6,7 +6,7 @@ import { getDateRange } from "../../lib/dates";
 import { aggregateCompared, type ComparedUrlPerformance } from "../../lib/growth";
 import { filterRowsForEmail } from "../../lib/google";
 import { getDbContentUrls, getDbPerformance, getMemberPerformanceFinalByMember } from "../../lib/postgres";
-import { fmtGrowth, fmtNum, fmtPct, fmtPos, DataTableContainer, MetricSection, PerformanceKpiPanel, RefreshDataButton, SectionGrid, Shell, StatusBadge, WarningList } from "../../components/ui";
+import { fmtGrowth, fmtNum, fmtPct, fmtPos, DataTableContainer, MetricSection, PerformanceKpiPanel, RefreshDataButton, SectionGrid, Shell, StatusBadge, WarningList, contentTypeLabel } from "../../components/ui";
 import { getGrowthClassName } from "../../lib/format";
 
 const insightRanges = [
@@ -45,8 +45,8 @@ function Section({ title, description, rows }: { title: string; description?: st
     <div className="mb-3"><h3 className="text-xl font-semibold">{title}</h3>{description && <p className="text-sm text-slate-500">{description}</p>}</div>
     <DataTableContainer>
       <table className="w-full min-w-[1080px] text-[13px] sm:text-sm">
-        <thead className="bg-slate-100 text-left"><tr><th className="p-3">URL</th><th>Project</th><th>Clicks</th><th>Impr.</th><th>CTR</th><th>Pos.</th><th>Click growth</th><th>Impr. growth</th><th>Status</th></tr></thead>
-        <tbody>{rows.map((row) => <tr className="border-t" key={row.id}><td className="w-[34rem] max-w-[34rem] p-3"><Link className="block truncate text-blue-700" title={row.url} href={`/url/${row.id}`}>{row.url}</Link></td><td>{row.project}</td><td>{fmtNum(row.clicks)}</td><td>{fmtNum(row.impressions)}</td><td>{fmtPct(row.ctr)}</td><td>{fmtPos(row.position)}</td><td><span className={getGrowthClassName(row.click_growth_pct)}>{fmtGrowth(row.click_growth_pct)}</span></td><td><span className={getGrowthClassName(row.impression_growth_pct)}>{fmtGrowth(row.impression_growth_pct)}</span></td><td><StatusBadge status={row.status} /></td></tr>)}{rows.length === 0 && <tr><td className="p-3 text-slate-500" colSpan={9}>No URLs match this section.</td></tr>}</tbody>
+        <thead className="bg-slate-100 text-left"><tr><th className="p-3">URL</th><th>Project</th><th>Type</th><th>Clicks</th><th>Impr.</th><th>CTR</th><th>Pos.</th><th>Click growth</th><th>Impr. growth</th><th>Status</th></tr></thead>
+        <tbody>{rows.map((row) => <tr className="border-t" key={row.id}><td className="w-[34rem] max-w-[34rem] p-3"><Link className="block truncate text-blue-700" title={row.url} href={`/url/${row.id}`}>{row.url}</Link></td><td>{row.project}</td><td>{contentTypeLabel(row.content_type)}</td><td>{fmtNum(row.clicks)}</td><td>{fmtNum(row.impressions)}</td><td>{fmtPct(row.ctr)}</td><td>{fmtPos(row.position)}</td><td><span className={getGrowthClassName(row.click_growth_pct)}>{fmtGrowth(row.click_growth_pct)}</span></td><td><span className={getGrowthClassName(row.impression_growth_pct)}>{fmtGrowth(row.impression_growth_pct)}</span></td><td><StatusBadge status={row.status} /></td></tr>)}{rows.length === 0 && <tr><td className="p-3 text-slate-500" colSpan={10}>No URLs match this section.</td></tr>}</tbody>
       </table>
     </DataTableContainer>
   </section>;
@@ -75,6 +75,7 @@ export default async function MemberInsights({ searchParams }: { searchParams?: 
   const topDeclining = sortByGrowth(memberRows.filter((row) => row.status === "declining"), "asc").slice(0, 10);
   const highImpressionLowCtr = [...memberRows].filter((row) => row.impressions >= 100 && row.ctr < 0.01).sort((a, b) => b.impressions - a.impressions).slice(0, 10);
   const noData = memberRows.filter((row) => row.status === "no_data");
+  const typeBreakdown = ["new_content", "audit", "update", "portfolio", ...Array.from(new Set(memberRows.map((row) => row.content_type).filter((value): value is string => Boolean(value)))).filter((type) => !["new_content", "audit", "update", "portfolio"].includes(type))].map((type) => ({ type, rows: memberRows.filter((row) => row.content_type === type) })).filter((entry) => entry.rows.length > 0);
 
   return <Shell email={session.user.email} isAdmin={session.user.isAdmin}>
     <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><h2 className="text-2xl font-semibold">Member Insights</h2><p className="text-sm text-slate-500">Select one member and one range to review portfolio performance. {range.label}: {range.startDate} to {range.endDate}</p></div>{session.user.isAdmin && <RefreshDataButton range={rangeKey} returnTo="/member-insights" preserve={{ member: selectedMember }} />}</div>
@@ -93,6 +94,7 @@ export default async function MemberInsights({ searchParams }: { searchParams?: 
       <SectionGrid>
         <PerformanceKpiPanel finalPerformance={finalPerformance} memberName={selectedMember} />
         <MetricSection title="KPI overview" description={`Portfolio metrics for ${selectedMember}.`} metrics={[{ label: "Active URLs", value: memberRows.length }, { label: "URLs With Data", value: memberRows.length - summary.noData }, { label: "Current Clicks", value: fmtNum(summary.clicks) }, { label: "Previous Clicks", value: fmtNum(summary.previous_clicks) }, { label: "Current Impressions", value: fmtNum(summary.impressions) }, { label: "Previous Impressions", value: fmtNum(summary.previous_impressions) }, { label: "CTR", value: fmtPct(summary.ctr) }, { label: "Avg Position", value: fmtPos(summary.position) }]} />
+        <MetricSection title="URL type breakdown" description="Performance by tracked URL type." tone="quality" metrics={typeBreakdown.length ? typeBreakdown.flatMap(({ type, rows }) => { const metrics = aggregateCompared(rows); return [{ label: `${contentTypeLabel(type)} URLs`, value: rows.length }, { label: `${contentTypeLabel(type)} URLs with data`, value: rows.length - metrics.noData }, { label: `${contentTypeLabel(type)} clicks`, value: fmtNum(metrics.clicks) }, { label: `${contentTypeLabel(type)} impressions`, value: fmtNum(metrics.impressions) }, { label: `${contentTypeLabel(type)} growing URLs`, value: metrics.growing }, { label: `${contentTypeLabel(type)} declining URLs`, value: metrics.declining }, { label: `${contentTypeLabel(type)} no-data URLs`, value: metrics.noData }]; }) : [{ label: "Typed URLs", value: "No typed URLs" }]} />
         <MetricSection title="Trend summary" description="Growth and health signals for the selected range." tone="quality" metrics={[{ label: "Click Growth %", value: <span className={getGrowthClassName(summary.click_growth_pct)}>{fmtGrowth(summary.click_growth_pct)}</span> }, { label: "Impression Growth %", value: <span className={getGrowthClassName(summary.impression_growth_pct)}>{fmtGrowth(summary.impression_growth_pct)}</span> }, { label: "Growing URLs", value: summary.growing }, { label: "Declining URLs", value: summary.declining }, { label: "No Data URLs", value: summary.noData }]} />
       </SectionGrid>
       <Section title="URL portfolio table" rows={memberRows} />

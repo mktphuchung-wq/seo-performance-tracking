@@ -27,6 +27,9 @@ export type SheetSyncResult = {
   deactivatedRows: number;
   failedRows: number;
   dateStats?: SheetSyncDateStats;
+  rows_with_type?: number;
+  rows_missing_type?: number;
+  type_distribution?: Record<string, number>;
   errorMessage?: string;
 };
 
@@ -85,6 +88,9 @@ export async function syncSheetToDb(accessToken: string): Promise<SheetSyncResul
 
     result.totalRows = rows.length;
     result.dateStats = buildSheetSyncDateStats(rows);
+    result.rows_with_type = rows.filter((row) => row.content_type).length;
+    result.rows_missing_type = rows.length - result.rows_with_type;
+    result.type_distribution = rows.reduce<Record<string, number>>((acc, row) => { if (row.content_type) acc[row.content_type] = (acc[row.content_type] ?? 0) + 1; return acc; }, {});
     logSheetSyncDateStats(result.dateStats);
 
     for (const row of rows) {
@@ -107,23 +113,23 @@ export async function syncSheetToDb(accessToken: string): Promise<SheetSyncResul
       activeHashes.add(hash);
       const memberEmail = (memberMap[memberName] ?? "").toLowerCase();
       const gscProperty = projectMap[project] ?? null;
-      const existing = await query<{ id: string; project: string; url: string; member_name: string; member_email: string | null; gsc_property: string | null; is_active: boolean | null; content_worked_at: string | null }>(
-        "select id, project, url, member_name, member_email, gsc_property, is_active, content_worked_at from public.content_urls where url_hash=$1",
+      const existing = await query<{ id: string; project: string; url: string; member_name: string; member_email: string | null; gsc_property: string | null; is_active: boolean | null; content_worked_at: string | null; content_type: string | null }>(
+        "select id, project, url, member_name, member_email, gsc_property, is_active, content_worked_at, content_type from public.content_urls where url_hash=$1",
         [hash]
       );
 
-      await query(`insert into public.content_urls (url_hash, project, url, member_name, member_email, gsc_property, content_worked_at, is_active, source, last_seen_at, created_at, updated_at)
-        values ($1,$2,$3,$4,$5,$6,$7,true,'google_sheet',now(),now(),now())
+      await query(`insert into public.content_urls (url_hash, project, url, member_name, member_email, gsc_property, content_worked_at, content_type, is_active, source, last_seen_at, created_at, updated_at)
+        values ($1,$2,$3,$4,$5,$6,$7,$8,true,'google_sheet',now(),now(),now())
         on conflict (url_hash) do update set project=excluded.project, url=excluded.url, member_name=excluded.member_name, member_email=excluded.member_email,
-          gsc_property=excluded.gsc_property, content_worked_at=excluded.content_worked_at, is_active=true, source='google_sheet', last_seen_at=now(), updated_at=now()`,
-        [hash, project, normalizedUrl, memberName, memberEmail, gscProperty, row.content_worked_at || null]);
+          gsc_property=excluded.gsc_property, content_worked_at=excluded.content_worked_at, content_type=excluded.content_type, is_active=true, source='google_sheet', last_seen_at=now(), updated_at=now()`,
+        [hash, project, normalizedUrl, memberName, memberEmail, gscProperty, row.content_worked_at || null, row.content_type || null]);
 
       if (existing.rows.length === 0) {
         result.insertedRows += 1;
       } else {
         const current = existing.rows[0];
         const changed = current.project !== project || current.url !== normalizedUrl || current.member_name !== memberName ||
-          String(current.member_email ?? "") !== memberEmail || String(current.gsc_property ?? "") !== String(gscProperty ?? "") || String(current.content_worked_at ?? "").slice(0,10) !== String(row.content_worked_at ?? "") || current.is_active !== true;
+          String(current.member_email ?? "") !== memberEmail || String(current.gsc_property ?? "") !== String(gscProperty ?? "") || String(current.content_worked_at ?? "").slice(0,10) !== String(row.content_worked_at ?? "") || String(current.content_type ?? "") !== String(row.content_type ?? "") || current.is_active !== true;
         if (changed) result.updatedRows += 1;
       }
     }
@@ -211,7 +217,7 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
   let runId: string | null = null;
   const previousRange = getPreviousRange(range);
   try {
-    const allActive = (await query<any>(`select id, url_hash, project, url, member_name, member_email, gsc_property, content_worked_at, updated_at, created_at, is_active from public.content_urls where coalesce(is_active,true)=true order by project, member_name, url`)).rows.map((row) => ({ ...dbContentUrl(row), is_active: row.is_active }));
+    const allActive = (await query<any>(`select id, url_hash, project, url, member_name, member_email, gsc_property, content_worked_at, content_type, updated_at, created_at, is_active from public.content_urls where coalesce(is_active,true)=true order by project, member_name, url`)).rows.map((row) => ({ ...dbContentUrl(row), is_active: row.is_active }));
     const settings = await getProjectKpiSettings().catch(() => []);
     const settingsByProject = new Map(settings.map((s) => [s.project, s]));
     const firstSettings = allActive[0] ? settingsByProject.get(allActive[0].project) || defaultProjectKpiSettings(allActive[0].project) : undefined;
@@ -287,7 +293,7 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
       await client.query("delete from seo_performance_cache where range_key=$1", [rangeKey]);
       await client.query("delete from member_performance_cache where range_key=$1", [rangeKey]);
       for (const r of compared) {
-        await client.query(`insert into seo_performance_cache (cache_key, content_url_id, url_hash, project, url, member_name, member_email, gsc_property, range_key, start_date, end_date, previous_start_date, previous_end_date, clicks, impressions, ctr, position, previous_clicks, previous_impressions, previous_ctr, previous_position, click_delta, click_growth_pct, impression_delta, impression_growth_pct, ctr_delta, position_delta, growth_status, opportunity_status, recommendation, refreshed_at, created_at, updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,now(),now(),now())`, [cacheKey(r, rangeKey, range), r.id, r.urlHash ?? null, r.project, r.url, r.member_name, r.memberEmail, r.gscProperty ?? null, rangeKey, range.startDate, range.endDate, previousRange.startDate, previousRange.endDate, r.clicks, r.impressions, r.ctr, r.position, r.previous_clicks, r.previous_impressions, r.previous_ctr, r.previous_position, r.click_delta, r.click_growth_pct, r.impression_delta, r.impression_growth_pct, r.ctr_delta, r.position_delta, r.status, r.opportunity, recommendationFor(r.status)]);
+        await client.query(`insert into seo_performance_cache (cache_key, content_url_id, url_hash, project, url, member_name, member_email, gsc_property, content_type, range_key, start_date, end_date, previous_start_date, previous_end_date, clicks, impressions, ctr, position, previous_clicks, previous_impressions, previous_ctr, previous_position, click_delta, click_growth_pct, impression_delta, impression_growth_pct, ctr_delta, position_delta, growth_status, opportunity_status, recommendation, refreshed_at, created_at, updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,now(),now(),now())`, [cacheKey(r, rangeKey, range), r.id, r.urlHash ?? null, r.project, r.url, r.member_name, r.memberEmail, r.gscProperty ?? null, r.content_type ?? null, rangeKey, range.startDate, range.endDate, previousRange.startDate, previousRange.endDate, r.clicks, r.impressions, r.ctr, r.position, r.previous_clicks, r.previous_impressions, r.previous_ctr, r.previous_position, r.click_delta, r.click_growth_pct, r.impression_delta, r.impression_growth_pct, r.ctr_delta, r.position_delta, r.status, r.opportunity, recommendationFor(r.status)]);
       }
       for (const m of members) {
         const memberRows = compared.filter((r) => r.member_name === m.member_name);
