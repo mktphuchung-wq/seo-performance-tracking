@@ -39,11 +39,12 @@ export async function upsertUrlWorkEvent(input: UrlWorkEventInput): Promise<"ins
   const note = input.note ?? null;
 
   if (!existing.rows[0]) {
-    await query(`insert into public.url_work_events
+    const inserted = await query<{ id: string }>(`insert into public.url_work_events
       (content_url_id, project, member_name, member_email, work_type, work_date, difficulty, unit_value, source, source_row_key, status, note, created_at, updated_at)
       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now(),now())
-      on conflict (source, source_row_key) do nothing`, [input.contentUrlId, input.project, input.memberName, input.memberEmail, input.workType, input.workDate, difficulty, unitValue, input.source, input.sourceRowKey, status, note]);
-    return "inserted";
+      on conflict (source, source_row_key) do nothing
+      returning id::text`, [input.contentUrlId, input.project, input.memberName, input.memberEmail, input.workType, input.workDate, difficulty, unitValue, input.source, input.sourceRowKey, status, note]);
+    return inserted.rowCount ? "inserted" : "skipped";
   }
 
   const current = existing.rows[0];
