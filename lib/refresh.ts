@@ -1,154 +1,13 @@
-import crypto from "crypto";
 import { query, transaction } from "./db";
-import { classifyGoogleApiError, getSheetContentUrlRows, searchAnalytics, type UrlMetrics } from "./google";
+import { searchAnalytics, type UrlMetrics } from "./google";
 import type { DateRange } from "./dates";
 import { cacheKey, comparePerformance, getPreviousRange } from "./growth";
 import { dbContentUrl } from "./postgres";
 import { classifyOpportunity } from "./metrics";
 import { scoreMembers } from "./scoring";
-import { getMemberEmailMap, getProjectGscMap } from "./env";
 import { getCohortWindow, getMinAgeMonthsForRange } from "./cohorts";
 import { getProjectKpiSettings, defaultProjectKpiSettings } from "./project-kpi";
 
-export type SheetSyncDateStats = {
-  totalRows: number;
-  parsedContentWorkedAtRows: number;
-  missingContentWorkedAtRows: number;
-  minContentWorkedAt: string | null;
-  maxContentWorkedAt: string | null;
-  workedMonthDistribution: Record<string, number>;
-};
-
-export type SheetSyncResult = {
-  status: "success" | "failed";
-  totalRows: number;
-  insertedRows: number;
-  updatedRows: number;
-  deactivatedRows: number;
-  failedRows: number;
-  dateStats?: SheetSyncDateStats;
-  rows_with_type?: number;
-  rows_missing_type?: number;
-  type_distribution?: Record<string, number>;
-  errorMessage?: string;
-};
-
-function normalizeSheetUrl(value: string): string {
-  const parsed = new URL(value.trim());
-  parsed.hash = "";
-  return parsed.toString();
-}
-
-function urlHash(project: string, normalizedUrl: string, memberName: string): string {
-  return crypto.createHash("sha256").update(`${project}|${normalizedUrl}|${memberName}`).digest("hex");
-}
-
-function buildSheetSyncDateStats(rows: { content_worked_at?: string | null }[]): SheetSyncDateStats {
-  const parsedDates = rows.map((row) => row.content_worked_at).filter((date): date is string => Boolean(date));
-  const workedMonthDistribution = parsedDates.reduce<Record<string, number>>((acc, date) => {
-    const month = date.slice(0, 7);
-    acc[month] = (acc[month] ?? 0) + 1;
-    return acc;
-  }, {});
-
-  return {
-    totalRows: rows.length,
-    parsedContentWorkedAtRows: parsedDates.length,
-    missingContentWorkedAtRows: rows.length - parsedDates.length,
-    minContentWorkedAt: parsedDates.length ? parsedDates.reduce((min, date) => date < min ? date : min, parsedDates[0]) : null,
-    maxContentWorkedAt: parsedDates.length ? parsedDates.reduce((max, date) => date > max ? date : max, parsedDates[0]) : null,
-    workedMonthDistribution,
-  };
-}
-
-function logSheetSyncDateStats(stats: SheetSyncDateStats) {
-  console.info("Google Sheet content_worked_at sync stats", {
-    totalRows: stats.totalRows,
-    parsedContentWorkedAtRows: stats.parsedContentWorkedAtRows,
-    missingContentWorkedAtRows: stats.missingContentWorkedAtRows,
-    minContentWorkedAt: stats.minContentWorkedAt,
-    maxContentWorkedAt: stats.maxContentWorkedAt,
-    workedMonthDistribution: stats.workedMonthDistribution,
-  });
-}
-
-async function recordSheetSyncRun(result: SheetSyncResult) {
-  await query(`insert into sync_runs (source, status, total_rows, inserted_rows, updated_rows, deactivated_rows, failed_rows, error_message, created_at, finished_at)
-    values ('google_sheet',$1,$2,$3,$4,$5,$6,$7,now(),now())`,
-    [result.status, result.totalRows, result.insertedRows, result.updatedRows, result.deactivatedRows, result.failedRows, result.errorMessage ?? null]);
-}
-
-export async function syncSheetToDb(accessToken: string): Promise<SheetSyncResult> {
-  const result: SheetSyncResult = { status: "success", totalRows: 0, insertedRows: 0, updatedRows: 0, deactivatedRows: 0, failedRows: 0 };
-  try {
-    const rows = await getSheetContentUrlRows(accessToken);
-    const memberMap = getMemberEmailMap();
-    const projectMap = getProjectGscMap();
-    const activeHashes = new Set<string>();
-
-    result.totalRows = rows.length;
-    result.dateStats = buildSheetSyncDateStats(rows);
-    result.rows_with_type = rows.filter((row) => row.content_type).length;
-    result.rows_missing_type = rows.length - result.rows_with_type;
-    result.type_distribution = rows.reduce<Record<string, number>>((acc, row) => { if (row.content_type) acc[row.content_type] = (acc[row.content_type] ?? 0) + 1; return acc; }, {});
-    logSheetSyncDateStats(result.dateStats);
-
-    for (const row of rows) {
-      const project = row.project.trim();
-      const memberName = row.member_name.trim();
-      let normalizedUrl = "";
-      try {
-        normalizedUrl = normalizeSheetUrl(row.url);
-      } catch {
-        result.failedRows += 1;
-        continue;
-      }
-
-      if (!project || !memberName || !normalizedUrl) {
-        result.failedRows += 1;
-        continue;
-      }
-
-      const hash = urlHash(project, normalizedUrl, memberName);
-      activeHashes.add(hash);
-      const memberEmail = (memberMap[memberName] ?? "").toLowerCase();
-      const gscProperty = projectMap[project] ?? null;
-      const existing = await query<{ id: string; project: string; url: string; member_name: string; member_email: string | null; gsc_property: string | null; is_active: boolean | null; content_worked_at: string | null; content_type: string | null }>(
-        "select id, project, url, member_name, member_email, gsc_property, is_active, content_worked_at, content_type from public.content_urls where url_hash=$1",
-        [hash]
-      );
-
-      await query(`insert into public.content_urls (url_hash, project, url, member_name, member_email, gsc_property, content_worked_at, content_type, is_active, source, last_seen_at, created_at, updated_at)
-        values ($1,$2,$3,$4,$5,$6,$7,$8,true,'google_sheet',now(),now(),now())
-        on conflict (url_hash) do update set project=excluded.project, url=excluded.url, member_name=excluded.member_name, member_email=excluded.member_email,
-          gsc_property=excluded.gsc_property, content_worked_at=excluded.content_worked_at, content_type=excluded.content_type, is_active=true, source='google_sheet', last_seen_at=now(), updated_at=now()`,
-        [hash, project, normalizedUrl, memberName, memberEmail, gscProperty, row.content_worked_at || null, row.content_type || null]);
-
-      if (existing.rows.length === 0) {
-        result.insertedRows += 1;
-      } else {
-        const current = existing.rows[0];
-        const changed = current.project !== project || current.url !== normalizedUrl || current.member_name !== memberName ||
-          String(current.member_email ?? "") !== memberEmail || String(current.gsc_property ?? "") !== String(gscProperty ?? "") || String(current.content_worked_at ?? "").slice(0,10) !== String(row.content_worked_at ?? "") || String(current.content_type ?? "") !== String(row.content_type ?? "") || current.is_active !== true;
-        if (changed) result.updatedRows += 1;
-      }
-    }
-
-    const hashes = [...activeHashes];
-    const deactivated = hashes.length
-      ? await query("update public.content_urls set is_active=false, updated_at=now() where coalesce(is_active,true)=true and not (url_hash = any($1::text[]))", [hashes])
-      : await query("update public.content_urls set is_active=false, updated_at=now() where coalesce(is_active,true)=true");
-    result.deactivatedRows = deactivated.rowCount ?? 0;
-    await recordSheetSyncRun(result);
-    return result;
-  } catch (error) {
-    result.status = "failed";
-    result.errorMessage = error instanceof Error ? error.message : "Google Sheet sync failed";
-    try { await recordSheetSyncRun(result); } catch {}
-    if (classifyGoogleApiError(error)) throw error;
-    return result;
-  }
-}
 export type CacheRefreshStatus = "success" | "failed" | "not_enough_data";
 export type CacheRefreshDiagnostics = {
   total_active_urls_before_cohort: number;
@@ -286,8 +145,14 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
     const compared = comparePerformance(currentRows, previousRows, rangeKey, range);
     const urlsWithData = compared.filter((r) => r.clicks > 0 || r.impressions > 0).length;
     const noDataUrls = compared.length - urlsWithData;
-    const minEligibleUrls = rangeKey === "all_time" ? 1 : Math.min(...settings.map((s) => Number(s.min_eligible_urls || 5)), 5);
-    const members = scoreMembers(compared, minEligibleUrls);
+    const projectMembers = Object.entries(compared.reduce<Record<string, typeof compared>>((groups, row) => {
+      (groups[row.project] ??= []).push(row);
+      return groups;
+    }, {})).flatMap(([project, projectRows]) => {
+      const projectSettings = settingsByProject.get(project) ?? defaultProjectKpiSettings(project);
+      const minEligibleUrls = rangeKey === "all_time" ? 1 : Number(projectSettings.min_eligible_urls || 5);
+      return scoreMembers(projectRows, minEligibleUrls).map((member) => ({ ...member, project }));
+    });
 
     await transaction(async (client) => {
       await client.query("delete from seo_performance_cache where range_key=$1", [rangeKey]);
@@ -295,10 +160,10 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
       for (const r of compared) {
         await client.query(`insert into seo_performance_cache (cache_key, content_url_id, url_hash, project, url, member_name, member_email, gsc_property, content_type, range_key, start_date, end_date, previous_start_date, previous_end_date, clicks, impressions, ctr, position, previous_clicks, previous_impressions, previous_ctr, previous_position, click_delta, click_growth_pct, impression_delta, impression_growth_pct, ctr_delta, position_delta, growth_status, opportunity_status, recommendation, refreshed_at, created_at, updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,now(),now(),now())`, [cacheKey(r, rangeKey, range), r.id, r.urlHash ?? null, r.project, r.url, r.member_name, r.memberEmail, r.gscProperty ?? null, r.content_type ?? null, rangeKey, range.startDate, range.endDate, previousRange.startDate, previousRange.endDate, r.clicks, r.impressions, r.ctr, r.position, r.previous_clicks, r.previous_impressions, r.previous_ctr, r.previous_position, r.click_delta, r.click_growth_pct, r.impression_delta, r.impression_growth_pct, r.ctr_delta, r.position_delta, r.status, r.opportunity, recommendationFor(r.status)]);
       }
-      for (const m of members) {
-        const memberRows = compared.filter((r) => r.member_name === m.member_name);
+      for (const m of projectMembers) {
+        const memberRows = compared.filter((r) => r.project === m.project && r.member_name === m.member_name);
         const email = memberRows.find((r) => r.memberEmail)?.memberEmail ?? null;
-        await client.query(`insert into member_performance_cache (cache_key, member_name, member_email, range_key, start_date, end_date, previous_start_date, previous_end_date, url_count, urls_with_data, growing_urls, stable_urls, declining_urls, no_data_urls, clicks, impressions, ctr, position, previous_clicks, previous_impressions, click_delta, click_growth_pct, impression_delta, impression_growth_pct, quantity_index, quality_index, performance_kpi_pct, impression_performance_score, click_performance_score, growth_coverage_score, portfolio_health_score, eligible_url_count, excluded_no_data_url_count, positive_url_count, new_growth_url_count, declining_url_count, performance_kpi_status, performance_confidence, support_signal, main_strength, main_risk, suggested_support, refreshed_at, created_at, updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,now(),now(),now())`, [`${m.member_name}|${rangeKey}|${range.startDate}|${range.endDate}`, m.member_name, email, rangeKey, range.startDate, range.endDate, previousRange.startDate, previousRange.endDate, m.urlCount, m.urlCount - m.noData, m.growing, Math.max(0, m.urlCount - m.growing - m.declining - m.noData), m.declining, m.noData, m.clicks, m.impressions, m.ctr, m.position, m.previous_clicks, m.previous_impressions, m.click_delta, m.click_growth_pct, m.impression_delta, m.impression_growth_pct, m.quantityIndex, m.qualityIndex, m.performance_kpi_pct, m.impression_performance_score, m.click_performance_score, m.growth_coverage_score, m.portfolio_health_score, m.eligible_url_count, m.excluded_no_data_url_count, m.positive_url_count, m.new_growth_url_count, m.declining_url_count, m.performance_kpi_status, m.performance_confidence, m.supportSignal, m.portfolioHealth, m.priorityActions ? "Has URLs needing attention" : "No major risk", m.supportSignal]);
+        await client.query(`insert into member_performance_cache (cache_key, project, member_name, member_email, range_key, start_date, end_date, previous_start_date, previous_end_date, url_count, urls_with_data, growing_urls, stable_urls, declining_urls, no_data_urls, clicks, impressions, ctr, position, previous_clicks, previous_impressions, click_delta, click_growth_pct, impression_delta, impression_growth_pct, quantity_index, quality_index, performance_kpi_pct, impression_performance_score, click_performance_score, growth_coverage_score, portfolio_health_score, eligible_url_count, excluded_no_data_url_count, positive_url_count, new_growth_url_count, declining_url_count, performance_kpi_status, performance_confidence, support_signal, main_strength, main_risk, suggested_support, refreshed_at, created_at, updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,now(),now(),now())`, [`${m.project}|${m.member_name}|${rangeKey}|${range.startDate}|${range.endDate}`, m.project, m.member_name, email, rangeKey, range.startDate, range.endDate, previousRange.startDate, previousRange.endDate, m.urlCount, m.urlCount - m.noData, m.growing, Math.max(0, m.urlCount - m.growing - m.declining - m.noData), m.declining, m.noData, m.clicks, m.impressions, m.ctr, m.position, m.previous_clicks, m.previous_impressions, m.click_delta, m.click_growth_pct, m.impression_delta, m.impression_growth_pct, m.quantityIndex, m.qualityIndex, m.performance_kpi_pct, m.impression_performance_score, m.click_performance_score, m.growth_coverage_score, m.portfolio_health_score, m.eligible_url_count, m.excluded_no_data_url_count, m.positive_url_count, m.new_growth_url_count, m.declining_url_count, m.performance_kpi_status, m.performance_confidence, m.supportSignal, m.portfolioHealth, m.priorityActions ? "Has URLs needing attention" : "No major risk", m.supportSignal]);
       }
       await client.query("update refresh_runs set status='success', processed_urls=$2, urls_with_data=$3, no_data_urls=$4, failed_urls=0, finished_at=now(), updated_at=now() where id=$1", [runId, compared.length, urlsWithData, noDataUrls]);
     });

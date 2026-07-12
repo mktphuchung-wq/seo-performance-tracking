@@ -124,7 +124,10 @@ function resultSummary(data: any) {
   if (typeof data.insertedRows !== "undefined") {
     const stats = data.dateStats;
     const dateSummary = stats ? ` Dates parsed ${stats.parsedContentWorkedAtRows}/${stats.totalRows}; missing ${stats.missingContentWorkedAtRows}; range ${stats.minContentWorkedAt || "—"} → ${stats.maxContentWorkedAt || "—"}.` : "";
-    return `Inserted ${data.insertedRows}, updated ${data.updatedRows}, deactivated ${data.deactivatedRows}, failed ${data.failedRows}.${dateSummary}`;
+    const eventSummary = typeof data.workEventsInserted !== "undefined"
+      ? ` Work events: ${data.workEventsInserted} inserted, ${data.workEventsUpdated} updated, ${data.duplicateWorkEventsSkipped} duplicates skipped; ${data.missingWorkDates} missing dates, ${data.missingWorkTypes} missing/invalid types.`
+      : "";
+    return `URL rows processed ${data.urlRowsProcessed ?? data.totalRows}; inserted ${data.insertedRows}, updated ${data.updatedRows}, deactivated ${data.deactivatedRows}, failed ${data.failedRows}.${eventSummary}${dateSummary}`;
   }
   if (data.status === "not_enough_data") return data.message || "Not enough data to evaluate.";
   if (typeof data.totalUrls !== "undefined") return `Processed ${data.processedUrls}/${data.totalUrls}; ${data.urlsWithData} with data, ${data.noDataUrls} no data, ${data.failedUrls} failed.`;

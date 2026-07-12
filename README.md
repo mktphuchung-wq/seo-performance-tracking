@@ -2,6 +2,31 @@
 
 A Vercel-ready Next.js App Router dashboard for SEO teams. The current architecture uses Google Sheets as the source of truth for URL ownership, Neon/Postgres as the cache and reporting database, Google OAuth for authorization, and the Google Search Console API for URL performance data.
 
+## Phase 1-2 KPI architecture
+
+- `member_performance_cache` is keyed by `project + member_name + range_key`.
+- `member_project_performance_final_view` returns one raw multi-range row per project and member. The app loads that project's KPI settings, preserves raw/adjusted values, and only then creates a compatibility member rollup.
+- `url_work_events` is the primary work-history source. `content_urls.content_worked_at`, `content_urls.content_type`, and member fields remain latest-work convenience fields during rollout.
+- A Google Sheet sync upserts URL identity/current fields and independently inserts or updates a deterministic work event. The event key includes project, URL, member, work date, and work type, so later audit/update work never overwrites earlier history.
+
+The `content_urls` sheet columns must be:
+
+```text
+A project | B url | C member_name | D date | E type
+```
+
+Valid work types are `new_content`, `audit`, `update`, and `portfolio`. Rows missing a date or a valid work type remain in URL inventory and are reported in sync diagnostics, but do not create work events.
+
+For a new database, run the baseline and then both additive migrations in this order:
+
+```bash
+psql "$DATABASE_URL" -f migrations/001_simple_cache_schema.sql
+psql "$DATABASE_URL" -f migrations/20260710_member_project_performance.sql
+psql "$DATABASE_URL" -f migrations/20260710_url_work_events.sql
+```
+
+For an existing database, run only the two `20260710` migrations in the order shown. Then check `/api/health/db`; missing Phase 1/2 schema includes the exact migration filename in `migrationWarnings`.
+
 ## Current data architecture
 
 The active Neon/Postgres schema is documented in `migrations/001_simple_cache_schema.sql`. New environments should run that migration as the current schema baseline.

@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "../../../../lib/auth";
 import { classifyGoogleApiError } from "../../../../lib/google";
-import { syncSheetToDb } from "../../../../lib/refresh";
+import { syncSheetToDb } from "../../../../lib/sync/sheet";
 
 function googleErrorResponse(error: unknown) {
   const classified = classifyGoogleApiError(error);

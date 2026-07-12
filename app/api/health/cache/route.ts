@@ -29,6 +29,7 @@ export async function GET() {
       activeUrls: await safeCount("select count(*) from public.content_urls where coalesce(is_active,true)=true"),
       seoPerformanceCache: await safeCount("select count(*) from public.seo_performance_cache"),
       memberPerformanceCache: await safeCount("select count(*) from public.member_performance_cache"),
+      urlWorkEvents: await safeCount("select count(*) from public.url_work_events"),
       refreshRuns: await safeCount("select count(*) from public.refresh_runs"),
       syncRuns: await safeCount("select count(*) from public.sync_runs"),
     } }, { status: schema.ok && contentWorkedAtExists ? 200 : 503, headers: { "Cache-Control": "no-store" } });

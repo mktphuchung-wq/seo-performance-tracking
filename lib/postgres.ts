@@ -4,7 +4,7 @@ import { classifyOpportunity } from "./metrics";
 import { type ContentUrl, type UrlPerformance, type UrlMetrics, type QueryMetric, type DailyMetric } from "./google";
 import type { DateRange } from "./dates";
 import { scoreMembers } from "./scoring";
-import { adjustMemberFinal, defaultProjectKpiSettings } from "./project-kpi";
+import { adjustMemberFinal, defaultProjectKpiSettings, getProjectKpiSettings } from "./project-kpi";
 
 const num = (v: unknown) => Number.isFinite(Number(v)) ? Number(v) : 0;
 const normalizeMetric = (r: any): UrlMetrics => ({ clicks: num(r.clicks), impressions: num(r.impressions), ctr: num(r.ctr), position: num(r.position) });
@@ -47,6 +47,7 @@ export async function getDbPerformance(rangeKey: string, range: DateRange): Prom
 }
 
 export type MemberPerformanceFinalSummary = {
+  project?: string;
   member_name: string;
   member_email: string | null;
   performance_kpi_1m_pct: number | null;
@@ -77,6 +78,7 @@ const nullableNum = (v: unknown) => v === null || v === undefined ? null : (Numb
 
 function mapMemberPerformanceFinal(row: any): MemberPerformanceFinalSummary {
   return {
+    project: row.project ? String(row.project) : undefined,
     member_name: row.member_name ?? "",
     member_email: row.member_email ? String(row.member_email).toLowerCase() : null,
     performance_kpi_1m_pct: nullableNum(row.performance_kpi_1m_pct),
@@ -97,16 +99,86 @@ function mapMemberPerformanceFinal(row: any): MemberPerformanceFinalSummary {
   };
 }
 
+export type MemberProjectPerformanceFinalSummary = MemberPerformanceFinalSummary & { project: string };
+
+function average(values: Array<number | null | undefined>) {
+  const present = values.filter((value): value is number => value !== null && value !== undefined && Number.isFinite(value));
+  return present.length ? Math.round((present.reduce((sum, value) => sum + value, 0) / present.length) * 100) / 100 : null;
+}
+
+function total(values: Array<number | null | undefined>) {
+  const present = values.filter((value): value is number => value !== null && value !== undefined && Number.isFinite(value));
+  return present.length ? present.reduce((sum, value) => sum + value, 0) : null;
+}
+
+function rollupMemberProjects(rows: MemberProjectPerformanceFinalSummary[]): MemberPerformanceFinalSummary {
+  const adjusted = average(rows.map((row) => row.adjusted_performance_final_pct));
+  const raw = average(rows.map((row) => row.raw_performance_final_pct));
+  const coverage = average(rows.map((row) => row.performance_final_coverage)) ?? 0;
+  const completedProjects = rows.filter((row) => row.adjusted_performance_final_pct != null).length;
+  const refreshedAt = rows.map((row) => row.refreshed_at).filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
+  return {
+    member_name: rows[0]?.member_name ?? "",
+    member_email: rows.find((row) => row.member_email)?.member_email ?? null,
+    performance_kpi_1m_pct: average(rows.map((row) => row.performance_kpi_1m_pct)),
+    performance_kpi_3m_pct: average(rows.map((row) => row.performance_kpi_3m_pct)),
+    performance_kpi_6m_pct: average(rows.map((row) => row.performance_kpi_6m_pct)),
+    performance_kpi_all_time_pct: average(rows.map((row) => row.performance_kpi_all_time_pct)),
+    performance_final_pct: adjusted,
+    performance_final_status: completedProjects === 0 ? "insufficient_data" : completedProjects === rows.length && rows.every((row) => row.performance_final_status === "complete") ? "complete" : "partial",
+    performance_final_coverage: coverage,
+    performance_confidence: coverage >= 1 ? "high" : coverage >= 0.8 ? "medium" : coverage > 0 ? "low" : "none",
+    eligible_url_count_1m: total(rows.map((row) => row.eligible_url_count_1m)),
+    eligible_url_count_3m: total(rows.map((row) => row.eligible_url_count_3m)),
+    eligible_url_count_6m: total(rows.map((row) => row.eligible_url_count_6m)),
+    excluded_no_data_url_count_1m: total(rows.map((row) => row.excluded_no_data_url_count_1m)),
+    excluded_no_data_url_count_3m: total(rows.map((row) => row.excluded_no_data_url_count_3m)),
+    excluded_no_data_url_count_6m: total(rows.map((row) => row.excluded_no_data_url_count_6m)),
+    refreshed_at: refreshedAt,
+    raw_performance_final_pct: raw,
+    adjusted_performance_final_pct: adjusted,
+    adjustment_status: "project_rollup",
+    adjustment_reason: `Rolled up after applying project-specific KPI settings to ${rows.length} project${rows.length === 1 ? "" : "s"}; projects are equally weighted in this compatibility performance rollup.`,
+    project_kpi_type: rows.length === 1 ? rows[0].project_kpi_type : "multi_project_rollup",
+    kpi_protection_applied: rows.some((row) => row.kpi_protection_applied),
+    pm_review_required: rows.some((row) => row.pm_review_required),
+  };
+}
+
+export async function getAllMemberProjectPerformanceFinal(): Promise<MemberProjectPerformanceFinalSummary[]> {
+  const [res, settings] = await Promise.all([
+    query<any>(`select * from public.member_project_performance_final_view order by member_name, project`),
+    getProjectKpiSettings(),
+  ]);
+  const settingsByProject = new Map(settings.map((item) => [item.project, item]));
+  return res.rows.map((row) => {
+    const mapped = mapMemberPerformanceFinal(row) as MemberProjectPerformanceFinalSummary;
+    const projectSettings = settingsByProject.get(mapped.project) ?? defaultProjectKpiSettings(mapped.project);
+    return adjustMemberFinal(mapped, projectSettings) as MemberProjectPerformanceFinalSummary;
+  });
+}
+
+export async function getMemberProjectPerformanceFinalByMember(memberNameOrEmail: string): Promise<MemberProjectPerformanceFinalSummary[]> {
+  const key = memberNameOrEmail.trim().toLowerCase();
+  if (!key) return [];
+  const rows = await getAllMemberProjectPerformanceFinal();
+  return rows.filter((row) => row.member_name.toLowerCase() === key || row.member_email?.toLowerCase() === key);
+}
+
 export async function getMemberPerformanceFinalByMember(memberNameOrEmail: string): Promise<MemberPerformanceFinalSummary | null> {
   const key = memberNameOrEmail.trim().toLowerCase();
   if (!key) return null;
-  const res = await query<any>(`select * from public.member_performance_final_view where lower(member_name) = $1 or lower(coalesce(member_email, '')) = $1 limit 1`, [key]);
-  return res.rows[0] ? adjustMemberFinal(mapMemberPerformanceFinal(res.rows[0]), defaultProjectKpiSettings("default")) : null;
+  const rows = await getMemberProjectPerformanceFinalByMember(key);
+  return rows.length ? rollupMemberProjects(rows) : null;
 }
 
 export async function getAllMemberPerformanceFinal(): Promise<MemberPerformanceFinalSummary[]> {
-  const res = await query<any>(`select * from public.member_performance_final_view order by member_name`);
-  return res.rows.map((row) => adjustMemberFinal(mapMemberPerformanceFinal(row), defaultProjectKpiSettings("default")));
+  const projectRows = await getAllMemberProjectPerformanceFinal();
+  const grouped = projectRows.reduce<Record<string, MemberProjectPerformanceFinalSummary[]>>((acc, row) => {
+    (acc[row.member_name] ??= []).push(row);
+    return acc;
+  }, {});
+  return Object.values(grouped).map(rollupMemberProjects).sort((a, b) => a.member_name.localeCompare(b.member_name));
 }
 
 export async function getUrlDetailFromDb(id: string, rangeKey: string, range: DateRange) {

@@ -7,9 +7,10 @@ export const REQUIRED_TABLES = [
   "refresh_runs",
   "sync_runs",
   "project_kpi_settings",
+  "url_work_events",
 ];
 
-export const REQUIRED_VIEWS = ["dashboard_url_performance", "dashboard_member_performance", "member_performance_final_view", "member_performance_summary"];
+export const REQUIRED_VIEWS = ["dashboard_url_performance", "dashboard_member_performance", "member_project_performance_final_view", "member_performance_final_view", "member_performance_summary"];
 
 export const PROJECT_KPI_SETTINGS_REQUIRED_COLUMNS = [
   "id", "project", "project_kpi_type", "project_start_date", "is_kpi_protection_enabled", "performance_floor_pct", "performance_cap_pct",
@@ -24,13 +25,14 @@ export const PROJECT_KPI_SETTINGS_REQUIRED_COLUMNS = [
 export const REQUIRED_COLUMNS: Record<string, string[]> = {
   content_urls: ["id", "url_hash", "project", "url", "member_name", "member_email", "gsc_property", "is_active", "source", "first_seen_at", "last_seen_at", "content_worked_at", "content_type", "created_at", "updated_at"],
   seo_performance_cache: ["id", "cache_key", "content_url_id", "url_hash", "project", "url", "member_name", "member_email", "gsc_property", "content_type", "range_key", "start_date", "end_date", "previous_start_date", "previous_end_date", "clicks", "impressions", "ctr", "position", "previous_clicks", "previous_impressions", "previous_ctr", "previous_position", "click_delta", "click_growth_pct", "impression_delta", "impression_growth_pct", "ctr_delta", "position_delta", "growth_status", "opportunity_status", "recommendation", "refreshed_at", "created_at", "updated_at"],
-  member_performance_cache: ["id", "cache_key", "member_name", "member_email", "range_key", "start_date", "end_date", "previous_start_date", "previous_end_date", "url_count", "urls_with_data", "growing_urls", "stable_urls", "declining_urls", "no_data_urls", "clicks", "impressions", "ctr", "position", "previous_clicks", "previous_impressions", "click_delta", "click_growth_pct", "impression_delta", "impression_growth_pct", "quantity_index", "quality_index", "performance_kpi_pct", "impression_performance_score", "click_performance_score", "growth_coverage_score", "portfolio_health_score", "eligible_url_count", "excluded_no_data_url_count", "positive_url_count", "new_growth_url_count", "declining_url_count", "performance_kpi_status", "performance_confidence", "support_signal", "main_strength", "main_risk", "suggested_support", "refreshed_at", "created_at", "updated_at"],
+  member_performance_cache: ["id", "cache_key", "project", "member_name", "member_email", "range_key", "start_date", "end_date", "previous_start_date", "previous_end_date", "url_count", "urls_with_data", "growing_urls", "stable_urls", "declining_urls", "no_data_urls", "clicks", "impressions", "ctr", "position", "previous_clicks", "previous_impressions", "click_delta", "click_growth_pct", "impression_delta", "impression_growth_pct", "quantity_index", "quality_index", "performance_kpi_pct", "impression_performance_score", "click_performance_score", "growth_coverage_score", "portfolio_health_score", "eligible_url_count", "excluded_no_data_url_count", "positive_url_count", "new_growth_url_count", "declining_url_count", "performance_kpi_status", "performance_confidence", "support_signal", "main_strength", "main_risk", "suggested_support", "refreshed_at", "created_at", "updated_at"],
   refresh_runs: ["id", "status", "triggered_by", "range_key", "start_date", "end_date", "previous_start_date", "previous_end_date", "total_urls", "processed_urls", "urls_with_data", "no_data_urls", "failed_urls", "error_message", "started_at", "finished_at", "created_at", "updated_at"],
   sync_runs: ["id", "source", "status", "total_rows", "inserted_rows", "updated_rows", "deactivated_rows", "failed_rows", "triggered_by", "error_message", "started_at", "finished_at", "created_at", "updated_at"],
   project_kpi_settings: PROJECT_KPI_SETTINGS_REQUIRED_COLUMNS,
+  url_work_events: ["id", "content_url_id", "project", "member_name", "member_email", "work_type", "work_date", "difficulty", "unit_value", "source", "source_row_key", "status", "note", "created_at", "updated_at"],
 };
 
-export type DbSchemaHealth = { ok: boolean; missingTables: string[]; missingViews: string[]; missingColumns: string[]; missing: string[]; projectKpiSettings: ProjectKpiSettingsDiagnostic };
+export type DbSchemaHealth = { ok: boolean; missingTables: string[]; missingViews: string[]; missingColumns: string[]; missing: string[]; migrationWarnings: string[]; projectKpiSettings: ProjectKpiSettingsDiagnostic };
 export type ProjectKpiSettingsDiagnostic = {
   current_database: string | null;
   current_schema: string | null;
@@ -94,5 +96,11 @@ export async function checkDbSchemaHealth(): Promise<DbSchemaHealth> {
   const missingViews = REQUIRED_VIEWS.filter((name) => !relationMap.has(name));
   const missingColumns = Object.entries(REQUIRED_COLUMNS).flatMap(([table, required]) => required.filter((column) => !columnMap[table]?.has(column)).map((column) => `${table}.${column}`));
   const missing = [...missingTables.map((name) => `table:${name}`), ...missingViews.map((name) => `view:${name}`), ...missingColumns];
-  return { ok: missing.length === 0, missingTables, missingViews, missingColumns, missing, projectKpiSettings };
+  const migrationWarnings = [
+    (missingViews.includes("member_project_performance_final_view") || missingColumns.includes("member_performance_cache.project"))
+      ? "Project-aware performance schema is missing. Run migrations/20260710_member_project_performance.sql in Neon." : null,
+    (missingTables.includes("url_work_events") || missingColumns.some((column) => column.startsWith("url_work_events.")))
+      ? "Work-event schema is missing. Run migrations/20260710_url_work_events.sql in Neon." : null,
+  ].filter((message): message is string => Boolean(message));
+  return { ok: missing.length === 0, missingTables, missingViews, missingColumns, missing, migrationWarnings, projectKpiSettings };
 }
