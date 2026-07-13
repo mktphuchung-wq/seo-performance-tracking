@@ -30,6 +30,12 @@ export async function GET() {
       seoPerformanceCache: await safeCount("select count(*) from public.seo_performance_cache"),
       memberPerformanceCache: await safeCount("select count(*) from public.member_performance_cache"),
       urlWorkEvents: await safeCount("select count(*) from public.url_work_events"),
+      monthlyMemberKpiTargets: await safeCount("select count(*) from public.monthly_member_kpi_targets"),
+      kpiWorkUnitRules: await safeCount("select count(*) from public.kpi_work_unit_rules"),
+      kpiQualityCriteria: await safeCount("select count(*) from public.kpi_quality_criteria"),
+      urlWorkQualityReviews: await safeCount("select count(*) from public.url_work_quality_reviews"),
+      urlWorkQualityScores: await safeCount("select count(*) from public.url_work_quality_scores"),
+      memberMonthQualityReviews: await safeCount("select count(*) from public.member_month_quality_reviews"),
       refreshRuns: await safeCount("select count(*) from public.refresh_runs"),
       syncRuns: await safeCount("select count(*) from public.sync_runs"),
     } }, { status: schema.ok && contentWorkedAtExists ? 200 : 503, headers: { "Cache-Control": "no-store" } });

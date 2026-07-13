@@ -8,6 +8,12 @@ export const REQUIRED_TABLES = [
   "sync_runs",
   "project_kpi_settings",
   "url_work_events",
+  "monthly_member_kpi_targets",
+  "kpi_work_unit_rules",
+  "kpi_quality_criteria",
+  "url_work_quality_reviews",
+  "url_work_quality_scores",
+  "member_month_quality_reviews",
 ];
 
 export const REQUIRED_VIEWS = ["dashboard_url_performance", "dashboard_member_performance", "member_project_performance_final_view", "member_performance_final_view", "member_performance_summary"];
@@ -30,6 +36,12 @@ export const REQUIRED_COLUMNS: Record<string, string[]> = {
   sync_runs: ["id", "source", "status", "total_rows", "inserted_rows", "updated_rows", "deactivated_rows", "failed_rows", "triggered_by", "error_message", "started_at", "finished_at", "created_at", "updated_at"],
   project_kpi_settings: PROJECT_KPI_SETTINGS_REQUIRED_COLUMNS,
   url_work_events: ["id", "content_url_id", "project", "member_name", "member_email", "work_type", "work_date", "difficulty", "unit_value", "source", "source_row_key", "status", "note", "created_at", "updated_at"],
+  monthly_member_kpi_targets: ["id", "month_key", "project", "member_name", "member_email", "target_units", "target_urls", "quantity_weight_pct", "quality_weight_pct", "performance_weight_pct", "notes", "created_at", "updated_at"],
+  kpi_work_unit_rules: ["id", "project", "member_name", "work_type", "difficulty", "unit_value", "is_active", "notes", "created_at", "updated_at"],
+  kpi_quality_criteria: ["id", "project", "criterion_key", "criterion_name", "review_level", "weight_pct", "display_order", "is_active", "description", "created_at", "updated_at"],
+  url_work_quality_reviews: ["id", "work_event_id", "review_status", "quality_pct", "admin_note", "reviewed_by", "reviewed_at", "created_at", "updated_at"],
+  url_work_quality_scores: ["id", "review_id", "criterion_id", "score", "note", "created_at", "updated_at"],
+  member_month_quality_reviews: ["id", "month_key", "project", "member_name", "member_email", "frequency_score", "collaboration_score", "review_status", "quality_pct", "admin_note", "reviewed_by", "reviewed_at", "created_at", "updated_at"],
 };
 
 export type DbSchemaHealth = { ok: boolean; missingTables: string[]; missingViews: string[]; missingColumns: string[]; missing: string[]; migrationWarnings: string[]; projectKpiSettings: ProjectKpiSettingsDiagnostic };
@@ -101,6 +113,9 @@ export async function checkDbSchemaHealth(): Promise<DbSchemaHealth> {
       ? "Project-aware performance schema is missing. Run migrations/20260710_member_project_performance.sql in Neon." : null,
     (missingTables.includes("url_work_events") || missingColumns.some((column) => column.startsWith("url_work_events.")))
       ? "Work-event schema is missing. Run migrations/20260710_url_work_events.sql in Neon." : null,
+    (["monthly_member_kpi_targets", "kpi_work_unit_rules", "kpi_quality_criteria", "url_work_quality_reviews", "url_work_quality_scores", "member_month_quality_reviews"].some((table) => missingTables.includes(table))
+      || missingColumns.some((column) => ["monthly_member_kpi_targets.", "kpi_work_unit_rules.", "kpi_quality_criteria.", "url_work_quality_reviews.", "url_work_quality_scores.", "member_month_quality_reviews."].some((prefix) => column.startsWith(prefix))))
+      ? "Monthly KPI schema is missing or incomplete. Run migrations/20260710_monthly_kpi.sql in Neon." : null,
   ].filter((message): message is string => Boolean(message));
   return { ok: missing.length === 0, missingTables, missingViews, missingColumns, missing, migrationWarnings, projectKpiSettings };
 }
