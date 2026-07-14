@@ -2,6 +2,8 @@ import { google } from "googleapis";
 import { appConfig, getMemberEmailMap, getProjectGscMap } from "./env";
 import { getDateRange, type DateRange } from "./dates";
 import { classifyOpportunity, type OpportunityLabel } from "./metrics";
+import { normalizeWorkType, parseSourceDate } from "./domain/normalization";
+import { parseLegacyContentSheet } from "./sync/legacy-content-sheet";
 
 export type ContentUrl = { id: string; urlHash?: string; project: string; url: string; member_name: string; memberEmail: string; gscProperty?: string; content_worked_at?: string | null; content_type?: string | null; last_updated_at?: string | null; created_at?: string | null; warning?: string };
 export type UrlMetrics = { clicks: number; impressions: number; ctr: number; position: number };
@@ -33,6 +35,8 @@ function auth(accessToken: string) {
 export type SheetContentUrlRow = { project: string; url: string; member_name: string; content_worked_at?: string | null; content_type?: string | null };
 
 export function normalizeContentType(value: unknown): string | null {
+  return normalizeWorkType(value);
+  /* Retained below only as commented legacy source compatibility.
   const raw = String(value || "").trim().toLowerCase();
 
   if (!raw) return null;
@@ -53,10 +57,12 @@ export function normalizeContentType(value: unknown): string | null {
     return "portfolio";
   }
 
-  return raw.replace(/\s+/g, "_");
+  return raw.replace(/\s+/g, "_"); */
 }
 
 export function parseSheetDate(value: unknown): string | null {
+  return parseSourceDate(value);
+  /* Retained below only as commented legacy source compatibility.
   if (value === null || value === undefined || value === "") return null;
 
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -94,7 +100,7 @@ export function parseSheetDate(value: unknown): string | null {
     return validDateParts(year, month, day);
   }
 
-  return null;
+  return null; */
 }
 
 function validDateParts(year: number, month: number, day: number): string | null {
@@ -118,25 +124,20 @@ export async function getSheetContentUrlRows(accessToken: string): Promise<Sheet
   if (!appConfig.sheetId) return [];
   const sheets = google.sheets({ version: "v4", auth: auth(accessToken) });
   const result = await sheets.spreadsheets.values.get({ spreadsheetId: appConfig.sheetId, range: `${appConfig.contentTab}!A:E`, valueRenderOption: "UNFORMATTED_VALUE", dateTimeRenderOption: "FORMATTED_STRING" });
-  const rows = result.data.values ?? [];
-  return rows.slice(1).map((row) => {
-    const [project = "", url = "", member_name = "", content_worked_at = "", content_type = ""] = row as unknown[];
-    return { project: String(project), url: String(url), member_name: String(member_name), content_worked_at: parseSheetDate(content_worked_at), content_type: normalizeContentType(content_type) };
-  });
+  return parseLegacyContentSheet(result.data.values ?? []).map(({ source_row_number: _sourceRowNumber, ...row }) => row);
 }
 
 export async function getContentUrls(accessToken: string): Promise<ContentUrl[]> {
   if (!appConfig.sheetId) return [];
   const sheets = google.sheets({ version: "v4", auth: auth(accessToken) });
   const result = await sheets.spreadsheets.values.get({ spreadsheetId: appConfig.sheetId, range: `${appConfig.contentTab}!A:E`, valueRenderOption: "UNFORMATTED_VALUE", dateTimeRenderOption: "FORMATTED_STRING" });
-  const rows = result.data.values ?? [];
+  const rows = parseLegacyContentSheet(result.data.values ?? []);
   const memberMap = getMemberEmailMap();
   const projectMap = getProjectGscMap();
-  return rows.slice(1).map((row, index) => {
-    const [project = "", url = "", member_name = "", content_worked_at = "", content_type = ""] = row as unknown[];
-    const normalizedProject = String(project);
-    const normalizedUrl = String(url);
-    const normalizedMemberName = String(member_name);
+  return rows.map((row, index) => {
+    const normalizedProject = row.project;
+    const normalizedUrl = row.url;
+    const normalizedMemberName = row.member_name;
     const gscProperty = projectMap[normalizedProject];
     return {
       id: String(index),
@@ -145,8 +146,8 @@ export async function getContentUrls(accessToken: string): Promise<ContentUrl[]>
       member_name: normalizedMemberName,
       memberEmail: (memberMap[normalizedMemberName] ?? "").toLowerCase(),
       gscProperty,
-      content_worked_at: parseSheetDate(content_worked_at),
-      content_type: normalizeContentType(content_type),
+      content_worked_at: row.content_worked_at,
+      content_type: row.content_type,
       warning: gscProperty ? undefined : `Missing PROJECT_GSC_MAP entry for project: ${normalizedProject}`
     };
   }).filter((row) => row.project && row.url && row.member_name);
@@ -216,4 +217,72 @@ export function aggregate(rows: UrlPerformance[]): UrlMetrics {
   const impressions = rows.reduce((sum, r) => sum + r.impressions, 0);
   const position = impressions ? rows.reduce((sum, r) => sum + r.position * r.impressions, 0) / impressions : 0;
   return { clicks, impressions, ctr: impressions ? clicks / impressions : 0, position };
+}
+
+export type TrackedGscUrl = { project: string; gscProperty: string | null; canonicalUrl: string };
+export type GscDailyFetchRow = { project: string; gscProperty: string | null; canonicalUrl: string; date: string; status: "observed" | "observed_zero" | "unknown"; clicks: number | null; impressions: number | null; ctr: number | null; position: number | null; error?: string | null };
+
+function dateKeys(range: DateRange) {
+  const keys: string[] = [];
+  const cursor = new Date(`${range.startDate}T00:00:00.000Z`);
+  const end = new Date(`${range.endDate}T00:00:00.000Z`);
+  while (cursor <= end) { keys.push(cursor.toISOString().slice(0, 10)); cursor.setUTCDate(cursor.getUTCDate() + 1); }
+  return keys;
+}
+
+export async function searchAnalyticsPaged(accessToken: string, siteUrl: string, dimensions: string[], range: DateRange, page?: string, rowLimit = 25_000) {
+  const webmasters = google.searchconsole({ version: "v1", auth: auth(accessToken) });
+  const rows: any[] = [];
+  let startRow = 0;
+  while (true) {
+    const filters = page ? [{ dimension: "page", operator: "equals", expression: page }] : undefined;
+    const response = await webmasters.searchanalytics.query({
+      siteUrl,
+      requestBody: { startDate: range.startDate, endDate: range.endDate, dimensions, dimensionFilterGroups: filters ? [{ groupType: "and", filters }] : undefined, type: "web", aggregationType: dimensions.includes("page") ? "byPage" : undefined, rowLimit, startRow },
+    });
+    const pageRows = response.data.rows ?? [];
+    rows.push(...pageRows);
+    if (pageRows.length < rowLimit) break;
+    startRow += pageRows.length;
+  }
+  return rows;
+}
+
+export async function fetchTrackedGscDaily(rows: TrackedGscUrl[], accessToken: string, range: DateRange): Promise<GscDailyFetchRow[]> {
+  const output: GscDailyFetchRow[] = [];
+  const dates = dateKeys(range);
+  const properties = new Map<string, TrackedGscUrl[]>();
+  for (const row of rows) {
+    if (!row.gscProperty) {
+      output.push(...dates.map((date) => ({ ...row, date, status: "unknown" as const, clicks: null, impressions: null, ctr: null, position: null, error: "gsc_property_missing" })));
+      continue;
+    }
+    (properties.get(row.gscProperty) ?? properties.set(row.gscProperty, []).get(row.gscProperty)!).push(row);
+  }
+  for (const [gscProperty, tracked] of properties) {
+    try {
+      const bulk = await searchAnalyticsPaged(accessToken, gscProperty, ["page", "date"], range);
+      const byUrlDate = new Map(bulk.map((metric) => [`${String(metric.keys?.[0] ?? "")}|${String(metric.keys?.[1] ?? "")}`, metric]));
+      for (const trackedUrl of tracked) {
+        const hasBulk = dates.some((date) => byUrlDate.has(`${trackedUrl.canonicalUrl}|${date}`));
+        let exact: any[] = [];
+        let exactError: string | null = null;
+        if (!hasBulk) {
+          try { exact = await searchAnalyticsPaged(accessToken, gscProperty, ["date"], range, trackedUrl.canonicalUrl); }
+          catch (error) { exactError = error instanceof Error ? error.message : "exact_page_fetch_failed"; }
+        }
+        const exactByDate = new Map(exact.map((metric) => [String(metric.keys?.[0] ?? ""), metric]));
+        for (const date of dates) {
+          const metric = byUrlDate.get(`${trackedUrl.canonicalUrl}|${date}`) ?? exactByDate.get(date);
+          if (metric) output.push({ ...trackedUrl, date, status: "observed", clicks: Number(metric.clicks ?? 0), impressions: Number(metric.impressions ?? 0), ctr: Number(metric.ctr ?? 0), position: Number(metric.position ?? 0) });
+          else if (exactError) output.push({ ...trackedUrl, date, status: "unknown", clicks: null, impressions: null, ctr: null, position: null, error: exactError });
+          else output.push({ ...trackedUrl, date, status: "observed_zero", clicks: 0, impressions: 0, ctr: 0, position: null });
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "property_fetch_failed";
+      for (const trackedUrl of tracked) output.push(...dates.map((date) => ({ ...trackedUrl, date, status: "unknown" as const, clicks: null, impressions: null, ctr: null, position: null, error: message })));
+    }
+  }
+  return output;
 }

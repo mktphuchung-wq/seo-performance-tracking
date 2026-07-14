@@ -1,5 +1,5 @@
-type QueryResult = { rows: any[]; rowCount: number | null };
-type Queryable = { query: (text: string, params?: unknown[]) => Promise<QueryResult> };
+export type QueryResult = { rows: any[]; rowCount: number | null };
+export type Queryable = { query: (text: string, params?: unknown[]) => Promise<QueryResult> };
 type PoolLike = Queryable & { connect?: () => Promise<Queryable & { release: () => void }> };
 
 let poolPromise: Promise<PoolLike> | undefined;

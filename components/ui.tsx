@@ -29,6 +29,7 @@ export function Shell({ children, email, isAdmin }: { children: React.ReactNode;
       { href: "/member-insights", label: "Member Insights" },
       { href: "/admin", label: "Admin" },
       { href: "/admin/project-kpi-settings", label: "Project KPI Settings" },
+      { href: "/admin/kpi-month", label: "Monthly KPI v2" },
     ] : []),
   ];
 

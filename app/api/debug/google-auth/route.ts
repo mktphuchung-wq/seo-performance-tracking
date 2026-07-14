@@ -15,6 +15,8 @@ export async function GET() {
     tokenExpiresAt: session?.tokenExpiresAt ?? null,
     requiredScopesConfigured: requiredGoogleScopes.every((scope) => configuredScopes.includes(scope)),
     googleSheetIdPresent: Boolean(appConfig.sheetId),
-    googleSheetTabPresent: Boolean(appConfig.contentTab)
+    googleSheetTabPresent: Boolean(appConfig.contentTab),
+    googleSlackListSheetIdPresent: Boolean(appConfig.slackListSheetId),
+    googleSlackListTabPresent: Boolean(appConfig.slackListTab)
   });
 }

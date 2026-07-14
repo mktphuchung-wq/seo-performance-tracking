@@ -3,7 +3,7 @@ import crypto from "crypto";
 export const workTypes = ["new_content", "audit", "update", "portfolio"] as const;
 export type WorkType = typeof workTypes[number];
 
-export const workEventStatuses = ["planned", "in_progress", "completed", "approved", "excluded"] as const;
+export const workEventStatuses = ["planned", "in_progress", "reviewed", "completed", "approved", "on_hold", "excluded"] as const;
 export type WorkEventStatus = typeof workEventStatuses[number];
 
 export function isWorkType(value: unknown): value is WorkType {

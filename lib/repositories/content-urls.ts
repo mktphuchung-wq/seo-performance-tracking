@@ -64,6 +64,7 @@ export async function deactivateMissingSheetContentUrls(activeIds: string[]) {
     return query(`update public.content_urls set is_active=false, updated_at=now()
       where source='google_sheet' and coalesce(is_active,true)=true and not (id = any($1::uuid[]))`, [activeIds]);
   }
-  return query(`update public.content_urls set is_active=false, updated_at=now()
-    where source='google_sheet' and coalesce(is_active,true)=true`);
+  // An empty or wholly invalid fetch is not proof that every source row was deleted.
+  // Treat it as an incomplete sync and preserve the last known-good inventory.
+  return { rows: [], rowCount: 0 };
 }

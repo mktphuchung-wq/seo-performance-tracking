@@ -2,13 +2,16 @@
   "name": "performance-seo-project-seo-team",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test lib/domain/work-events.test.mjs lib/domain/monthly-kpi-schema.test.mjs"
+    "test": "node --experimental-strip-types --test lib/domain/work-events.test.mjs lib/domain/monthly-kpi-schema.test.mjs lib/domain/work-source-v2.test.mjs lib/domain/kpi-v2.test.mjs lib/domain/performance-v2.test.mjs lib/domain/monthly-kpi-v2-schema.test.mjs lib/domain/integration-monthly-kpi-v2.test.mjs",
+    "test:integration": "node --experimental-strip-types --test lib/domain/integration-monthly-kpi-v2.test.mjs",
+    "kpi:reconcile": "node --experimental-strip-types scripts/kpi-v2-reconcile.mjs"
   },
   "dependencies": {
     "googleapis": "^140.0.1",

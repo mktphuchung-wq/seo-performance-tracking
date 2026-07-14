@@ -2,6 +2,38 @@
 
 A Vercel-ready Next.js App Router dashboard for SEO teams. The current architecture uses Google Sheets as the source of truth for URL ownership, Neon/Postgres as the cache and reporting database, Google OAuth for authorization, and the Google Search Console API for URL performance data.
 
+## Monthly KPI Engine v2
+
+KPI v2 is a feature-gated, staging-first monthly payroll workflow. It reconciles the Slack List `Data` tab and legacy `content_urls` tab, keeps all raw variants, deduplicates by Slack Item ID, normalizes aliases/status/type/URL values, and quarantines unresolved work instead of guessing. Scores are calculated at `Member × Project × Month` before target-unit-weighted member rollup.
+
+Every component stores raw and payable values separately with coverage, confidence, cohort lineage, rule version, source IDs, override reason, and audit diagnostics. Unreliable or missing evidence remains `null/N/A`; true GSC zeroes are stored as `observed_zero`; API/mapping failures are `unknown`. KPI v2 never consumes legacy automatic project floors.
+
+The default monthly formula is Discipline 10%, SEO Content 50%, SEO Performance 20%, and Social/Video 20%. SEO Content is Quantity 20% plus fully reviewed Quality 80%. Default payout is capped at 100%, while raw overachievement remains visible. A locked result is immutable and reopen creates a new version.
+
+See [KPI v2 baseline](docs/KPI_V2_BASELINE.md) and [staging/rollout guide](docs/KPI_V2_ROLLOUT.md).
+
+### V2 migration order
+
+On a dedicated Neon staging branch only:
+
+```bash
+psql "$STAGING_DATABASE_URL" -f migrations/20260710_monthly_kpi.sql
+psql "$STAGING_DATABASE_URL" -f migrations/20260714_monthly_kpi_engine_v2.sql
+```
+
+Do not run `migrations/001_simple_cache_schema.sql` on an existing database. Keep `KPI_ENGINE_V2_ENABLED=false` in production until staging reconciliation and PM/finance sign-off.
+
+### V2 operator flow
+
+1. Configure aliases, targets, project lifecycle strategy, thresholds, and payroll enablement.
+2. Run `POST /api/admin/kpi-month/:month/sync?dryRun=true` and resolve quarantines.
+3. Run the write sync on staging, review every eligible event, and refresh event-attributed GSC performance.
+4. Calculate project/member components, enter Discipline and Social/Video, then inspect the audit export.
+5. Finalize only at full controllable-component coverage and at least 80% top-level coverage.
+6. Lock the approved snapshot. Reopen only with an authorized reason.
+
+Admin pages are `/admin/kpi-month`, `/admin/kpi-month/:month`, and `/admin/monthly-kpi-settings`. Members can access only their own result through `/api/kpi-month/:month`.
+
 ## Phase 1-3 KPI architecture
 
 - `member_performance_cache` is keyed by `project + member_name + range_key`.
@@ -74,6 +106,8 @@ GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 GOOGLE_SHEET_ID=1NacfG23BnkKY0ZMktfhDxpZ7cnNGdQRf_UrwQ5kfOIQ
 GOOGLE_SHEET_TAB=content_urls
+GOOGLE_SLACK_LIST_SHEET_ID=your-slack-list-spreadsheet-id
+GOOGLE_SLACK_LIST_TAB=Data
 ADMIN_EMAILS=admin@company.com,leader@company.com
 MEMBER_EMAIL_MAP={"Hưng":"hung@company.com","Linh":"linh@company.com"}
 PROJECT_GSC_MAP={"Tartan Vibes Clothing":"sc-domain:tartanvibesclothing.com"}
@@ -161,6 +195,8 @@ Required Vercel environment variables for Google OAuth, sheet sync, database cac
 - `GOOGLE_CLIENT_SECRET`
 - `GOOGLE_SHEET_ID` (`1NacfG23BnkKY0ZMktfhDxpZ7cnNGdQRf_UrwQ5kfOIQ`)
 - `GOOGLE_SHEET_TAB` (`content_urls`)
+- `GOOGLE_SLACK_LIST_SHEET_ID` (the separate Slack List export spreadsheet)
+- `GOOGLE_SLACK_LIST_TAB` (`Data`)
 - `ADMIN_EMAILS`
 - `MEMBER_EMAIL_MAP`
 - `PROJECT_GSC_MAP`
