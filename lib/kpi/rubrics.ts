@@ -4,14 +4,15 @@ export type RubricCriterion = { key: string; name: string; weightPct: number; al
 export type QualityRubric = { key: string; workTypes: WorkType[]; version: string; criteria: RubricCriterion[] };
 
 export const newContentRubricV2: QualityRubric = {
-  key: "new_content", workTypes: ["new_content"], version: "quality_new_content_v2", criteria: [
-    { key: "intent_audience_pain", name: "Search intent, audience/persona, pain point", weightPct: 20, allowsNa: false },
+  key: "new_content", workTypes: ["new_content"], version: "quality_new_content_v3", criteria: [
+    { key: "intent_audience_pain", name: "Search intent, audience/persona, pain point", weightPct: 15, allowsNa: false },
     { key: "outline_structure", name: "Outline, hierarchy, structure", weightPct: 10, allowsNa: false },
     { key: "usefulness_semantics", name: "Usefulness, completeness, semantic coverage", weightPct: 25, allowsNa: false },
     { key: "accuracy_eeat", name: "Accuracy, E-E-A-T, trustworthy sourcing", weightPct: 15, allowsNa: false },
     { key: "metadata_onpage", name: "Metadata, on-page/entity optimization", weightPct: 10, allowsNa: false },
     { key: "links", name: "Internal/external links", weightPct: 10, allowsNa: true },
     { key: "ux_media_accessibility", name: "UX, readability, media, accessibility", weightPct: 10, allowsNa: true },
+    { key: "faq_answerability", name: "FAQs / answerability when appropriate to intent", weightPct: 5, allowsNa: true },
   ],
 };
 

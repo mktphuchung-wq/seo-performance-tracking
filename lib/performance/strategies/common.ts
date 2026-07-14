@@ -25,7 +25,9 @@ export type PerformanceThresholds = {
 };
 
 const growth = (current: number, previous: number) => previous > 0 ? (current - previous) / previous * 100 : current > 0 ? null : 0;
-const mappedGrowthScore = (current: number, previous: number, newSignalScore: number) => previous === 0 && current > 0 ? newSignalScore : clampPct(50 + (growth(current, previous) ?? 0));
+const mappedGrowthScore = (current: number, previous: number, newSignalScore: number, controlGrowthPct = 0) => previous === 0 && current > 0
+  ? clampPct(newSignalScore - controlGrowthPct)
+  : clampPct(50 + (growth(current, previous) ?? 0) - controlGrowthPct);
 const robustWeight = (metric: EventPerformanceMetric) => Math.max(0.1, metric.unitValue) * Math.sqrt(Math.min(Math.max(metric.preImpressions, metric.postImpressions, 1), 10_000));
 const weighted = (rows: Array<{ value: number; weight: number }>) => rows.reduce((sum, row) => sum + row.value * row.weight, 0) / rows.reduce((sum, row) => sum + row.weight, 0);
 
@@ -57,7 +59,7 @@ export function calculatePerformanceCohort(input: {
     if (metric.status === "observed_zero") return { impression: input.thresholds.zeroSignalScorePct, click: input.thresholds.zeroSignalScorePct, positive: 0, healthy: 0, weight };
     const impressionGrowth = (growth(metric.postImpressions, metric.preImpressions) ?? 0) - (metric.controlGrowthPct ?? 0);
     const clickGrowth = (growth(metric.postClicks, metric.preClicks) ?? 0) - (metric.controlGrowthPct ?? 0);
-    return { impression: mappedGrowthScore(metric.postImpressions, metric.preImpressions, input.thresholds.newSignalScorePct), click: mappedGrowthScore(metric.postClicks, metric.preClicks, input.thresholds.newSignalScorePct), positive: impressionGrowth > 0 || clickGrowth > 0 ? 100 : 0, healthy: impressionGrowth < 0 && clickGrowth < 0 ? 0 : 100, weight };
+    return { impression: mappedGrowthScore(metric.postImpressions, metric.preImpressions, input.thresholds.newSignalScorePct, metric.controlGrowthPct ?? 0), click: mappedGrowthScore(metric.postClicks, metric.preClicks, input.thresholds.newSignalScorePct, metric.controlGrowthPct ?? 0), positive: impressionGrowth > 0 || clickGrowth > 0 ? 100 : 0, healthy: impressionGrowth < 0 && clickGrowth < 0 ? 0 : 100, weight };
   });
   const impressionPerformance = weighted(eventRows.map((row) => ({ value: row.impression, weight: row.weight })));
   const clickPerformance = weighted(eventRows.map((row) => ({ value: row.click, weight: row.weight })));

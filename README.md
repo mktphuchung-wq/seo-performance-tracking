@@ -4,9 +4,9 @@ A Vercel-ready Next.js App Router dashboard for SEO teams. The current architect
 
 ## Monthly KPI Engine v2
 
-KPI v2 is a feature-gated, staging-first monthly payroll workflow. It reconciles the Slack List `Data` tab and legacy `content_urls` tab, keeps all raw variants, deduplicates by Slack Item ID, normalizes aliases/status/type/URL values, and quarantines unresolved work instead of guessing. Scores are calculated at `Member × Project × Month` before target-unit-weighted member rollup.
+KPI v2 is a feature-gated, staging-first monthly payroll workflow. It reconciles the Slack List `Data` tab and legacy `content_urls` tab, keeps all raw variants, deduplicates by Slack Item ID, normalizes aliases/status/type/URL values, and quarantines unresolved work instead of guessing. Quantity, equal-event Quality, and SEO Content are calculated once at `Member × Month`; project rows are lineage/planning diagnostics and never impose a separate payroll cap.
 
-Every component stores raw and payable values separately with coverage, confidence, cohort lineage, rule version, source IDs, override reason, and audit diagnostics. Unreliable or missing evidence remains `null/N/A`; true GSC zeroes are stored as `observed_zero`; API/mapping failures are `unknown`. KPI v2 never consumes legacy automatic project floors.
+Every component stores raw and payable values separately with coverage, confidence, cohort lineage, rule version, source IDs, override reason, and audit diagnostics. Unreliable or missing evidence remains `null/N/A`; true GSC zeroes are stored as `observed_zero`; mapping, permission, and provider failures are `system_error` and block Final. KPI v2 never consumes legacy automatic project floors.
 
 The default monthly formula is Discipline 10%, SEO Content 50%, SEO Performance 20%, and Social/Video 20%. SEO Content is Quantity 20% plus fully reviewed Quality 80%. Default payout is capped at 100%, while raw overachievement remains visible. A locked result is immutable and reopen creates a new version.
 
@@ -19,20 +19,21 @@ On a dedicated Neon staging branch only:
 ```bash
 psql "$STAGING_DATABASE_URL" -f migrations/20260710_monthly_kpi.sql
 psql "$STAGING_DATABASE_URL" -f migrations/20260714_monthly_kpi_engine_v2.sql
+psql "$STAGING_DATABASE_URL" -f migrations/20260714_monthly_kpi_v2_completion.sql
 ```
 
 Do not run `migrations/001_simple_cache_schema.sql` on an existing database. Keep `KPI_ENGINE_V2_ENABLED=false` in production until staging reconciliation and PM/finance sign-off.
 
 ### V2 operator flow
 
-1. Configure aliases, targets, project lifecycle strategy, thresholds, and payroll enablement.
-2. Run `POST /api/admin/kpi-month/:month/sync?dryRun=true` and resolve quarantines.
-3. Run the write sync on staging, review every eligible event, and refresh event-attributed GSC performance.
-4. Calculate project/member components, enter Discipline and Social/Video, then inspect the audit export.
-5. Finalize only at full controllable-component coverage and at least 80% top-level coverage.
-6. Lock the approved snapshot. Reopen only with an authorized reason.
+1. Open `/admin/kpi-month`, select a month and member, then run reconciliation dry-run.
+2. Resolve quarantines outside payroll, persist raw evidence, and persist canonical events only with an approval reason.
+3. Save the member-month target, review/exclude every eligible URL, and configure/refresh mature Performance cohorts.
+4. Enter the active manual components, calculate, inspect Final/payout and URL/rule audit lineage, then lock a shadow snapshot.
+5. Record Google Sheets differences. Every non-zero row needs an explanation plus URL or rule lineage before PM/Finance approval can be saved.
+6. Reopen only as a new version with an authorized reason. Do not enable production payroll from this workflow.
 
-Admin pages are `/admin/kpi-month`, `/admin/kpi-month/:month`, and `/admin/monthly-kpi-settings`. Members can access only their own result through `/api/kpi-month/:month`.
+Admin pages are `/admin/kpi-month`, `/admin/kpi-month/:month`, and `/admin/monthly-kpi-settings`. Members use the read-only `/kpi-month/:month` page and the own-data-only `/api/kpi-month/:month` endpoint. Health endpoints require an authenticated admin.
 
 ## Phase 1-3 KPI architecture
 

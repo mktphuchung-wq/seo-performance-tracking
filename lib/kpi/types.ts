@@ -1,6 +1,6 @@
 export const componentStates = [
   "draft", "incomplete", "scored", "not_applicable", "insufficient_data",
-  "pm_review_required", "overridden", "approved", "locked",
+  "pm_review_required", "system_error", "overridden", "approved", "locked",
 ] as const;
 
 export type ComponentState = typeof componentStates[number];

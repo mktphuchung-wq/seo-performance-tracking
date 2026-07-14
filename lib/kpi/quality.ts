@@ -4,7 +4,8 @@ import { scoreBase, type AuditableScore } from "./types.ts";
 export type CriterionReview = { criterionKey: string; score: number | null; isNa?: boolean; naReason?: string | null; note?: string | null; evidence?: string | null };
 export type EventQualityReview = { eventId: string; unitValue: number; rubric: QualityRubric; criteria: CriterionReview[]; status: "pending" | "approved" | "excluded"; exclusionReason?: string | null };
 export type EventQualityResult = { eventId: string; qualityPct: number | null; applicableWeightPct: number; issues: string[]; rubricVersion: string };
-export type MonthlyQualityResult = AuditableScore & { reviewedUnits: number; eligibleUnits: number; eventResults: EventQualityResult[] };
+export type MonthlyQualityResult = AuditableScore & { reviewedUnits: number; eligibleUnits: number; reviewedEvents: number; eligibleEvents: number; eventResults: EventQualityResult[] };
+export type PersistedEventQuality = { eventId: string; unitValue: number; status: "pending" | "approved" | "excluded"; qualityPct: number | null; exclusionReason?: string | null; rubricVersion?: string | null };
 
 export function calculateEventQuality(review: EventQualityReview): EventQualityResult {
   const issues: string[] = [];
@@ -35,21 +36,104 @@ export function calculateMonthlyQuality(input: {
   ruleVersion?: string;
   now?: string;
 }): MonthlyQualityResult {
-  const eventResults = input.reviews.map(calculateEventQuality);
+  const eligibleById = new Map(input.eligibleEvents.map((event) => [event.id, event]));
+  const eligibleReviews = input.reviews.filter((review) => eligibleById.has(review.eventId));
+  const eventResults = eligibleReviews.map(calculateEventQuality);
   const eligibleUnits = input.eligibleEvents.reduce((sum, event) => sum + event.unitValue, 0);
-  const scored = input.reviews.map((review, index) => ({ review, result: eventResults[index] })).filter((item) => item.result.qualityPct !== null);
-  const reviewedUnits = scored.reduce((sum, item) => sum + item.review.unitValue, 0);
-  const coveragePct = eligibleUnits > 0 ? reviewedUnits / eligibleUnits * 100 : null;
-  const qualityPct = reviewedUnits > 0 ? scored.reduce((sum, item) => sum + item.result.qualityPct! * item.review.unitValue, 0) / reviewedUnits : null;
-  const state = eligibleUnits === 0 ? "not_applicable" : coveragePct === 100 && qualityPct !== null ? "scored" : "incomplete";
+  const scored = eligibleReviews
+    .map((review, index) => ({ review, result: eventResults[index], unitValue: eligibleById.get(review.eventId)!.unitValue }))
+    .filter((item) => item.result.qualityPct !== null);
+  const resolvedExclusions = eligibleReviews.filter((review) => review.status === "excluded" && Boolean(review.exclusionReason?.trim()));
+  const reviewedUnits = scored.reduce((sum, item) => sum + item.unitValue, 0);
+  const eligibleEventCount = input.eligibleEvents.length;
+  const reviewedEventCount = scored.length;
+  const resolvedEventIds = new Set([...scored.map((item) => item.review.eventId), ...resolvedExclusions.map((review) => review.eventId)]);
+  const resolvedUnits = input.eligibleEvents
+    .filter((event) => resolvedEventIds.has(event.id))
+    .reduce((sum, event) => sum + event.unitValue, 0);
+  const coveragePct = eligibleEventCount > 0 ? resolvedEventIds.size / eligibleEventCount * 100 : null;
+  const qualityPct = reviewedEventCount > 0
+    ? scored.reduce((sum, item) => sum + item.result.qualityPct!, 0) / reviewedEventCount
+    : null;
+  const unitWeightedDiagnosticPct = reviewedUnits > 0
+    ? scored.reduce((sum, item) => sum + item.result.qualityPct! * item.unitValue, 0) / reviewedUnits
+    : null;
+  const state = eligibleEventCount === 0 ? "not_applicable" : coveragePct === 100 && qualityPct !== null ? "scored" : "incomplete";
   return {
     ...scoreBase({
-      ruleVersion: input.ruleVersion ?? "quality_v2", state, rawPct: qualityPct, payablePct: qualityPct,
+      ruleVersion: input.ruleVersion ?? "quality_equal_event_v3", state, rawPct: qualityPct, payablePct: qualityPct,
       coveragePct, confidence: coveragePct === 100 ? "high" : coveragePct !== null && coveragePct >= 80 ? "medium" : "low",
       sourceCohort: `quality_reviews:${input.month}`, sourceIds: scored.map((item) => item.review.eventId), dataAsOf: input.month,
       calculatedAt: input.now, reason: state === "incomplete" ? "review_coverage_incomplete" : state === "not_applicable" ? "no_eligible_work" : null,
-      diagnostics: { pendingEventIds: input.eligibleEvents.filter((event) => !scored.some((item) => item.review.eventId === event.id)).map((event) => event.id) },
-    }), reviewedUnits, eligibleUnits, eventResults,
+      diagnostics: {
+        aggregationMethod: "equal_event_average",
+        unitWeightedDiagnosticPct,
+        reviewedUnits,
+        resolvedUnits,
+        eligibleUnits,
+        excludedEventIds: resolvedExclusions.map((review) => review.eventId),
+        pendingEventIds: input.eligibleEvents.filter((event) => !resolvedEventIds.has(event.id)).map((event) => event.id),
+      },
+    }), reviewedUnits, eligibleUnits, reviewedEvents: reviewedEventCount, eligibleEvents: eligibleEventCount, eventResults,
+  };
+}
+
+export function rollupPersistedEventQuality(input: {
+  eligibleEvents: Array<{ id: string; unitValue: number }>;
+  reviews: PersistedEventQuality[];
+  month: string;
+  ruleVersion?: string;
+  now?: string;
+}): MonthlyQualityResult {
+  const eligibleIds = new Set(input.eligibleEvents.map((event) => event.id));
+  const eligibleById = new Map(input.eligibleEvents.map((event) => [event.id, event]));
+  const approved = input.reviews.filter((review) => eligibleIds.has(review.eventId) && review.status === "approved" && review.qualityPct !== null);
+  const excluded = input.reviews.filter((review) => eligibleIds.has(review.eventId) && review.status === "excluded" && Boolean(review.exclusionReason?.trim()));
+  const resolvedIds = new Set([...approved, ...excluded].filter((review) => eligibleIds.has(review.eventId)).map((review) => review.eventId));
+  const eligibleUnits = input.eligibleEvents.reduce((sum, event) => sum + event.unitValue, 0);
+  const reviewedUnits = approved.reduce((sum, review) => sum + eligibleById.get(review.eventId)!.unitValue, 0);
+  const resolvedUnits = input.eligibleEvents.filter((event) => resolvedIds.has(event.id)).reduce((sum, event) => sum + event.unitValue, 0);
+  const qualityPct = approved.length ? approved.reduce((sum, review) => sum + review.qualityPct!, 0) / approved.length : null;
+  const unitWeightedDiagnosticPct = reviewedUnits > 0
+    ? approved.reduce((sum, review) => sum + review.qualityPct! * eligibleById.get(review.eventId)!.unitValue, 0) / reviewedUnits
+    : null;
+  const coveragePct = input.eligibleEvents.length > 0 ? resolvedIds.size / input.eligibleEvents.length * 100 : null;
+  const state = input.eligibleEvents.length === 0 ? "not_applicable" : coveragePct === 100 && qualityPct !== null ? "scored" : "incomplete";
+  const eventResults: EventQualityResult[] = input.reviews.map((review) => ({
+    eventId: review.eventId,
+    qualityPct: review.status === "approved" ? review.qualityPct : null,
+    applicableWeightPct: review.status === "approved" ? 100 : 0,
+    issues: review.status === "excluded" ? ["event_excluded"] : review.status === "pending" ? ["review_pending"] : [],
+    rubricVersion: review.rubricVersion ?? "unknown",
+  }));
+  return {
+    ...scoreBase({
+      ruleVersion: input.ruleVersion ?? "quality_equal_event_v3",
+      state,
+      rawPct: qualityPct,
+      payablePct: qualityPct,
+      coveragePct,
+      confidence: coveragePct === 100 ? "high" : coveragePct !== null && coveragePct >= 80 ? "medium" : "low",
+      sourceCohort: `quality_reviews:${input.month}`,
+      sourceIds: approved.map((review) => review.eventId),
+      dataAsOf: input.month,
+      calculatedAt: input.now,
+      reason: state === "incomplete" ? "review_coverage_incomplete" : state === "not_applicable" ? "no_eligible_work" : null,
+      diagnostics: {
+        aggregationMethod: "equal_event_average",
+        unitWeightedDiagnosticPct,
+        reviewedUnits,
+        resolvedUnits,
+        eligibleUnits,
+        excludedEventIds: excluded.map((review) => review.eventId),
+        pendingEventIds: input.eligibleEvents.filter((event) => !resolvedIds.has(event.id)).map((event) => event.id),
+      },
+    }),
+    reviewedUnits,
+    eligibleUnits,
+    reviewedEvents: approved.length,
+    eligibleEvents: input.eligibleEvents.length,
+    eventResults,
   };
 }
 

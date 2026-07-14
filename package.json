@@ -9,20 +9,22 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test lib/domain/work-events.test.mjs lib/domain/monthly-kpi-schema.test.mjs lib/domain/work-source-v2.test.mjs lib/domain/kpi-v2.test.mjs lib/domain/performance-v2.test.mjs lib/domain/monthly-kpi-v2-schema.test.mjs lib/domain/integration-monthly-kpi-v2.test.mjs",
+    "test": "node --experimental-strip-types --test lib/domain/work-events.test.mjs lib/domain/monthly-kpi-schema.test.mjs lib/domain/work-source-v2.test.mjs lib/domain/kpi-v2.test.mjs lib/domain/performance-v2.test.mjs lib/domain/monthly-kpi-v2-schema.test.mjs lib/domain/monthly-kpi-v2-completion-schema.test.mjs lib/domain/integration-monthly-kpi-v2.test.mjs lib/domain/kpi-api-contract.test.mjs lib/domain/shadow-evidence.test.mjs",
     "test:integration": "node --experimental-strip-types --test lib/domain/integration-monthly-kpi-v2.test.mjs",
-    "kpi:reconcile": "node --experimental-strip-types scripts/kpi-v2-reconcile.mjs"
+    "test:e2e": "playwright test",
+    "kpi:reconcile": "tsx scripts/kpi-v2-reconcile.mjs"
   },
   "dependencies": {
     "googleapis": "^140.0.1",
     "next": "^14.2.5",
     "next-auth": "^4.24.7",
+    "pg": "^8.12.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "recharts": "^2.12.7",
-    "pg": "^8.12.0"
+    "recharts": "^2.12.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/node": "^20.14.10",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
@@ -31,6 +33,7 @@
     "eslint-config-next": "^14.2.5",
     "postcss": "^8.4.39",
     "tailwindcss": "^3.4.4",
+    "tsx": "^4.23.1",
     "typescript": "^5.5.3"
   }
 }

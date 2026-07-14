@@ -18,8 +18,8 @@ async function resolveUnitRule(client: Queryable, row: NormalizedWorkSourceRow) 
   return result.rows[0] ?? null;
 }
 
-async function persistCanonicalEvent(client: Queryable, row: NormalizedWorkSourceRow) {
-  if (!row.project || !row.member || !row.workType || !row.workDate || !row.canonicalUrl) return "skipped";
+async function persistCanonicalEvent(client: Queryable, row: NormalizedWorkSourceRow, actor: string, approvalReason: string) {
+  if (!row.project || !row.member || !row.workType || !row.status || !row.workDate || !row.canonicalUrl) return "skipped";
   const projectIdentity=await client.query(`insert into public.projects(canonical_name) values($1)
     on conflict(canonical_name) do update set updated_at=now() returning id::text`,[row.project]);
   const memberIdentity=await client.query(`insert into public.members(canonical_name) values($1)
@@ -38,30 +38,31 @@ async function persistCanonicalEvent(client: Queryable, row: NormalizedWorkSourc
     await client.query(`update public.url_work_events set content_url_id=$2,project_id=$3,member_id=$4,project=$5,member_name=$6,
       work_type=$7,work_date=$8,difficulty=$9,unit_value=$10,source_status=$11,source_url=$12,canonical_url_snapshot=$13,
       completed_at=$8,date_confidence=$14,difficulty_source=$15,unit_rule_id=$16,unit_rule_version=$17,is_countable=$18,
-      exclusion_reason=$19,status=$20,note=$21,updated_at=now() where id=$1`,[existing.rows[0].id,contentUrl.rows[0].id,
+      exclusion_reason=$19,status=$20,note=$21,approved_by=$22,approved_at=now(),approval_reason=$23,updated_at=now() where id=$1`,[existing.rows[0].id,contentUrl.rows[0].id,
       projectIdentity.rows[0].id,memberIdentity.rows[0].id,row.project,row.member,row.workType,row.workDate,
       row.difficulty || (row.workType === "audit" || row.workType === "update" ? "basic" : "normal"),Number(rule?.unit_value ?? 0),
       row.sourceStatusRaw,row.urlRaw,row.canonicalUrl,row.dateConfidence,row.difficulty ? "source" : "default",rule?.id ?? null,
-      rule?.rule_version ?? "kpi_v2",row.isCountable,row.isCountable ? null : row.issues.join(",") || "not_eligible",row.status,row.issues.join(",") || null]);
+      rule?.rule_version ?? "kpi_v2",row.isCountable,row.isCountable ? null : row.issues.join(",") || "not_eligible",row.status,row.issues.join(",") || null,actor,approvalReason]);
     return "updated";
   }
   await client.query(`insert into public.url_work_events
     (content_url_id,project_id,member_id,project,member_name,member_email,work_type,work_date,difficulty,unit_value,source,source_row_key,
      source_item_id,source_status,source_url,canonical_url_snapshot,completed_at,date_confidence,difficulty_source,
-     unit_rule_id,unit_rule_version,is_countable,exclusion_reason,status,note,created_at,updated_at)
-    values ($1,$2,$3,$4,$5,'',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$7,$16,$17,$18,$19,$20,$21,$22,$23,now(),now())
+     unit_rule_id,unit_rule_version,is_countable,exclusion_reason,status,note,approved_by,approved_at,approval_reason,created_at,updated_at)
+    values ($1,$2,$3,$4,$5,'',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$7,$16,$17,$18,$19,$20,$21,$22,$23,$24,now(),$25,now(),now())
     on conflict (source,source_item_id) where source_item_id is not null do update set
       content_url_id=excluded.content_url_id,project_id=excluded.project_id,member_id=excluded.member_id,project=excluded.project,member_name=excluded.member_name,work_type=excluded.work_type,
       work_date=excluded.work_date,difficulty=excluded.difficulty,unit_value=excluded.unit_value,source_status=excluded.source_status,
       source_url=excluded.source_url,canonical_url_snapshot=excluded.canonical_url_snapshot,date_confidence=excluded.date_confidence,
       unit_rule_id=excluded.unit_rule_id,unit_rule_version=excluded.unit_rule_version,is_countable=excluded.is_countable,
-      exclusion_reason=excluded.exclusion_reason,status=excluded.status,note=excluded.note,updated_at=now()`, [
+      exclusion_reason=excluded.exclusion_reason,status=excluded.status,note=excluded.note,approved_by=excluded.approved_by,
+      approved_at=excluded.approved_at,approval_reason=excluded.approval_reason,updated_at=now()`, [
     contentUrl.rows[0].id,projectIdentity.rows[0].id,memberIdentity.rows[0].id,row.project,row.member,row.workType,row.workDate,
     row.difficulty || (row.workType === "audit" || row.workType === "update" ? "basic" : "normal"),
     Number(rule?.unit_value ?? 0), row.source, sourceRowKey, row.sourceItemId, row.sourceStatusRaw, row.urlRaw,
     row.canonicalUrl, row.dateConfidence, row.difficulty ? "source" : "default", rule?.id ?? null,
     rule?.rule_version ?? "kpi_v2", row.isCountable, row.isCountable ? null : row.issues.join(",") || "not_eligible",
-    row.status, row.issues.join(",") || null,
+    row.status, row.issues.join(",") || null, actor, approvalReason,
   ]);
   return existing.rowCount ? "updated" : "inserted";
 }
@@ -94,7 +95,7 @@ export async function persistWorkSourceReconciliation(
     let eventsUpdated = 0;
     if (options.persistEvents) {
       for (const row of result.canonicalRows) {
-        const outcome = await persistCanonicalEvent(client, row);
+        const outcome = await persistCanonicalEvent(client, row, actor, options.approvalReason!.trim());
         if (outcome === "inserted") eventsInserted += 1;
         if (outcome === "updated") eventsUpdated += 1;
       }

@@ -13,9 +13,12 @@ Use a dedicated Neon branch. Never run `migrations/001_simple_cache_schema.sql` 
 ```bash
 psql "$STAGING_DATABASE_URL" -f migrations/20260710_monthly_kpi.sql
 psql "$STAGING_DATABASE_URL" -f migrations/20260714_monthly_kpi_engine_v2.sql
+psql "$STAGING_DATABASE_URL" -f migrations/20260714_monthly_kpi_v2_completion.sql
 npm run typecheck
 npm test
 npm run build
+npm run test:e2e
+git diff --check
 ```
 
 Set the preview deployment's `DATABASE_URL` to the staging branch and enable `KPI_ENGINE_V2_ENABLED=true` only there. Keep `KPI_V2_PRODUCTION_WRITE_ENABLED` unset.
@@ -34,7 +37,13 @@ To inspect an authorized JSON export locally without saving it to the repository
 npm run kpi:reconcile -- C:\secure\slack-list-values.json
 ```
 
+For connector-driven staging automation, the same script accepts a transient `KPI_RECONCILE_VALUES_JSON` environment snapshot. Set `KPI_RECONCILE_PERSIST_MODE=raw` for the mandatory raw-only pass. Event mode additionally requires `KPI_RECONCILE_APPROVAL_REASON`; never persist source exports to the repository.
+
 Review aliases, completion dates, targets, canonical event counts, and quarantines before calling the write sync. July must run in shadow mode beside the spreadsheet and must not be used for payroll until PM/finance sign-off.
+
+All monthly business actions are available in `/admin/kpi-month/:month`; operators do not need SQL or curl. The JSON endpoints remain an audited transport and export interface, not the operator UI.
+
+Monthly Quality is the equal average of approved eligible work-event scores. Coverage is resolved eligible event count divided by total eligible event count. A unit-weighted score is retained only as a diagnostic and never drives payroll.
 
 The first staging write must be raw-only: `POST .../sync?dryRun=false&stage=raw`. Canonical work events require the explicit `stage=events` mode and a non-empty URL-encoded `approvalReason`. Raw-only mode records every source variant and diagnostics but creates no work event.
 
@@ -55,3 +64,7 @@ Before v2 contains business data, the staging-only down migration removes new ob
 - Project impression thresholds and seasonal workflow.
 - Discipline and Social/Video rubrics.
 - Finalization and reopen authorities.
+
+## Shadow evidence gate
+
+For each member, compare Discipline, SEO Content, SEO Performance, Social/Video and Final/payout against the Sheet. Save the Sheet value, v2 value, delta, active rule version, affected URL where applicable, and a concrete explanation. PM and Finance approval writes are rejected unless evidence exists and the unexplained count is zero. Export the member audit JSON for the decision packet; a locked result remains `shadow_only=true`.

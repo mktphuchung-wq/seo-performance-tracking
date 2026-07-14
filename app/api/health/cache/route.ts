@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "../../../../lib/auth";
 import { query } from "../../../../lib/db";
 import { checkDbSchemaHealth } from "../../../../lib/db-health";
 
@@ -15,6 +17,8 @@ const clean = (e: unknown) => (e instanceof Error ? e.message : String(e)).repla
 
 export async function GET() {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email || !session.user.isAdmin) return NextResponse.json({ ok: false, error: "Admin access is required." }, { status: 403, headers: { "Cache-Control": "no-store" } });
     await query("select 1");
     const schema = await checkDbSchemaHealth();
     const contentWorkedAtExists = await contentWorkedAtColumnExists();
@@ -31,11 +35,14 @@ export async function GET() {
       memberPerformanceCache: await safeCount("select count(*) from public.member_performance_cache"),
       urlWorkEvents: await safeCount("select count(*) from public.url_work_events"),
       monthlyMemberKpiTargets: await safeCount("select count(*) from public.monthly_member_kpi_targets"),
+      monthlyMemberMonthTargets: await safeCount("select count(*) from public.monthly_member_month_targets"),
       kpiWorkUnitRules: await safeCount("select count(*) from public.kpi_work_unit_rules"),
       kpiQualityCriteria: await safeCount("select count(*) from public.kpi_quality_criteria"),
       urlWorkQualityReviews: await safeCount("select count(*) from public.url_work_quality_reviews"),
       urlWorkQualityScores: await safeCount("select count(*) from public.url_work_quality_scores"),
       memberMonthQualityReviews: await safeCount("select count(*) from public.member_month_quality_reviews"),
+      monthlyKpiCalculationRuns: await safeCount("select count(*) from public.monthly_kpi_calculation_runs"),
+      monthlyKpiShadowDifferences: await safeCount("select count(*) from public.monthly_kpi_shadow_differences"),
       refreshRuns: await safeCount("select count(*) from public.refresh_runs"),
       syncRuns: await safeCount("select count(*) from public.sync_runs"),
     } }, { status: schema.ok && contentWorkedAtExists ? 200 : 503, headers: { "Cache-Control": "no-store" } });

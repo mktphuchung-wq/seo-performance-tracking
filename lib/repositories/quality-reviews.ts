@@ -17,14 +17,16 @@ export async function saveQualityReview(input: { workEventId: string; criteria: 
       join public.kpi_quality_rubrics r on r.id=v.rubric_id where r.work_type=$1 and v.version=$2 and v.status='approved' limit 1`, [workType,rubric.version]);
     if (!version.rows[0]) throw new Error(`Approved rubric version ${rubric.version} is missing from the database.`);
     const review = await client.query(`insert into public.url_work_quality_reviews
-      (work_event_id,review_status,quality_pct,admin_note,reviewed_by,reviewed_at,rubric_version_id,rubric_version_snapshot,criteria_snapshot,evidence,created_at,updated_at)
-      values($1,$2,$3,$4,$5,now(),$6,$7,$8::jsonb,$9::jsonb,now(),now())
+      (work_event_id,review_status,quality_pct,exclusion_reason,admin_note,reviewed_by,reviewed_at,approved_by,approved_at,
+       rubric_version_id,rubric_version_snapshot,criteria_snapshot,evidence,created_at,updated_at)
+      values($1,$2,$3,$4,$5,$6,now(),$6,now(),$7,$8,$9::jsonb,$10::jsonb,now(),now())
       on conflict(work_event_id) do update set review_status=excluded.review_status,quality_pct=excluded.quality_pct,
-      admin_note=excluded.admin_note,reviewed_by=excluded.reviewed_by,reviewed_at=excluded.reviewed_at,
+      exclusion_reason=excluded.exclusion_reason,admin_note=excluded.admin_note,reviewed_by=excluded.reviewed_by,reviewed_at=excluded.reviewed_at,
+      approved_by=excluded.approved_by,approved_at=excluded.approved_at,
       rubric_version_id=excluded.rubric_version_id,rubric_version_snapshot=excluded.rubric_version_snapshot,
       criteria_snapshot=excluded.criteria_snapshot,evidence=excluded.evidence,updated_at=now() returning id::text`, [
-      input.workEventId,input.status,evaluation?.qualityPct ?? null,input.status === "excluded" ? input.exclusionReason : input.adminNote ?? null,
-      input.reviewer,version.rows[0].id,rubric.version,JSON.stringify(rubric.criteria),JSON.stringify(input.evidence ?? {}),
+      input.workEventId,input.status,evaluation?.qualityPct ?? null,input.status === "excluded" ? input.exclusionReason : null,
+      input.adminNote ?? null,input.reviewer,version.rows[0].id,rubric.version,JSON.stringify(rubric.criteria),JSON.stringify(input.evidence ?? {}),
     ]);
     await client.query(`delete from public.url_work_quality_scores where review_id=$1`, [review.rows[0].id]);
     if (input.status === "approved") {
@@ -41,12 +43,12 @@ export async function saveQualityReview(input: { workEventId: string; criteria: 
   });
 }
 
-export async function listQualityReviewQueue(month: string) {
+export async function listQualityReviewQueue(month: string, memberName?: string) {
   const { query } = await import("../db");
   const result = await query(`select e.id::text as work_event_id,e.project,e.member_name,e.work_type,e.work_date::text,
     e.unit_value,e.canonical_url_snapshot,r.review_status,r.quality_pct,r.rubric_version_snapshot
     from public.url_work_events e left join public.url_work_quality_reviews r on r.work_event_id=e.id
     where e.is_countable=true and e.work_date>=date_trunc('month',$1::date) and e.work_date<date_trunc('month',$1::date)+interval '1 month'
-    order by e.member_name,e.project,e.work_date,e.id`, [month]);
+    ${memberName ? "and e.member_name=$2" : ""} order by e.member_name,e.project,e.work_date,e.id`, memberName ? [month,memberName] : [month]);
   return result.rows;
 }

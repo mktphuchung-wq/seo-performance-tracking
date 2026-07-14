@@ -22,8 +22,10 @@ export function DataTableContainer({ children }: { children: React.ReactNode }) 
 }
 
 export function Shell({ children, email, isAdmin }: { children: React.ReactNode; email?: string | null; isAdmin?: boolean }) {
+  const currentMonth = new Date().toISOString().slice(0, 7);
   const navItems = [
     { href: "/dashboard", label: "My Performance" },
+    ...(!isAdmin ? [{ href: `/kpi-month/${currentMonth}`, label: "My Monthly KPI" }] : []),
     { href: "/url-data-source", label: "URL Data Source" },
     ...(isAdmin ? [
       { href: "/member-insights", label: "Member Insights" },

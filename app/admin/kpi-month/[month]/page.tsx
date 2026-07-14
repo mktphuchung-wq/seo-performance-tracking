@@ -1,9 +1,55 @@
+import { randomUUID } from "node:crypto";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
+import { KpiLoadError } from "../../../../components/kpi-month/KpiLoadError";
+import { KpiMonthWorkspace } from "../../../../components/kpi-month/KpiMonthWorkspace";
+import { PageContainer, Shell } from "../../../../components/ui";
 import { authOptions } from "../../../../lib/auth";
-import { listMonthlyKpiAudit } from "../../../../lib/repositories/monthly-kpi";
-import { DataTableContainer,MetricCard,PageContainer,Shell } from "../../../../components/ui";
+import { appConfig } from "../../../../lib/env";
+import { parseMonth } from "../../../../lib/kpi/api-contract";
+import { isKpiE2eFixtureMode, kpiE2eFixtureAudit, kpiE2eFixturePreview } from "../../../../lib/kpi/e2e-fixture";
+import { calculateMemberFinal, listMonthlyKpiAudit } from "../../../../lib/repositories/monthly-kpi";
 
-export const dynamic="force-dynamic";
-const pct=(value:any)=>value===null||value===undefined?'N/A':`${Number(value).toFixed(1)}%`;
-export default async function KpiMonthPage({params}:{params:{month:string}}){const session=await getServerSession(authOptions);if(!session?.user?.email||!session.user.isAdmin)redirect('/');const audit=await listMonthlyKpiAudit(params.month).catch(()=>({month:params.month,targets:[],projectResults:[],components:[],results:[],overrides:[],reviews:[],reconciliation:null}));const quarantines=Number(audit.reconciliation?.quarantined_count??0);const reviewed=audit.reviews.filter((row:any)=>row.review_status==='approved').length;return <Shell email={session.user.email} isAdmin><PageContainer className="px-0"><div className="space-y-6"><header><p className="text-sm font-semibold uppercase text-blue-700">Locked payroll workflow</p><h2 className="text-3xl font-bold">KPI month {params.month}</h2><p className="mt-2 text-slate-600">Raw, payable, coverage, confidence, cohort, version, override, and audit fields remain separate.</p></header><div className="grid gap-4 md:grid-cols-4"><MetricCard label="Targets" value={audit.targets.length}/><MetricCard label="Project results" value={audit.projectResults.length}/><MetricCard label="Quality coverage" value={audit.reviews.length?pct(reviewed/audit.reviews.length*100):'N/A'}/><MetricCard label="Quarantined" value={quarantines}/></div><section className="rounded-2xl border bg-white p-5 shadow-sm"><h3 className="font-semibold">Source reconciliation</h3><p className="mt-2 text-sm text-slate-600">Raw rows {audit.reconciliation?.raw_row_count??'N/A'} · logical items {audit.reconciliation?.logical_item_count??'N/A'} · duplicate variants {audit.reconciliation?.duplicate_variant_count??'N/A'} · last sync {audit.reconciliation?.finished_at?new Date(audit.reconciliation.finished_at).toLocaleString():'N/A'}</p><div className="mt-4 flex flex-wrap gap-3"><span className="rounded-lg border px-4 py-2 font-semibold text-slate-600">POST sync dry-run endpoint available</span><a className="rounded-lg border px-4 py-2 font-semibold text-blue-700" href={`/api/admin/kpi-month/${params.month}/audit`}>Export audit JSON</a></div></section><section><h3 className="mb-3 text-xl font-semibold">Member × Project results</h3><DataTableContainer><table className="min-w-full text-sm"><thead className="bg-slate-100 text-left"><tr><th className="p-3">Member</th><th>Project</th><th>Quantity raw / payable</th><th>Quality / coverage</th><th>Performance / coverage</th><th>Confidence</th><th>Status</th><th>Rule</th></tr></thead><tbody>{audit.projectResults.map((row:any)=><tr className="border-t" key={row.id}><td className="p-3">{row.member_name}</td><td>{row.project}</td><td>{pct(row.quantity_raw_pct)} / {pct(row.quantity_payable_pct)}</td><td>{pct(row.quality_payable_pct)} / {pct(row.quality_coverage_pct)}</td><td>{pct(row.performance_payable_pct)} / {pct(row.performance_coverage_pct)}</td><td>{row.confidence}</td><td>{row.status}</td><td>{row.rule_version}</td></tr>)}{!audit.projectResults.length&&<tr><td className="p-4 text-slate-500" colSpan={8}>No v2 calculation exists for this month.</td></tr>}</tbody></table></DataTableContainer></section><section><h3 className="mb-3 text-xl font-semibold">Quality review queue</h3><DataTableContainer><table className="min-w-full text-sm"><thead className="bg-slate-100 text-left"><tr><th className="p-3">Event</th><th>Member</th><th>Project</th><th>Type</th><th>Units</th><th>Review</th><th>Score</th><th>Rubric</th></tr></thead><tbody>{audit.reviews.map((row:any)=><tr className="border-t" key={row.work_event_id}><td className="p-3 font-mono">{row.work_event_id}</td><td>{row.member_name}</td><td>{row.project}</td><td>{row.work_type}</td><td>{row.unit_value}</td><td>{row.review_status??'pending'}</td><td>{pct(row.quality_pct)}</td><td>{row.rubric_version_snapshot??'N/A'}</td></tr>)}</tbody></table></DataTableContainer></section></div></PageContainer></Shell>}
+export const dynamic = "force-dynamic";
+
+export default async function KpiMonthPage({ params, searchParams }: { params: { month: string }; searchParams?: { member?: string; locked?: string } }) {
+  if (isKpiE2eFixtureMode()) {
+    const month = parseMonth(params.month);
+    const memberName = searchParams?.member?.trim() || "Hướng Dương";
+    const audit = kpiE2eFixtureAudit(month, searchParams?.locked === "1");
+    return <Shell email="admin.fixture@example.test" isAdmin><PageContainer className="px-0"><header className="mb-6"><p className="text-sm font-semibold uppercase text-blue-700">Local E2E fixture · shadow only</p><h2 className="text-3xl font-bold">KPI month {month}</h2></header><KpiMonthWorkspace month={month} memberName={memberName} initialAudit={audit} initialPreview={kpiE2eFixturePreview} featureEnabled /></PageContainer></Shell>;
+  }
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email || !session.user.isAdmin) redirect("/");
+  let month: string;
+  try { month = parseMonth(params.month); } catch { redirect("/admin/kpi-month"); }
+  const requestedMember = searchParams?.member?.trim() || undefined;
+  try {
+    const allAudit = await listMonthlyKpiAudit(month);
+    const memberName = requestedMember ?? allAudit.members?.[0]?.member_name;
+    const audit = memberName ? await listMonthlyKpiAudit(month, memberName) : allAudit;
+    audit.members = allAudit.members;
+    audit.reconciliation = allAudit.reconciliation;
+    let preview = null;
+    if (memberName) {
+      try { preview = await calculateMemberFinal({ month, memberName }); }
+      catch (error) {
+        if (!/component_missing|component definition/i.test(error instanceof Error ? error.message : String(error))) throw error;
+      }
+    }
+    return <Shell email={session.user.email} isAdmin>
+      <PageContainer className="px-0">
+        <header className="mb-6">
+          <p className="text-sm font-semibold uppercase text-blue-700">Staging / shadow payroll only</p>
+          <h2 className="text-3xl font-bold">KPI month {month}</h2>
+          <p className="mt-2 text-slate-600">Run the workflow from reconciliation through audit evidence. Finalized snapshots remain shadow-only until PM and Finance approve production payroll separately.</p>
+        </header>
+        <KpiMonthWorkspace month={month} memberName={memberName} initialAudit={audit} initialPreview={preview} featureEnabled={appConfig.kpiEngineV2Enabled} />
+      </PageContainer>
+    </Shell>;
+  } catch (error) {
+    const requestId = randomUUID();
+    console.error("monthly_kpi_page_load_failed", { requestId, month, error });
+    return <Shell email={session.user.email} isAdmin><PageContainer className="px-0"><KpiLoadError requestId={requestId} message={error instanceof Error ? error.message : String(error)} /></PageContainer></Shell>;
+  }
+}

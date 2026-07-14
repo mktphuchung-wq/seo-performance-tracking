@@ -15,3 +15,7 @@ export function buildEventWindows(workDate: string, preWindowDays = 28, postWind
 export function laterEventContaminates(workDate: string, nextWorkDate: string | null | undefined, postWindow: EvaluationWindow) {
   return Boolean(nextWorkDate && nextWorkDate > workDate && nextWorkDate <= postWindow.endDate);
 }
+
+export function measurementMonthForWindow(postWindow: EvaluationWindow) {
+  return postWindow.endDate.slice(0, 7);
+}

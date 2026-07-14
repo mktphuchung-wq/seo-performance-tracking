@@ -16,10 +16,18 @@ export function calculateFinalMonthlyKpi(input: {
   const unavailable = input.components.filter((component) => component.score.payablePct === null);
   const missingControllable = unavailable.filter((component) => component.required && component.key !== "seo_performance");
   const unavailablePerformance = unavailable.find((component) => component.key === "seo_performance");
+  const performanceSystemError = unavailablePerformance?.score.state === "system_error";
+  const performanceReviewRequired = unavailablePerformance?.score.state === "pm_review_required";
+  const performanceCanBeAcknowledged = unavailablePerformance
+    ? ["not_applicable", "insufficient_data"].includes(unavailablePerformance.score.state)
+    : true;
   const performanceAcknowledged = !unavailablePerformance || (input.acknowledgeMissingPerformance && Boolean(input.missingPerformanceReason?.trim()));
   const available = input.components.filter((component) => component.score.payablePct !== null);
   const availableWeightPct = available.reduce((sum, component) => sum + component.weightPct, 0);
   const blockedReason = missingControllable.length ? `required_components_missing:${missingControllable.map((item) => item.key).join(",")}`
+    : performanceSystemError ? "performance_system_error"
+    : performanceReviewRequired ? "performance_pm_review_required"
+    : !performanceCanBeAcknowledged ? "performance_unavailable_state_not_acknowledgeable"
     : !performanceAcknowledged ? "missing_performance_acknowledgement_required"
     : availableWeightPct < 80 ? "available_weight_below_80_pct" : null;
   const common = {

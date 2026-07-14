@@ -15,8 +15,8 @@ export type GscDailyMetric = {
 
 export type GscMetricAggregate = { clicks: number; impressions: number; ctr: number | null; position: number | null; observedDays: number; unknownDays: number; status: GscDataStatus };
 
-export function completeDataCutoff(monthEnd: string, today = new Date()): string {
-  const lagged = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 3));
+export function completeDataCutoff(monthEnd: string, today = new Date(), delayDays = 3): string {
+  const lagged = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - delayDays));
   const laggedKey = lagged.toISOString().slice(0, 10);
   return monthEnd < laggedKey ? monthEnd : laggedKey;
 }
