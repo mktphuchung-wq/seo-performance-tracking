@@ -30,13 +30,13 @@ export function allTimeStartDate() {
 export function getDateRange(params?: { range?: string | null; startDate?: string | null; endDate?: string | null }): DateRange {
   const end = params?.endDate ? new Date(params.endDate) : completeYesterday();
   const key = normalizeDateRangeKey(params?.range);
-  if (key === "custom" && params?.startDate && params?.endDate) return { startDate: params.startDate, endDate: params.endDate, label: "Custom range" };
+  if (key === "custom" && params?.startDate && params?.endDate) return { startDate: params.startDate, endDate: params.endDate, label: "Khoảng tùy chỉnh" };
   if (key === "current_month" || key === "previous_month" || key === "last_3_months" || key === "last_6_months") return getDashboardMetricPeriods(end)[key];
-  if (key === "all_time") return { startDate: allTimeStartDate(), endDate: iso(end), label: "All time" };
+  if (key === "all_time") return { startDate: allTimeStartDate(), endDate: iso(end), label: "Toàn thời gian" };
 
   // Legacy aliases retained for backward-compatible routes.
   const days = key === "12m" ? 364 : 27;
-  return { startDate: iso(new Date(end.getTime() - days * DAY)), endDate: iso(end), label: key === "12m" ? "Last 12 months" : "Last 28 days" };
+  return { startDate: iso(new Date(end.getTime() - days * DAY)), endDate: iso(end), label: key === "12m" ? "12 tháng gần nhất" : "28 ngày gần nhất" };
 }
 
 export type DashboardMetricPeriodKey = "current_month" | "previous_month" | "last_3_months" | "last_6_months";
@@ -54,9 +54,9 @@ export function getDashboardMetricPeriods(referenceDate = completeYesterday()): 
   const last6MonthsStart = addMonths(currentMonthStart, -5);
 
   return {
-    current_month: { startDate: iso(currentMonthStart), endDate: iso(referenceDate), label: "Current month" },
-    previous_month: { startDate: iso(previousMonthStart), endDate: iso(previousMonthEnd), label: "Previous month" },
-    last_3_months: { startDate: iso(last3MonthsStart), endDate: iso(referenceDate), label: "Last 3 months" },
-    last_6_months: { startDate: iso(last6MonthsStart), endDate: iso(referenceDate), label: "Last 6 months" },
+    current_month: { startDate: iso(currentMonthStart), endDate: iso(referenceDate), label: "Tháng hiện tại" },
+    previous_month: { startDate: iso(previousMonthStart), endDate: iso(previousMonthEnd), label: "Tháng trước" },
+    last_3_months: { startDate: iso(last3MonthsStart), endDate: iso(referenceDate), label: "3 tháng gần nhất" },
+    last_6_months: { startDate: iso(last6MonthsStart), endDate: iso(referenceDate), label: "6 tháng gần nhất" },
   };
 }

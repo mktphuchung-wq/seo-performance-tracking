@@ -13,7 +13,7 @@ function parseJsonMap<T extends Record<string, string>>(value: string | undefine
     ) as T;
     return { value: map, errors: [] };
   } catch {
-    return { value: {} as T, errors: [`${name} must be a valid JSON object, for example {"Jane":"jane@example.com"}.`] };
+    return { value: {} as T, errors: [`${name} phải là một đối tượng JSON hợp lệ, ví dụ {"Jane":"jane@example.com"}.`] };
   }
 }
 
@@ -57,8 +57,8 @@ export const appConfig = {
 };
 
 export function assertKpiV2WriteEnvironment() {
-  if (!appConfig.kpiEngineV2Enabled) throw new Error("KPI Engine v2 is disabled. Set KPI_ENGINE_V2_ENABLED=true on staging only.");
+  if (!appConfig.kpiEngineV2Enabled) throw new Error("KPI Engine v2 đang tắt. Chỉ đặt KPI_ENGINE_V2_ENABLED=true trên staging.");
   if (appConfig.deploymentEnvironment === "production" && process.env.KPI_V2_PRODUCTION_WRITE_ENABLED !== "true") {
-    throw new Error("KPI Engine v2 production writes are locked until staging reconciliation and explicit approval.");
+    throw new Error("Chức năng ghi KPI Engine v2 trên production bị khóa cho đến khi đối soát staging và có phê duyệt rõ ràng.");
   }
 }

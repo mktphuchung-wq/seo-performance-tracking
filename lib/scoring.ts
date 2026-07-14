@@ -22,10 +22,10 @@ export type RangePerformanceKpi = {
 const clamp = (n: number, min = 0, max = 100) => Math.max(min, Math.min(max, n));
 function growthPoints(p: number | null) { if (p === null) return 70; return clamp(50 + p * 100); }
 function healthLabel(decliningRate: number, noDataRate: number, growth: number | null) {
-  if (noDataRate >= 0.3) return "Data gaps";
-  if (decliningRate >= 0.35 || (growth ?? 0) <= -0.2) return "At risk";
-  if ((growth ?? 0) >= 0.15 && decliningRate <= 0.2) return "Healthy growth";
-  return "Monitor";
+  if (noDataRate >= 0.3) return "Thiếu hụt dữ liệu";
+  if (decliningRate >= 0.35 || (growth ?? 0) <= -0.2) return "Có rủi ro";
+  if ((growth ?? 0) >= 0.15 && decliningRate <= 0.2) return "Tăng trưởng tốt";
+  return "Cần theo dõi";
 }
 
 function scoreGrowthRate(current: number, previous: number): number {
@@ -165,7 +165,7 @@ export function scoreMember(member_name: string, rows: ComparedUrlPerformance[],
     noDataRate * 20 -
     decliningRate * 25
   );
-  const supportSignal = noDataRate >= 0.3 ? "Needs data" : decliningRate >= 0.3 || (a.click_growth_pct ?? 0) <= -0.2 ? "Needs support" : qualityIndex >= 75 && (a.click_growth_pct ?? 0) > 0 ? "Strong performer" : (a.click_growth_pct ?? 0) >= 0.1 || (a.impression_growth_pct ?? 0) >= 0.15 ? "Growing" : "Stable";
+  const supportSignal = noDataRate >= 0.3 ? "Cần thêm dữ liệu" : decliningRate >= 0.3 || (a.click_growth_pct ?? 0) <= -0.2 ? "Cần hỗ trợ" : qualityIndex >= 75 && (a.click_growth_pct ?? 0) > 0 ? "Hiệu suất tốt" : (a.click_growth_pct ?? 0) >= 0.1 || (a.impression_growth_pct ?? 0) >= 0.15 ? "Đang tăng trưởng" : "Ổn định";
   const priorityActions = rows.filter((r) => r.status === "declining" || r.status === "no_data").length;
   const activeUrls = rows.length;
   const urlsThisMonth = rows.length;

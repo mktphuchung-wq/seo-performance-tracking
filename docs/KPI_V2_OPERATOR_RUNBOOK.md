@@ -6,6 +6,7 @@ Monthly KPI v2 is a staging/shadow workflow. It must not be used for production 
 
 - Confirm the preview deployment is bound to the dedicated Neon staging branch.
 - Confirm `KPI_ENGINE_V2_ENABLED=true` only on Preview and `KPI_V2_PRODUCTION_WRITE_ENABLED=false` everywhere.
+- Confirm Preview uses a stable `NEXTAUTH_URL` and that Google OAuth authorizes the exact `/api/auth/callback/google` URI before beginning the UI workflow.
 - Confirm the admin Google account can read the Slack List Sheet and mapped GSC properties.
 - Configure `MEMBER_EMAIL_MAP` and `PROJECT_GSC_MAP`; never put tokens or database URLs in evidence exports.
 

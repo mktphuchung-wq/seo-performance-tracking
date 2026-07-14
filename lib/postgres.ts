@@ -240,7 +240,7 @@ export async function getAdminMemberRows(rangeKey: string, range: DateRange, per
   const finalMap = new Map(finalRows.map((row) => [row.member_name, row]));
   return scored.map((member) => ({
     ...member,
-    snapshotStatus: snapshotMap.has(member.member_name) ? "Refreshed" : "Not refreshed yet",
+    snapshotStatus: snapshotMap.has(member.member_name) ? "Đã làm mới" : "Chưa được làm mới",
     snapshotUpdatedAt: snapshotMap.get(member.member_name) ?? null,
     finalPerformance: finalMap.get(member.member_name) ?? null,
   }));

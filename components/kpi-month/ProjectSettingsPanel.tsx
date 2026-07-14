@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { measurementStrategies } from "../../lib/kpi/project-settings";
+import { uiLabel } from "../../lib/ui-labels";
 
 const defaults = {
   project: "", projectStartDate: "", measurementStrategy: "growth_project", performanceEnabledForPayroll: false,
@@ -34,46 +35,46 @@ export function ProjectSettingsPanel({ initialSettings, featureEnabled }: { init
   const selected = useMemo(() => rows.find((row) => row.project === form.project), [rows, form.project]);
   const field = (name: string, value: any) => setForm((current: any) => ({ ...current, [name]: value }));
   async function save(event: React.FormEvent) {
-    event.preventDefault(); setBusy(true); setNotice("Saving staging configuration…");
+    event.preventDefault(); setBusy(true); setNotice("Đang lưu cấu hình staging…");
     try {
       const response = await fetch("/api/admin/monthly-kpi-settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(form) });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(`${payload.error?.message ?? "Save failed"}${payload.error?.requestId ? ` (request ${payload.error.requestId})` : ""}`);
+      if (!response.ok) throw new Error(`${payload.error?.message ?? "Lưu thất bại"}${payload.error?.requestId ? ` (mã yêu cầu ${payload.error.requestId})` : ""}`);
       const saved = payload.setting;
       setRows((current) => [...current.filter((row) => row.project !== saved.project), saved].sort((a, b) => a.project.localeCompare(b.project)));
-      setForm(fromRow(saved)); setNotice("Staging configuration saved. Refresh Performance to use this rule snapshot.");
+      setForm(fromRow(saved)); setNotice("Đã lưu cấu hình staging. Hãy làm mới Performance để dùng snapshot quy tắc này.");
     } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
   }
   return <div className="space-y-6">
-    {!featureEnabled && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">Writes are disabled because <code>KPI_ENGINE_V2_ENABLED</code> is off.</div>}
+    {!featureEnabled && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">Chức năng ghi bị tắt vì <code>KPI_ENGINE_V2_ENABLED</code> đang tắt.</div>}
     {notice && <div role="status" className="rounded-xl border bg-slate-50 p-4 text-sm">{notice}</div>}
     <section className="rounded-2xl border bg-white p-6 shadow-sm">
-      <div className="flex flex-wrap gap-3"><label className="text-sm font-semibold">Load existing project<select className="ml-2 rounded-lg border px-3 py-2 font-normal" value={selected?.project ?? ""} onChange={(event) => { const row = rows.find((item) => item.project === event.target.value); setForm(row ? fromRow(row) : defaults); }}><option value="">New configuration</option>{rows.map((row) => <option key={row.project}>{row.project}</option>)}</select></label></div>
+      <div className="flex flex-wrap gap-3"><label className="text-sm font-semibold">Tải dự án hiện có<select className="ml-2 rounded-lg border px-3 py-2 font-normal" value={selected?.project ?? ""} onChange={(event) => { const row = rows.find((item) => item.project === event.target.value); setForm(row ? fromRow(row) : defaults); }}><option value="">Cấu hình mới</option>{rows.map((row) => <option key={row.project}>{row.project}</option>)}</select></label></div>
       <form onSubmit={save} className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Text name="project" label="Project" value={form.project} set={field} required />
-        <Text name="projectStartDate" label="Project start date" value={form.projectStartDate} set={field} type="date" />
-        <label className="text-sm">Measurement strategy<select className="mt-1 w-full rounded-lg border px-3 py-2" value={form.measurementStrategy} onChange={(event) => field("measurementStrategy", event.target.value)}>{measurementStrategies.map((strategy) => <option key={strategy}>{strategy}</option>)}</select></label>
-        <Text name="performanceRuleVersion" label="Performance rule version" value={form.performanceRuleVersion} set={field} required />
-        <NumberField name="minProjectAgeDays" label="Minimum project age days" value={form.minProjectAgeDays} set={field} />
-        <NumberField name="preWindowDays" label="Pre-window days" value={form.preWindowDays} set={field} min={1} />
-        <NumberField name="postWindowDays" label="Post-window days" value={form.postWindowDays} set={field} min={1} />
-        <NumberField name="seoLagDays" label="SEO lag days" value={form.seoLagDays} set={field} />
-        <NumberField name="gscDelayDays" label="GSC delay days" value={form.gscDelayDays} set={field} />
-        <NumberField name="minEligibleEvents" label="Growth/new min events" value={form.minEligibleEvents} set={field} min={1} />
-        <NumberField name="minDataCoveragePct" label="Minimum coverage %" value={form.minDataCoveragePct} set={field} max={100} />
-        <NumberField name="minTotalImpressions" label="Growth/new min impressions" value={form.minTotalImpressions} set={field} />
-        <NumberField name="stableMinEligibleEvents" label="Stable min events" value={form.stableMinEligibleEvents} set={field} min={1} />
-        <NumberField name="stableMinTotalImpressions" label="Stable min impressions" value={form.stableMinTotalImpressions} set={field} />
-        <NumberField name="zeroSignalScorePct" label="Zero-signal score %" value={form.zeroSignalScorePct} set={field} max={100} />
-        <NumberField name="newSignalScorePct" label="New-signal score %" value={form.newSignalScorePct} set={field} max={100} />
-        <label className="text-sm">Seasonality mode<select className="mt-1 w-full rounded-lg border px-3 py-2" value={form.seasonalityMode} onChange={(event) => field("seasonalityMode", event.target.value)}><option value="pm_review">PM review</option><option value="control_adjusted">Control adjusted</option><option value="disabled">Disabled</option></select></label>
-        <label className="flex items-center gap-2 rounded-lg border p-3 text-sm"><input type="checkbox" checked={form.controlAdjustmentEnabled} onChange={(event) => field("controlAdjustmentEnabled", event.target.checked)} />Use unaffected URL controls</label>
-        <label className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm"><input type="checkbox" checked={form.performanceEnabledForPayroll} onChange={(event) => field("performanceEnabledForPayroll", event.target.checked)} />Enable Performance for shadow payroll</label>
-        <button disabled={busy || !featureEnabled} className="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white disabled:opacity-40 md:col-span-2 xl:col-span-4">Save staging lifecycle configuration</button>
+        <Text name="project" label="Dự án" value={form.project} set={field} required />
+        <Text name="projectStartDate" label="Ngày bắt đầu dự án" value={form.projectStartDate} set={field} type="date" />
+        <label className="text-sm">Chiến lược đo lường<select className="mt-1 w-full rounded-lg border px-3 py-2" value={form.measurementStrategy} onChange={(event) => field("measurementStrategy", event.target.value)}>{measurementStrategies.map((strategy) => <option key={strategy} value={strategy}>{uiLabel(strategy)}</option>)}</select></label>
+        <Text name="performanceRuleVersion" label="Phiên bản quy tắc Performance" value={form.performanceRuleVersion} set={field} required />
+        <NumberField name="minProjectAgeDays" label="Tuổi dự án tối thiểu (ngày)" value={form.minProjectAgeDays} set={field} />
+        <NumberField name="preWindowDays" label="Số ngày trước mốc" value={form.preWindowDays} set={field} min={1} />
+        <NumberField name="postWindowDays" label="Số ngày sau mốc" value={form.postWindowDays} set={field} min={1} />
+        <NumberField name="seoLagDays" label="Độ trễ SEO (ngày)" value={form.seoLagDays} set={field} />
+        <NumberField name="gscDelayDays" label="Độ trễ GSC (ngày)" value={form.gscDelayDays} set={field} />
+        <NumberField name="minEligibleEvents" label="Số sự kiện tối thiểu cho dự án tăng trưởng/mới" value={form.minEligibleEvents} set={field} min={1} />
+        <NumberField name="minDataCoveragePct" label="Độ phủ tối thiểu %" value={form.minDataCoveragePct} set={field} max={100} />
+        <NumberField name="minTotalImpressions" label="Lượt hiển thị tối thiểu cho dự án tăng trưởng/mới" value={form.minTotalImpressions} set={field} />
+        <NumberField name="stableMinEligibleEvents" label="Số sự kiện tối thiểu cho dự án ổn định" value={form.stableMinEligibleEvents} set={field} min={1} />
+        <NumberField name="stableMinTotalImpressions" label="Lượt hiển thị tối thiểu cho dự án ổn định" value={form.stableMinTotalImpressions} set={field} />
+        <NumberField name="zeroSignalScorePct" label="Điểm khi không có tín hiệu %" value={form.zeroSignalScorePct} set={field} max={100} />
+        <NumberField name="newSignalScorePct" label="Điểm tín hiệu mới %" value={form.newSignalScorePct} set={field} max={100} />
+        <label className="text-sm">Chế độ mùa vụ<select className="mt-1 w-full rounded-lg border px-3 py-2" value={form.seasonalityMode} onChange={(event) => field("seasonalityMode", event.target.value)}><option value="pm_review">PM đánh giá</option><option value="control_adjusted">Điều chỉnh theo nhóm đối chứng</option><option value="disabled">Tắt</option></select></label>
+        <label className="flex items-center gap-2 rounded-lg border p-3 text-sm"><input type="checkbox" checked={form.controlAdjustmentEnabled} onChange={(event) => field("controlAdjustmentEnabled", event.target.checked)} />Dùng các URL không chịu tác động làm nhóm đối chứng</label>
+        <label className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm"><input type="checkbox" checked={form.performanceEnabledForPayroll} onChange={(event) => field("performanceEnabledForPayroll", event.target.checked)} />Bật Performance cho shadow payroll</label>
+        <button disabled={busy || !featureEnabled} className="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white disabled:opacity-40 md:col-span-2 xl:col-span-4">Lưu cấu hình vòng đời trên staging</button>
       </form>
     </section>
-    <div className="overflow-x-auto rounded-2xl border bg-white shadow-sm"><table className="min-w-full text-sm"><thead className="bg-slate-100 text-left"><tr><th className="p-3">Project</th><th>Strategy</th><th>Payroll</th><th>Windows / lag</th><th>Events / coverage / impressions</th><th>Control</th><th>Rule</th></tr></thead><tbody>{rows.map((row) => <tr className="border-t" key={row.project}><td className="p-3 font-semibold">{row.project}</td><td>{row.measurement_strategy}</td><td>{row.performance_enabled_for_payroll ? "Shadow enabled" : "Disabled / N/A"}</td><td>{row.pre_window_days}/{row.post_window_days} · lag {row.seo_lag_days} · GSC {row.gsc_delay_days}</td><td>{row.min_eligible_events} / {row.min_data_coverage_pct}% / {row.min_total_impressions}</td><td>{row.control_adjustment_enabled ? "Enabled" : "Disabled"}</td><td>{row.performance_rule_version}</td></tr>)}</tbody></table></div>
+    <div className="overflow-x-auto rounded-2xl border bg-white shadow-sm"><table className="min-w-full text-sm"><thead className="bg-slate-100 text-left"><tr><th className="p-3">Dự án</th><th>Chiến lược</th><th>Payroll</th><th>Khoảng đo / độ trễ</th><th>Sự kiện / độ phủ / lượt hiển thị</th><th>Nhóm đối chứng</th><th>Quy tắc</th></tr></thead><tbody>{rows.map((row) => <tr className="border-t" key={row.project}><td className="p-3 font-semibold">{row.project}</td><td>{uiLabel(row.measurement_strategy)}</td><td>{row.performance_enabled_for_payroll ? "Đã bật shadow" : "Đã tắt / N/A"}</td><td>{row.pre_window_days}/{row.post_window_days} · trễ {row.seo_lag_days} · GSC {row.gsc_delay_days}</td><td>{row.min_eligible_events} / {row.min_data_coverage_pct}% / {row.min_total_impressions}</td><td>{row.control_adjustment_enabled ? "Đã bật" : "Đã tắt"}</td><td>{row.performance_rule_version}</td></tr>)}</tbody></table></div>
   </div>;
 }
 

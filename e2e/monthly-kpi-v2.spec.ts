@@ -14,41 +14,41 @@ test.beforeEach(async ({ page }) => {
 
 test("admin completes the fixture workflow and sees the locked shadow snapshot", async ({ page }) => {
   await page.goto(adminPath);
-  await expect(page.getByRole("heading", { name: "KPI month 2026-07" })).toBeVisible();
-  await expect(page.getByLabel("Member")).toHaveValue("Hướng Dương");
+  await expect(page.getByRole("heading", { name: "KPI tháng 2026-07" })).toBeVisible();
+  await expect(page.getByLabel("Thành viên")).toHaveValue("Hướng Dương");
   await expect(page.getByText("88.0% · 2.640.000 VND")).toBeVisible();
   await expect(page.getByRole("link", { name: "https://example.test/fixture-content" })).toBeVisible();
 
-  await page.getByRole("button", { name: /Dry-run reconciliation/ }).click();
-  await expect(page.getByText("Workflow action completed.")).toBeVisible();
-  await page.getByRole("button", { name: "Persist raw evidence" }).click();
-  await page.getByRole("button", { name: "3. Persist approved events" }).click();
+  await page.getByRole("button", { name: /Chạy thử đối soát/ }).click();
+  await expect(page.getByText("Thao tác quy trình đã hoàn tất.")).toBeVisible();
+  await page.getByRole("button", { name: /Lưu bằng chứng thô/ }).click();
+  await page.getByRole("button", { name: "3. Lưu sự kiện đã duyệt" }).click();
 
-  await page.getByLabel("Target units").fill("22");
-  await page.getByRole("button", { name: "Save target" }).click();
-  await page.getByRole("button", { name: "Review", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "Quality review" })).toBeVisible();
-  await page.getByLabel("Evidence / reason").fill("E2E reviewer evidence for the canonical URL");
-  await page.getByRole("button", { name: "Approve review" }).click();
+  await page.getByLabel("Đơn vị chỉ tiêu").fill("22");
+  await page.getByRole("button", { name: "Lưu chỉ tiêu" }).click();
+  await page.getByRole("button", { name: "Đánh giá", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Đánh giá chất lượng" })).toBeVisible();
+  await page.getByLabel("Bằng chứng / lý do").fill("Bằng chứng E2E cho URL chuẩn hóa");
+  await page.getByRole("button", { name: "Phê duyệt đánh giá" }).click();
 
-  await page.getByRole("button", { name: "Refresh mature Performance" }).click();
-  await page.getByLabel("Discipline / Attitude score").fill("100");
-  await page.getByLabel("Social Content + Video score").fill("90");
-  await page.getByRole("button", { name: "Approve manual scores" }).click();
-  await page.getByRole("button", { name: "Calculate preview" }).click();
+  await page.getByRole("button", { name: /Làm mới Performance đủ trưởng thành/ }).click();
+  await page.getByLabel("Điểm Kỷ luật").fill("100");
+  await page.getByLabel("Điểm Mạng xã hội / Video").fill("90");
+  await page.getByRole("button", { name: "Phê duyệt điểm thủ công" }).click();
+  await page.getByRole("button", { name: "Tính bản xem trước" }).click();
   await expect(page.getByText("88.0% · 2.640.000 VND")).toBeVisible();
-  await page.getByRole("button", { name: "Finalize & lock shadow snapshot" }).click();
+  await page.getByRole("button", { name: "Hoàn tất và khóa snapshot shadow" }).click();
 
   await page.goto(`${adminPath}&locked=1`);
-  await expect(page.getByText(/Locked v1 · read-only/)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Calculate preview" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Reopen as new version" })).toBeVisible();
+  await expect(page.getByText(/Đã khóa v1 · chỉ đọc/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Tính bản xem trước" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Mở lại thành phiên bản mới" })).toBeVisible();
 });
 
 test("member view is read-only and ignores attempts to select another member", async ({ page }) => {
   await page.goto("/kpi-month/2026-07?member=Nh%C6%B0%20Tuy%E1%BB%81n");
   await expect(page.getByRole("heading", { name: "Hướng Dương · 2026-07" })).toBeVisible();
   await expect(page.getByText("Như Tuyền")).toHaveCount(0);
-  await expect(page.getByText("Read-only evidence.")).toBeVisible();
+  await expect(page.getByText(/Bằng chứng chỉ đọc/)).toBeVisible();
   await expect(page.getByRole("button")).toHaveCount(0);
 });

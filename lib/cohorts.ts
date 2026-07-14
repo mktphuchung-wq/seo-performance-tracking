@@ -48,11 +48,11 @@ export function getMinAgeMonthsForRange(rangeKey: CohortRangeKey) {
 }
 
 export function getCohortWindow(rangeKey: CohortRangeKey, _measurementRange: DateRange, _seoLagDays = 30, _settings: CohortSettings = {}): CohortWindow {
-  if (rangeKey === "all_time") return { startDate: null, endDate: null, label: "All active URLs are included.", mode: "all_active_urls" };
+  if (rangeKey === "all_time") return { startDate: null, endDate: null, label: "Bao gồm tất cả URL đang hoạt động.", mode: "all_active_urls" };
   const minAgeMonths = getMinAgeMonthsForRange(rangeKey);
-  if (!minAgeMonths) return { startDate: null, endDate: null, label: "All active URLs are included.", mode: "all_active_urls" };
+  if (!minAgeMonths) return { startDate: null, endDate: null, label: "Bao gồm tất cả URL đang hoạt động.", mode: "all_active_urls" };
   const cutoffDate = subtractMonths(currentUtcDate(), minAgeMonths);
-  return { startDate: null, endDate: iso(cutoffDate), label: `Minimum URL age required: ${minAgeMonths} month${minAgeMonths === 1 ? "" : "s"}`, mode: "lagged_before_window" };
+  return { startDate: null, endDate: iso(cutoffDate), label: `Tuổi URL tối thiểu bắt buộc: ${minAgeMonths} tháng`, mode: "lagged_before_window" };
 }
 
 export function parseContentWorkedAt(value: unknown): Date | null {
@@ -84,11 +84,11 @@ export function getEligibleUrlsForRange<T extends UrlWithWorkDate>(urls: T[], ra
   const min = rangeKey === "all_time" || !enabled ? 0 : settings.min_eligible_urls ?? 5;
 
   if (rangeKey === "all_time") {
-    return { eligible: active, excluded: [], window: getCohortWindow(rangeKey, measurementRange, settings.seo_lag_days ?? 30, settings), status: "scored", missingWorkedDateUrls: active.filter((url) => !parseContentWorkedAt(getUrlWorkDate(url, settings.url_work_date_field || "content_worked_at"))).length, minAgeMonths: 0, cutoffDate: null, cohortReason: "All time includes all active URLs." };
+    return { eligible: active, excluded: [], window: getCohortWindow(rangeKey, measurementRange, settings.seo_lag_days ?? 30, settings), status: "scored", missingWorkedDateUrls: active.filter((url) => !parseContentWorkedAt(getUrlWorkDate(url, settings.url_work_date_field || "content_worked_at"))).length, minAgeMonths: 0, cutoffDate: null, cohortReason: "Toàn thời gian bao gồm tất cả URL đang hoạt động." };
   }
 
   if (!enabled) {
-    return { eligible: active, excluded: [], window: getCohortWindow("all_time", measurementRange, settings.seo_lag_days ?? 30, settings), status: "scored", missingWorkedDateUrls: 0, minAgeMonths: 0, cutoffDate: null, cohortReason: "Cohort-based measurement disabled." };
+    return { eligible: active, excluded: [], window: getCohortWindow("all_time", measurementRange, settings.seo_lag_days ?? 30, settings), status: "scored", missingWorkedDateUrls: 0, minAgeMonths: 0, cutoffDate: null, cohortReason: "Đã tắt đo lường theo nhóm." };
   }
 
   const minAgeMonths = getMinAgeMonthsForRange(rangeKey);
@@ -109,5 +109,5 @@ export function getEligibleUrlsForRange<T extends UrlWithWorkDate>(urls: T[], ra
     else excluded.push(url);
   }
 
-  return { eligible, excluded, window: { startDate: null, endDate: cutoffDate, label: `Minimum URL age required: ${minAgeMonths} month${minAgeMonths === 1 ? "" : "s"}`, mode: "lagged_before_window" }, status: eligible.length < min ? "not_enough_data" : "scored", missingWorkedDateUrls, minAgeMonths, cutoffDate, cohortReason: `Minimum URL age required: ${minAgeMonths} month${minAgeMonths === 1 ? "" : "s"}. Cutoff date: ${cutoffDate}.` };
+  return { eligible, excluded, window: { startDate: null, endDate: cutoffDate, label: `Tuổi URL tối thiểu bắt buộc: ${minAgeMonths} tháng`, mode: "lagged_before_window" }, status: eligible.length < min ? "not_enough_data" : "scored", missingWorkedDateUrls, minAgeMonths, cutoffDate, cohortReason: `Tuổi URL tối thiểu bắt buộc: ${minAgeMonths} tháng. Ngày giới hạn: ${cutoffDate}.` };
 }

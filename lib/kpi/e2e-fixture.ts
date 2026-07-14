@@ -12,7 +12,7 @@ export function kpiE2eFixtureAudit(month: string, locked = false) {
   ];
   const components = [
     { member_name: memberName, component_key: "discipline", payable_pct: 100, status: "approved", rule_version: "manual_component_v2" },
-    { member_name: memberName, component_key: "seo_content", payable_pct: 80, status: "scored", rule_version: "seo_content_member_month_v3", diagnostics: { actualUnits: 22, targetUnits: 22, quantityRawPct: 100, quantityPct: 100, qualityPct: 75, qualityCoveragePct: 100, qualityAggregation: "event_unit_weighted_average" } },
+    { member_name: memberName, component_key: "seo_content", payable_pct: 80, status: "scored", rule_version: "seo_content_member_month_v3", diagnostics: { actualUnits: 22, targetUnits: 22, quantityRawPct: 100, quantityPct: 100, qualityPct: 75, qualityCoveragePct: 100, qualityAggregation: "equal_event_average" } },
     { member_name: memberName, component_key: "seo_performance", payable_pct: 100, status: "scored", rule_version: "performance_measurement_v3" },
     { member_name: memberName, component_key: "social_video", payable_pct: 90, status: "approved", rule_version: "manual_component_v2" },
   ];

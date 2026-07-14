@@ -12,6 +12,13 @@ export function classifyOpportunity(metrics: UrlMetrics): OpportunityLabel {
 }
 
 export function labelText(label: OpportunityLabel) {
-  if (label === "no_data") return "Not enough data to evaluate";
-  return label.replace(/_/g, " ");
+  const labels: Record<OpportunityLabel, string> = {
+    no_data: "Chưa đủ dữ liệu để đánh giá",
+    ctr_opportunity: "Cơ hội cải thiện CTR",
+    ranking_opportunity: "Cơ hội cải thiện thứ hạng",
+    winner: "URL hiệu quả tốt",
+    low_visibility: "Độ hiển thị thấp",
+    normal: "Bình thường",
+  };
+  return labels[label];
 }

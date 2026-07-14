@@ -16,7 +16,7 @@ export default async function MonthlyKpiSettings() {
   try {
     const settings = await listProjectKpiV2Settings();
     return <Shell email={session.user.email} isAdmin><PageContainer className="px-0"><div className="space-y-6">
-      <header><p className="text-sm font-semibold uppercase text-blue-700">KPI v2 staging controls</p><h2 className="text-3xl font-bold">Project lifecycle & Performance settings</h2><p className="mt-2 text-slate-600">Performance remains N/A until its project is explicitly enabled and a mature, reliable measurement cohort is available. Permission and mapping failures are system errors, never zero.</p></header>
+      <header><p className="text-sm font-semibold uppercase text-blue-700">Điều khiển KPI v2 trên staging</p><h2 className="text-3xl font-bold">Vòng đời dự án và cài đặt Performance</h2><p className="mt-2 text-slate-600">Performance giữ trạng thái N/A cho đến khi dự án được bật rõ ràng và có nhóm đo lường đủ trưởng thành, đáng tin cậy. Lỗi phân quyền hoặc ánh xạ là lỗi hệ thống, tuyệt đối không được ghi thành 0.</p></header>
       <ProjectSettingsPanel initialSettings={settings} featureEnabled={appConfig.kpiEngineV2Enabled} />
     </div></PageContainer></Shell>;
   } catch (error) {

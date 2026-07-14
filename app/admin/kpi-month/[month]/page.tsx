@@ -17,7 +17,7 @@ export default async function KpiMonthPage({ params, searchParams }: { params: {
     const month = parseMonth(params.month);
     const memberName = searchParams?.member?.trim() || "Hướng Dương";
     const audit = kpiE2eFixtureAudit(month, searchParams?.locked === "1");
-    return <Shell email="admin.fixture@example.test" isAdmin><PageContainer className="px-0"><header className="mb-6"><p className="text-sm font-semibold uppercase text-blue-700">Local E2E fixture · shadow only</p><h2 className="text-3xl font-bold">KPI month {month}</h2></header><KpiMonthWorkspace month={month} memberName={memberName} initialAudit={audit} initialPreview={kpiE2eFixturePreview} featureEnabled /></PageContainer></Shell>;
+    return <Shell email="admin.fixture@example.test" isAdmin><PageContainer className="px-0"><header className="mb-6"><p className="text-sm font-semibold uppercase text-blue-700">Fixture E2E cục bộ · chỉ shadow</p><h2 className="text-3xl font-bold">KPI tháng {month}</h2></header><KpiMonthWorkspace month={month} memberName={memberName} initialAudit={audit} initialPreview={kpiE2eFixturePreview} featureEnabled /></PageContainer></Shell>;
   }
   const session = await getServerSession(authOptions);
   if (!session?.user?.email || !session.user.isAdmin) redirect("/");
@@ -40,9 +40,9 @@ export default async function KpiMonthPage({ params, searchParams }: { params: {
     return <Shell email={session.user.email} isAdmin>
       <PageContainer className="px-0">
         <header className="mb-6">
-          <p className="text-sm font-semibold uppercase text-blue-700">Staging / shadow payroll only</p>
+          <p className="text-sm font-semibold uppercase text-blue-700">Chỉ dành cho staging / shadow payroll</p>
           <h2 className="text-3xl font-bold">KPI month {month}</h2>
-          <p className="mt-2 text-slate-600">Run the workflow from reconciliation through audit evidence. Finalized snapshots remain shadow-only until PM and Finance approve production payroll separately.</p>
+          <p className="mt-2 text-slate-600">Chạy quy trình từ đối soát đến bằng chứng audit. Snapshot đã hoàn tất vẫn chỉ là shadow cho đến khi PM và Finance phê duyệt production payroll riêng.</p>
         </header>
         <KpiMonthWorkspace month={month} memberName={memberName} initialAudit={audit} initialPreview={preview} featureEnabled={appConfig.kpiEngineV2Enabled} />
       </PageContainer>

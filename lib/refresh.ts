@@ -29,11 +29,11 @@ export type CacheRefreshResult = { ok: boolean; status: CacheRefreshStatus; runI
 const zeroMetrics: UrlMetrics = { clicks: 0, impressions: 0, ctr: 0, position: 0 };
 
 function recommendationFor(status: string) {
-  if (status === "no_data") return "No GSC data for this URL in the selected range.";
-  if (status === "declining") return "Review lost queries and refresh optimization priorities.";
-  if (status === "new_signal") return "Monitor new search visibility and build on early traction.";
-  if (status === "growing") return "Keep supporting this URL's search momentum.";
-  return "Monitor performance.";
+  if (status === "no_data") return "Không có dữ liệu GSC cho URL này trong khoảng đã chọn.";
+  if (status === "declining") return "Đánh giá các truy vấn bị mất và cập nhật ưu tiên tối ưu hóa.";
+  if (status === "new_signal") return "Theo dõi độ hiển thị tìm kiếm mới và phát triển từ tín hiệu ban đầu.";
+  if (status === "growing") return "Tiếp tục hỗ trợ đà tăng trưởng tìm kiếm của URL này.";
+  return "Theo dõi hiệu suất.";
 }
 
 async function getPostgresEligibility(rangeKey: string, allActive: ReturnType<typeof dbContentUrl>[]) {
@@ -98,7 +98,7 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
       db_worked_date_max: eligibility.dbWorkedDateMax,
     };
 
-    if (allActive.length === 0) return { ok: false, status: "failed", totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: "No active URLs found. Run Sync URLs from Sheet first.", diagnostics: diagnosticsBase };
+    if (allActive.length === 0) return { ok: false, status: "failed", totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: "Không tìm thấy URL đang hoạt động. Hãy đồng bộ URL từ Sheet trước.", diagnostics: diagnosticsBase };
 
     const active = eligibility.active;
     const diagnostics = {
@@ -109,13 +109,13 @@ export async function refreshPerformanceCache(accessToken: string, rangeKey: str
       min_url_age_months: eligibility.minAgeMonths || null,
       cutoff_date: eligibility.cutoffDate,
       cohort_label: defaultWindow.label,
-      cohort_reason: rangeKey === "all_time" ? "All time includes all active URLs." : `Minimum URL age required: ${eligibility.minAgeMonths} month${eligibility.minAgeMonths === 1 ? "" : "s"}. Cutoff date: ${eligibility.cutoffDate}.`,
+      cohort_reason: rangeKey === "all_time" ? "Toàn thời gian bao gồm tất cả URL đang hoạt động." : `Tuổi URL tối thiểu bắt buộc: ${eligibility.minAgeMonths} tháng. Ngày giới hạn: ${eligibility.cutoffDate}.`,
       cohort_start_date: defaultWindow.startDate,
       cohort_end_date: eligibility.cutoffDate ?? defaultWindow.endDate,
     };
 
     if (active.length === 0) {
-      const message = "Not enough eligible URLs for this range. URLs may be newer than the minimum age requirement.";
+      const message = "Chưa đủ URL hợp lệ cho khoảng này. Các URL có thể mới hơn yêu cầu tuổi tối thiểu.";
       const run = await query<{ id: string }>(`insert into refresh_runs (status, triggered_by, range_key, start_date, end_date, previous_start_date, previous_end_date, total_urls, processed_urls, urls_with_data, no_data_urls, failed_urls, error_message, started_at, finished_at, created_at, updated_at) values ('not_enough_data',$1,$2,$3,$4,$5,$6,$7,0,0,0,0,$8,now(),now(),now(),now()) returning id`, [triggeredBy ?? null, rangeKey, range.startDate, range.endDate, previousRange.startDate, previousRange.endDate, allActive.length, "No eligible URLs after URL age filtering."]).catch(() => ({ rows: [] }));
       runId = run.rows[0]?.id ?? null;
       return { ok: true, status: "not_enough_data", runId, totalUrls: 0, processedUrls: 0, urlsWithData: 0, noDataUrls: 0, failedUrls: 0, errorMessage: null, message, diagnostics };

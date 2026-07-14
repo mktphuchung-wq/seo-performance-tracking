@@ -5,27 +5,27 @@ export type QualityRubric = { key: string; workTypes: WorkType[]; version: strin
 
 export const newContentRubricV2: QualityRubric = {
   key: "new_content", workTypes: ["new_content"], version: "quality_new_content_v3", criteria: [
-    { key: "intent_audience_pain", name: "Search intent, audience/persona, pain point", weightPct: 15, allowsNa: false },
-    { key: "outline_structure", name: "Outline, hierarchy, structure", weightPct: 10, allowsNa: false },
-    { key: "usefulness_semantics", name: "Usefulness, completeness, semantic coverage", weightPct: 25, allowsNa: false },
-    { key: "accuracy_eeat", name: "Accuracy, E-E-A-T, trustworthy sourcing", weightPct: 15, allowsNa: false },
-    { key: "metadata_onpage", name: "Metadata, on-page/entity optimization", weightPct: 10, allowsNa: false },
-    { key: "links", name: "Internal/external links", weightPct: 10, allowsNa: true },
-    { key: "ux_media_accessibility", name: "UX, readability, media, accessibility", weightPct: 10, allowsNa: true },
-    { key: "faq_answerability", name: "FAQs / answerability when appropriate to intent", weightPct: 5, allowsNa: true },
+    { key: "intent_audience_pain", name: "Ý định tìm kiếm, đối tượng/persona, nỗi đau", weightPct: 15, allowsNa: false },
+    { key: "outline_structure", name: "Dàn ý, phân cấp, cấu trúc", weightPct: 10, allowsNa: false },
+    { key: "usefulness_semantics", name: "Tính hữu ích, đầy đủ, độ phủ ngữ nghĩa", weightPct: 25, allowsNa: false },
+    { key: "accuracy_eeat", name: "Độ chính xác, E-E-A-T, nguồn đáng tin cậy", weightPct: 15, allowsNa: false },
+    { key: "metadata_onpage", name: "Metadata, tối ưu on-page/thực thể", weightPct: 10, allowsNa: false },
+    { key: "links", name: "Liên kết nội bộ/bên ngoài", weightPct: 10, allowsNa: true },
+    { key: "ux_media_accessibility", name: "UX, khả năng đọc, media, khả năng tiếp cận", weightPct: 10, allowsNa: true },
+    { key: "faq_answerability", name: "FAQ / khả năng trả lời phù hợp với ý định", weightPct: 5, allowsNa: true },
   ],
 };
 
 export const auditUpdateRubricV2: QualityRubric = {
   key: "audit_update", workTypes: ["audit", "update"], version: "quality_audit_update_v2", criteria: [
-    { key: "diagnosis", name: "Diagnosis, evidence, prioritization", weightPct: 15, allowsNa: false },
-    { key: "intent_semantic_gap", name: "Intent and semantic-gap correction", weightPct: 15, allowsNa: false },
-    { key: "accuracy_freshness_eeat", name: "Accuracy, freshness, E-E-A-T", weightPct: 15, allowsNa: false },
-    { key: "structure_ux", name: "Structure, UX, readability", weightPct: 10, allowsNa: false },
-    { key: "metadata_onpage", name: "Metadata/on-page optimization", weightPct: 10, allowsNa: true },
-    { key: "links", name: "Internal/external links", weightPct: 10, allowsNa: true },
-    { key: "media_accessibility", name: "Media/accessibility", weightPct: 10, allowsNa: true },
-    { key: "implementation_qa", name: "Implementation completeness and QA", weightPct: 15, allowsNa: false },
+    { key: "diagnosis", name: "Chẩn đoán, bằng chứng, mức ưu tiên", weightPct: 15, allowsNa: false },
+    { key: "intent_semantic_gap", name: "Sửa ý định và khoảng trống ngữ nghĩa", weightPct: 15, allowsNa: false },
+    { key: "accuracy_freshness_eeat", name: "Độ chính xác, tính mới, E-E-A-T", weightPct: 15, allowsNa: false },
+    { key: "structure_ux", name: "Cấu trúc, UX, khả năng đọc", weightPct: 10, allowsNa: false },
+    { key: "metadata_onpage", name: "Tối ưu metadata/on-page", weightPct: 10, allowsNa: true },
+    { key: "links", name: "Liên kết nội bộ/bên ngoài", weightPct: 10, allowsNa: true },
+    { key: "media_accessibility", name: "Media/khả năng tiếp cận", weightPct: 10, allowsNa: true },
+    { key: "implementation_qa", name: "Mức hoàn thiện triển khai và QA", weightPct: 15, allowsNa: false },
   ],
 };
 

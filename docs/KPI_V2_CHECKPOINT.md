@@ -1,69 +1,100 @@
-# KPI Engine v2 Implementation Checkpoint
+# Monthly KPI v2 staging checkpoint
 
-Recorded on 2026-07-14 for branch `feat/monthly-kpi-engine-v2`.
+Recorded on 2026-07-14 for branch `codex/monthly-kpi-v2-completion`.
 
-## 1. Files changed
+Monthly KPI v2 remains a staging/shadow feature. Nothing in this checkpoint authorizes production payroll writes.
 
-- Added normalized Slack List and legacy Sheet ingestion, alias resolution, deterministic work-item reconciliation, quarantine diagnostics, and transactional persistence.
-- Added Quantity, Quality, SEO Content, lifecycle Performance, member/project rollup, final KPI, payout, and month-locking domain services.
-- Added KPI v2 repositories, admin/member APIs, admin pages, settings, health checks, reconciliation CLI, tests, and rollout documentation.
-- Updated feature-gated configuration, Google Sheet/GSC readers, navigation, and legacy sync safety.
+## 1. Implemented end-to-end surface
 
-## 2. Migration and schema impact
+- Admin UI supports reconciliation, approved event persistence, Member × Month targets, URL Quality review, lifecycle Performance refresh, dynamic manual components, preview calculation, shadow lock/reopen, Sheet-difference evidence, PM/Finance approval evidence, and audit JSON export.
+- Member UI is read-only and resolves the signed-in member rather than accepting another member from the query string.
+- APIs use structured validation, request IDs, idempotency records, workflow state, and immutable locked snapshots.
+- Missing database scores remain `null`; `system_error` Performance cannot be acknowledged into payroll.
+- Quality payroll aggregation is the equal average of approved events. Event-unit weighting is retained only as an audit diagnostic.
+- The Hướng Dương fixture `100/80/100/90` produces exactly `88%` and `2,640,000 VND`.
 
-- `migrations/20260714_monthly_kpi_engine_v2.sql` is additive and idempotent.
-- It adds identity/alias/raw-source, versioned unit/rubric, GSC daily/evaluation, project/member result, component, override, and audit objects.
-- It extends work-event, target, criterion, quality-score, and project lifecycle settings without deleting historical columns.
-- `migrations/20260714_monthly_kpi_engine_v2_down.sql` permits teardown only before business or audit data exists. Operational rollback after data exists is feature-flag disablement, not deletion.
-- Neon staging branch `br-patient-field-aodwm57c` (`kpi-v2-staging-20260714`) was created from primary. The prerequisite and v2 migrations applied successfully, and the complete v2 migration reapplied successfully to prove idempotency.
-- Application-level schema health returned `ok=true`, with no missing tables, views, columns, or migration warnings. The locked-snapshot mutation probe was rejected and its transaction rolled back.
-- No migration was applied to Neon primary and no production data was read beyond schema/approximate-count diagnostics.
+## 2. Staging database and source evidence
 
-## 3. Tests and results
+- Neon project: `proud-wildflower-67617170`.
+- Staging branch: `br-patient-field-aodwm57c` (`kpi-v2-staging-20260714`), non-primary and ready.
+- Primary branch `br-noisy-firefly-aof6m59n` was not migrated or written by this completion run.
+- The additive completion migration was applied and rerun successfully on staging.
+- Latest real-source sync produced 147 raw rows, 135 logical items, 100 canonical events, 35 quarantined items, and 12 duplicate variants. Quarantined values remain explicit rather than guessed.
+- All 100 `slack_list_sheet` canonical events have `approved_by`, `approved_at`, and an approval reason recorded after the user's staging approval.
+- July Member × Month targets are Hướng Dương 22, Như Tuyền 14, and Yến Phương 14 units.
+
+## 3. Current real-data shadow calculation
+
+| Member | Countable July events | Actual units | Target | Quantity | SEO Content | Performance | Final |
+| --- | ---: | ---: | ---: | ---: | --- | --- | --- |
+| Hướng Dương | 3 | 1.5 | 22 | 6.818% | `null`, Quality coverage 0% | `null`, insufficient data | Incomplete |
+| Như Tuyền | 4 | 4 | 14 | 28.571% | `null`, Quality coverage 0% | `null`, insufficient data | Incomplete |
+| Yến Phương | 1 | 1 | 14 | 7.143% | `null`, Quality coverage 0% | `null`, insufficient data | Incomplete |
+
+The calculation is runnable from reconciled real data, but a payable shadow result is intentionally blocked. There are currently no URL Quality reviews, mature Performance results, or approved manual Discipline/Social Video scores.
+
+Both July projects (`Stories of Polynesian Pride` and `Tartan Vibes Clothing`) still have `performance_enabled_for_payroll=false` and no `project_start_date`. A PM must supply/approve lifecycle settings before mature GSC measurement or a justified N/A acknowledgement can exist.
+
+## 4. Missing-Performance guard
+
+Staging contains three `seo_performance` component rows for the three members:
+
+- `payable_pct is null`: 3
+- `status = insufficient_data`: 3
+- missing/insufficient/system-error rows incorrectly stored as zero: 0
+
+This verifies the required null-versus-zero behavior on both tests and persisted staging data.
+
+## 5. Verification results
 
 | Check | Result |
 | --- | --- |
+| `npm test` | Passed, 52/52 |
 | `npm run typecheck` | Passed |
-| `npm test` | Passed, 36/36 |
-| `npm run build` | Passed, 40 routes/pages |
+| `npm run build` | Passed, 40 generated pages/routes |
+| `npm run test:e2e` | Passed, 2/2 |
 | `git diff --check` | Passed |
-| Vercel staging preview build | Ready |
+| Local browser verification | Content rendered; no Next.js overlay; no console errors |
+| Vercel preview build | Ready |
+| Vercel runtime boundary | Auth providers 200; unauthenticated admin 307; unauthenticated admin health 403 |
+| Authenticated preview UI | Passed after stable callback registration; Google work account reached all three Monthly KPI v2 member views |
+| Vercel error logs after smoke requests | No error entries |
 
-The test suite covers headerless/header-present ingestion, aliases, duplicate variants, draft exclusion, status mapping, unit precedence, Quantity null/cap behavior, Quality 0-5/N/A and coverage, lifecycle Performance reliability/no-floor behavior, target-weighted rollups, final coverage/payout, locking/reopen, and the end-to-end monthly pipeline with fixtures.
+Preview deployment:
 
-## 4. Reconciliation output
+- ID: `dpl_HY24ojZvwsqPaZadcQN1HCQGdvMc`
+- Build URL: <https://seo-performance-tracking-2lvcfse77-hung-s-projects17xx.vercel.app>
+- Stable Preview alias: <https://seo-performance-tracking-mktphuchung-8338-hung-s-projects17xx.vercel.app>
+- Target: Preview only
+- Preview `DATABASE_URL`: Neon staging branch
+- Preview `KPI_ENGINE_V2_ENABLED`: `true`
+- Preview `KPI_V2_PRODUCTION_WRITE_ENABLED`: `false`
+- Preview `NEXTAUTH_URL`, `APP_URL`, and `NEXT_PUBLIC_APP_URL`: stable Preview alias
 
-The live read-only reconciliation of `SEO Content - Konic`, `Data!A1:K300`, produced:
+The preview is protected by Vercel and application authentication. The stable callback below was registered in Google Cloud on 2026-07-14. After propagation, the user's authorized Google work account completed OAuth and reached the application dashboard and Monthly KPI v2 workspace:
 
-| Diagnostic | Count |
-| --- | ---: |
-| Raw rows | 145 |
-| Logical items | 133 |
-| Canonical completed events | 94 |
-| Quarantined items | 33 |
-| Duplicate variants | 12 |
-| Duplicate Slack IDs | 10 |
-| Project alias merges | 56 |
-| Draft variants excluded | 8 |
+```text
+https://seo-performance-tracking-mktphuchung-8338-hung-s-projects17xx.vercel.app/api/auth/callback/google
+```
 
-The legacy `content_urls` source is headerless and its first row was retained: 109 rows, 108 unique canonical URLs, one duplicate URL row, and two blank work types. Of 113 completed public Slack URLs, 103 overlap legacy, 10 are Slack-only, and five are legacy-only.
+The authenticated UI showed the reconciled July member set and real shadow calculations: Hướng Dương `1.5 / 22.00` and `6.8%`, Như Tuyền `4 / 14.00` and `28.6%`, and Yến Phương `1 / 14.00` and `7.1%`. All three showed Quality as `N/A · 0.0%`, Performance as `N/A · insufficient_data`, and Final/Payout as `N/A · N/A`. The workflow controls, source rows, targets, Performance cohort area, Sheet-difference evidence, PM approval, and Finance approval controls rendered without an application console error.
 
-The staging repository probe persisted the same duplicate/draft/live fixture twice. The second run updated the same two stable source events instead of duplicating them; the audit resolved to `0.50` under `unit_v2`, and `Checked` stayed non-countable. All probe rows were then deleted and verified absent.
+The three Google Sheets baselines have been read and mapped by exact workbook/tab/cell in `docs/KPI_V2_GOOGLE_SHEETS_BASELINE.md`. Twelve component baselines are also persisted as idempotent staging audit records. This documents stale prose conflicts in the Hướng Dương workbook. Numeric difference rows remain pending because the corresponding real v2 components are still `null` or awaiting reviewer approval.
 
-## 5. Known limitations and approval blocker
+## 6. Remaining acceptance gates
 
-- The live quarantine contains 28 blank work types, three unresolved projects (two blank and one `Wonder`), two blank members, two blank statuses, four missing completion dates, and URL issues. These remain null/quarantined and were not guessed.
-- The Slack List is a separate spreadsheet from legacy `content_urls`; `GOOGLE_SLACK_LIST_SHEET_ID` and live Vietnamese header aliases were added after staging discovery.
-- Real source rows have not been persisted. The endpoint now defaults to raw-only staging; canonical event persistence requires `stage=events` plus an explicit approval reason.
-- GSC staging refresh, lifecycle configuration, July targets/reviews/manual components, parallel-month payout comparison, and payroll lock remain pending business decisions.
-- Vercel deployment `dpl_3TxKaDJTSW6HXF1b7hrUXX3H1HCQ` is ready and was created with staging-scoped variables. Deployment Protection prevented an independent HTTP runtime-health read, so the preview-to-branch binding remains unconfirmed even though the branch and application health check were verified directly.
+The following are real evidence/configuration gaps, not calculator implementation gaps:
 
-## 6. Rollback method
+1. Review every eligible URL for all three members until Quality coverage is 100%, including evidence or a justified exclusion.
+2. Set and approve project lifecycle/GSC settings, then refresh mature Performance; alternatively record a valid PM N/A acknowledgement. System errors can never be acknowledged.
+3. Enter and approve Discipline and Social Video component scores.
+4. Use the captured Google Sheets baseline for every component. Every non-zero delta must include the exact Sheet range plus a source URL or rule version and explanation.
+5. Confirm comparison coverage is complete and unexplained delta count is zero. Zero difference records do not count as completed comparison evidence.
+6. Calculate, lock, reload, and export each member's shadow snapshot.
+7. Record named PM and Finance approvals in the application. The user's general staging approval is not represented as either role signature.
 
-Before staging business data exists, run the guarded v2 down migration. After data exists, set `KPI_ENGINE_V2_ENABLED=false`, keep the v2 tables for audit, and use the legacy read-only views. Never delete locked snapshots or rewrite approved months.
+## 7. Production status and rollback
 
-## 7. Approval needed before continuation
+Production payroll remains blocked. Do not set `KPI_V2_PRODUCTION_WRITE_ENABLED=true`, deploy with `--prod`, promote this preview, or copy shadow results to payroll until every gate in `KPI_V2_SHADOW_ACCEPTANCE.md` is complete.
 
-Approve or correct the source reconciliation before any real write: resolve the quarantine categories, confirm the `Wonder` project disposition, approve canonical event counts and aliases, and provide an approval reason for event creation. Then confirm lifecycle mappings, July member/project targets, impression thresholds, manual component rubrics, and lock/reopen authority before the shadow payout run.
-
-Preview: <https://seo-performance-tracking-m3ua8gg03-hung-s-projects17xx.vercel.app>
+Operational rollback is feature-flag disablement: set `KPI_ENGINE_V2_ENABLED=false` in Preview and retain staging tables/snapshots for audit. Do not delete locked snapshots or rewrite history.

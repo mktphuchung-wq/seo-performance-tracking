@@ -102,8 +102,8 @@ const nullableNum = (v: unknown) => v === null || v === undefined || v === "" ? 
 const bool = (v: unknown) => v === true || v === "true" || v === "on" || v === "1";
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
 
-export const PROJECT_KPI_SETTINGS_MISSING_MESSAGE = "Project KPI Settings table is missing. Run migrations/20260707_project_kpi_settings.sql in Neon.";
-export const PROJECT_KPI_SETTINGS_INCOMPLETE_MESSAGE = "Project KPI Settings table exists but migration is incomplete.";
+export const PROJECT_KPI_SETTINGS_MISSING_MESSAGE = "Thiếu bảng cài đặt KPI dự án. Hãy chạy migrations/20260707_project_kpi_settings.sql trong Neon.";
+export const PROJECT_KPI_SETTINGS_INCOMPLETE_MESSAGE = "Bảng cài đặt KPI dự án đã tồn tại nhưng migration chưa hoàn chỉnh.";
 
 export function isProjectKpiSettingsMissingError(error: unknown) {
   return getDbErrorCode(error) === "42P01";
@@ -116,11 +116,11 @@ export function isProjectKpiSettingsColumnMissingError(error: unknown) {
 export function projectKpiDiagnosticMessage(diagnostic: ProjectKpiSettingsDiagnostic) {
   if (diagnostic.raw_error_code === "42P01" || (!diagnostic.raw_error_code && !diagnostic.raw_error_message && !diagnostic.project_kpi_settings_exists)) return PROJECT_KPI_SETTINGS_MISSING_MESSAGE;
   if (diagnostic.missing_project_kpi_columns.length > 0 || diagnostic.raw_error_code === "42703") {
-    const missing = diagnostic.missing_project_kpi_columns.length ? diagnostic.missing_project_kpi_columns.join(", ") : "unknown column from query error";
-    return `${PROJECT_KPI_SETTINGS_INCOMPLETE_MESSAGE} Missing columns: ${missing}.`;
+    const missing = diagnostic.missing_project_kpi_columns.length ? diagnostic.missing_project_kpi_columns.join(", ") : "cột chưa xác định từ lỗi truy vấn";
+    return `${PROJECT_KPI_SETTINGS_INCOMPLETE_MESSAGE} Cột bị thiếu: ${missing}.`;
   }
-  if (diagnostic.raw_error_code || diagnostic.raw_error_message) return `Project KPI Settings query failed (code: ${diagnostic.raw_error_code || "unknown"}): ${diagnostic.raw_error_message || "No error message returned."}`;
-  return "Project KPI Settings diagnostics did not find a schema issue. Confirm the app is connected to the expected Neon database/branch.";
+  if (diagnostic.raw_error_code || diagnostic.raw_error_message) return `Truy vấn cài đặt KPI dự án thất bại (mã: ${diagnostic.raw_error_code || "không xác định"}): ${diagnostic.raw_error_message || "Không có thông báo lỗi trả về."}`;
+  return "Chẩn đoán cài đặt KPI dự án không tìm thấy lỗi schema. Hãy xác nhận ứng dụng đang kết nối đúng cơ sở dữ liệu/nhánh Neon dự kiến.";
 }
 
 export async function getProjectKpiSettingsDiagnosticMessage(error?: unknown) {

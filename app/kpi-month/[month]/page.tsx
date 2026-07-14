@@ -24,7 +24,7 @@ export default async function MemberKpiMonthPage({ params }: { params: { month: 
   const email = session.user.email.toLowerCase();
   const memberName = Object.entries(getMemberEmailMap()).find(([, configured]) => configured.toLowerCase() === email)?.[0];
   if (!memberName && session.user.isAdmin) redirect(`/admin/kpi-month/${month}`);
-  if (!memberName) return <Shell email={session.user.email}><PageContainer className="px-0"><section role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 p-6"><h2 className="text-xl font-bold">Member identity is not configured</h2><p className="mt-2 text-sm">Ask an administrator to map your email in <code>MEMBER_EMAIL_MAP</code>. No other member&apos;s KPI has been exposed.</p></section></PageContainer></Shell>;
+  if (!memberName) return <Shell email={session.user.email}><PageContainer className="px-0"><section role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 p-6"><h2 className="text-xl font-bold">Chưa cấu hình danh tính thành viên</h2><p className="mt-2 text-sm">Hãy đề nghị quản trị viên ánh xạ email của bạn trong <code>MEMBER_EMAIL_MAP</code>. KPI của thành viên khác không bị hiển thị.</p></section></PageContainer></Shell>;
   try {
     const audit = await listMonthlyKpiAudit(month, memberName);
     return <Shell email={session.user.email}><PageContainer className="px-0"><MemberKpiView month={month} memberName={memberName} audit={audit} /></PageContainer></Shell>;

@@ -16,19 +16,19 @@ export default async function KpiMonthIndex() {
     <PageContainer className="px-0">
       <div className="space-y-6">
         <section className="rounded-2xl border bg-white p-6 shadow-sm">
-          <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">Monthly KPI Engine v2</p>
-          <h2 className="mt-2 text-3xl font-bold">Auditable shadow payroll workspace</h2>
-          <p className="mt-3 max-w-3xl text-slate-600">Work is reconciled by source item, calculated once at Member × Month across every project, and retained with URL, rule, review, measurement-window and approval evidence. Missing evidence remains N/A.</p>
+          <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">Bộ máy KPI tháng v2</p>
+          <h2 className="mt-2 text-3xl font-bold">Không gian shadow payroll có thể kiểm toán</h2>
+          <p className="mt-3 max-w-3xl text-slate-600">Công việc được đối soát theo từng mục nguồn, tính một lần theo Thành viên × Tháng trên mọi dự án, đồng thời lưu bằng chứng URL, quy tắc, đánh giá, khoảng đo lường và phê duyệt. Bằng chứng bị thiếu luôn giữ là N/A.</p>
           <div className={`mt-4 inline-flex rounded-full px-3 py-1 text-sm font-semibold ${appConfig.kpiEngineV2Enabled ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
-            {appConfig.kpiEngineV2Enabled ? "Staging shadow writes enabled" : "Read-only: feature flag off"}
+            {appConfig.kpiEngineV2Enabled ? "Đã bật ghi shadow trên staging" : "Chỉ đọc: feature flag đang tắt"}
           </div>
         </section>
         <section className="rounded-2xl border bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-semibold">Open a payroll month</h3>
+          <h3 className="text-lg font-semibold">Mở một tháng payroll</h3>
           <MonthPicker defaultMonth={month} />
           <div className="mt-4 flex flex-wrap gap-3 text-sm">
-            <Link className="font-semibold text-blue-700" href={`/admin/kpi-month/${month}`}>Open current month</Link>
-            <Link className="font-semibold text-blue-700" href="/admin/monthly-kpi-settings">Configure project lifecycle and Performance</Link>
+            <Link className="font-semibold text-blue-700" href={`/admin/kpi-month/${month}`}>Mở tháng hiện tại</Link>
+            <Link className="font-semibold text-blue-700" href="/admin/monthly-kpi-settings">Cấu hình vòng đời dự án và Performance</Link>
           </div>
         </section>
       </div>

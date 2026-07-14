@@ -10,11 +10,11 @@ import { fmtGrowth, fmtNum, fmtPct, fmtPos, DataTableContainer, MetricSection, P
 import { getGrowthClassName } from "../../lib/format";
 
 const insightRanges = [
-  ["current_month", "Current month"],
-  ["previous_month", "Previous month"],
-  ["last_3_months", "Last 3 months"],
-  ["last_6_months", "Last 6 months"],
-  ["all_time", "All time"],
+  ["current_month", "Tháng hiện tại"],
+  ["previous_month", "Tháng trước"],
+  ["last_3_months", "3 tháng gần nhất"],
+  ["last_6_months", "6 tháng gần nhất"],
+  ["all_time", "Toàn thời gian"],
 ] as const;
 
 type InsightRangeKey = typeof insightRanges[number][0];
@@ -45,8 +45,8 @@ function Section({ title, description, rows }: { title: string; description?: st
     <div className="mb-3"><h3 className="text-xl font-semibold">{title}</h3>{description && <p className="text-sm text-slate-500">{description}</p>}</div>
     <DataTableContainer>
       <table className="w-full min-w-[1080px] text-[13px] sm:text-sm">
-        <thead className="bg-slate-100 text-left"><tr><th className="p-3">URL</th><th>Project</th><th>Type</th><th>Clicks</th><th>Impr.</th><th>CTR</th><th>Pos.</th><th>Click growth</th><th>Impr. growth</th><th>Status</th></tr></thead>
-        <tbody>{rows.map((row) => <tr className="border-t" key={row.id}><td className="w-[34rem] max-w-[34rem] p-3"><Link className="block truncate text-blue-700" title={row.url} href={`/url/${row.id}`}>{row.url}</Link></td><td>{row.project}</td><td>{contentTypeLabel(row.content_type)}</td><td>{fmtNum(row.clicks)}</td><td>{fmtNum(row.impressions)}</td><td>{fmtPct(row.ctr)}</td><td>{fmtPos(row.position)}</td><td><span className={getGrowthClassName(row.click_growth_pct)}>{fmtGrowth(row.click_growth_pct)}</span></td><td><span className={getGrowthClassName(row.impression_growth_pct)}>{fmtGrowth(row.impression_growth_pct)}</span></td><td><StatusBadge status={row.status} /></td></tr>)}{rows.length === 0 && <tr><td className="p-3 text-slate-500" colSpan={10}>No URLs match this section.</td></tr>}</tbody>
+        <thead className="bg-slate-100 text-left"><tr><th className="p-3">URL</th><th>Dự án</th><th>Loại</th><th>Lượt nhấp</th><th>Hiển thị</th><th>CTR</th><th>Vị trí</th><th>Tăng trưởng lượt nhấp</th><th>Tăng trưởng hiển thị</th><th>Trạng thái</th></tr></thead>
+        <tbody>{rows.map((row) => <tr className="border-t" key={row.id}><td className="w-[34rem] max-w-[34rem] p-3"><Link className="block truncate text-blue-700" title={row.url} href={`/url/${row.id}`}>{row.url}</Link></td><td>{row.project}</td><td>{contentTypeLabel(row.content_type)}</td><td>{fmtNum(row.clicks)}</td><td>{fmtNum(row.impressions)}</td><td>{fmtPct(row.ctr)}</td><td>{fmtPos(row.position)}</td><td><span className={getGrowthClassName(row.click_growth_pct)}>{fmtGrowth(row.click_growth_pct)}</span></td><td><span className={getGrowthClassName(row.impression_growth_pct)}>{fmtGrowth(row.impression_growth_pct)}</span></td><td><StatusBadge status={row.status} /></td></tr>)}{rows.length === 0 && <tr><td className="p-3 text-slate-500" colSpan={10}>Không có URL nào khớp phần này.</td></tr>}</tbody>
       </table>
     </DataTableContainer>
   </section>;
@@ -78,30 +78,30 @@ export default async function MemberInsights({ searchParams }: { searchParams?: 
   const typeBreakdown = ["new_content", "audit", "update", "portfolio", ...Array.from(new Set(memberRows.map((row) => row.content_type).filter((value): value is string => Boolean(value)))).filter((type) => !["new_content", "audit", "update", "portfolio"].includes(type))].map((type) => ({ type, rows: memberRows.filter((row) => row.content_type === type) })).filter((entry) => entry.rows.length > 0);
 
   return <Shell email={session.user.email} isAdmin={session.user.isAdmin}>
-    <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><h2 className="text-2xl font-semibold">Member Insights</h2><p className="text-sm text-slate-500">Select one member and one range to review portfolio performance. {range.label}: {range.startDate} to {range.endDate}</p></div>{session.user.isAdmin && <RefreshDataButton range={rangeKey} returnTo="/member-insights" preserve={{ member: selectedMember }} />}</div>
+    <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><h2 className="text-2xl font-semibold">Phân tích thành viên</h2><p className="text-sm text-slate-500">Chọn một thành viên và một khoảng thời gian để xem hiệu suất danh mục. {range.label}: {range.startDate} đến {range.endDate}</p></div>{session.user.isAdmin && <RefreshDataButton range={rangeKey} returnTo="/member-insights" preserve={{ member: selectedMember }} />}</div>
     <WarningList warnings={[params.refreshError, ...memberRows.map((row) => row.warning)]} />
 
     <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
       <form className="flex flex-col gap-3 lg:flex-row lg:items-end">
-        <label className="w-full min-w-64 text-sm text-slate-600 lg:max-w-md">Member<select className="mt-1 w-full rounded-lg border px-3 py-2.5" name="member" defaultValue={selectedMember} disabled={!session.user.isAdmin}><option value="">Select a member</option>{memberOptions.map((member) => <option key={member} value={member}>{member}</option>)}</select></label>
+        <label className="w-full min-w-64 text-sm text-slate-600 lg:max-w-md">Thành viên<select className="mt-1 w-full rounded-lg border px-3 py-2.5" name="member" defaultValue={selectedMember} disabled={!session.user.isAdmin}><option value="">Chọn thành viên</option>{memberOptions.map((member) => <option key={member} value={member}>{member}</option>)}</select></label>
         <input type="hidden" name="range" value={rangeKey} />
         {session.user.isAdmin && <button className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white" type="submit">View member</button>}
       </form>
       <div className="mt-4 flex flex-wrap gap-2">{insightRanges.map(([key, label]) => <Link className={`rounded-full border px-3 py-1 text-sm ${rangeKey === key ? "bg-blue-700 text-white" : "bg-white text-slate-700"}`} href={cleanParams({ member: selectedMember, range: rangeKey }, { range: key })} key={key}>{label}</Link>)}</div>
     </section>
 
-    {!selectedMember ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-950">Choose a member to load insights. All members are intentionally hidden until a member is selected.</div> : <>
+    {!selectedMember ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-950">Chọn một thành viên để tải phân tích. Danh sách chi tiết được chủ động ẩn cho đến khi chọn thành viên.</div> : <>
       <SectionGrid>
         <PerformanceKpiPanel finalPerformance={finalPerformance} memberName={selectedMember} />
-        <MetricSection title="KPI overview" description={`Portfolio metrics for ${selectedMember}.`} metrics={[{ label: "Active URLs", value: memberRows.length }, { label: "URLs With Data", value: memberRows.length - summary.noData }, { label: "Current Clicks", value: fmtNum(summary.clicks) }, { label: "Previous Clicks", value: fmtNum(summary.previous_clicks) }, { label: "Current Impressions", value: fmtNum(summary.impressions) }, { label: "Previous Impressions", value: fmtNum(summary.previous_impressions) }, { label: "CTR", value: fmtPct(summary.ctr) }, { label: "Avg Position", value: fmtPos(summary.position) }]} />
-        <MetricSection title="URL type breakdown" description="Performance by tracked URL type." tone="quality" metrics={typeBreakdown.length ? typeBreakdown.flatMap(({ type, rows }) => { const metrics = aggregateCompared(rows); return [{ label: `${contentTypeLabel(type)} URLs`, value: rows.length }, { label: `${contentTypeLabel(type)} URLs with data`, value: rows.length - metrics.noData }, { label: `${contentTypeLabel(type)} clicks`, value: fmtNum(metrics.clicks) }, { label: `${contentTypeLabel(type)} impressions`, value: fmtNum(metrics.impressions) }, { label: `${contentTypeLabel(type)} growing URLs`, value: metrics.growing }, { label: `${contentTypeLabel(type)} declining URLs`, value: metrics.declining }, { label: `${contentTypeLabel(type)} no-data URLs`, value: metrics.noData }]; }) : [{ label: "Typed URLs", value: "No typed URLs" }]} />
-        <MetricSection title="Trend summary" description="Growth and health signals for the selected range." tone="quality" metrics={[{ label: "Click Growth %", value: <span className={getGrowthClassName(summary.click_growth_pct)}>{fmtGrowth(summary.click_growth_pct)}</span> }, { label: "Impression Growth %", value: <span className={getGrowthClassName(summary.impression_growth_pct)}>{fmtGrowth(summary.impression_growth_pct)}</span> }, { label: "Growing URLs", value: summary.growing }, { label: "Declining URLs", value: summary.declining }, { label: "No Data URLs", value: summary.noData }]} />
+        <MetricSection title="Tổng quan KPI" description={`Chỉ số danh mục của ${selectedMember}.`} metrics={[{ label: "URL đang hoạt động", value: memberRows.length }, { label: "URL có dữ liệu", value: memberRows.length - summary.noData }, { label: "Lượt nhấp hiện tại", value: fmtNum(summary.clicks) }, { label: "Lượt nhấp kỳ trước", value: fmtNum(summary.previous_clicks) }, { label: "Hiển thị hiện tại", value: fmtNum(summary.impressions) }, { label: "Hiển thị kỳ trước", value: fmtNum(summary.previous_impressions) }, { label: "CTR", value: fmtPct(summary.ctr) }, { label: "Vị trí trung bình", value: fmtPos(summary.position) }]} />
+        <MetricSection title="Phân bổ theo loại URL" description="Performance theo loại URL được theo dõi." tone="quality" metrics={typeBreakdown.length ? typeBreakdown.flatMap(({ type, rows }) => { const metrics = aggregateCompared(rows); return [{ label: `URL ${contentTypeLabel(type)}`, value: rows.length }, { label: `URL ${contentTypeLabel(type)} có dữ liệu`, value: rows.length - metrics.noData }, { label: `Lượt nhấp ${contentTypeLabel(type)}`, value: fmtNum(metrics.clicks) }, { label: `Hiển thị ${contentTypeLabel(type)}`, value: fmtNum(metrics.impressions) }, { label: `URL ${contentTypeLabel(type)} tăng trưởng`, value: metrics.growing }, { label: `URL ${contentTypeLabel(type)} suy giảm`, value: metrics.declining }, { label: `URL ${contentTypeLabel(type)} chưa có dữ liệu`, value: metrics.noData }]; }) : [{ label: "URL đã phân loại", value: "Chưa có URL được phân loại" }]} />
+        <MetricSection title="Tổng hợp xu hướng" description="Tín hiệu tăng trưởng và sức khỏe trong khoảng đã chọn." tone="quality" metrics={[{ label: "Tăng trưởng lượt nhấp %", value: <span className={getGrowthClassName(summary.click_growth_pct)}>{fmtGrowth(summary.click_growth_pct)}</span> }, { label: "Tăng trưởng hiển thị %", value: <span className={getGrowthClassName(summary.impression_growth_pct)}>{fmtGrowth(summary.impression_growth_pct)}</span> }, { label: "URL tăng trưởng", value: summary.growing }, { label: "URL suy giảm", value: summary.declining }, { label: "URL chưa có dữ liệu", value: summary.noData }]} />
       </SectionGrid>
       <Section title="URL portfolio table" rows={memberRows} />
       <Section title="Top growing URLs" rows={topGrowing} />
       <Section title="Top declining URLs" rows={topDeclining} />
       <Section title="High impressions but low CTR URLs" description="URLs with at least 100 impressions and CTR below 1%." rows={highImpressionLowCtr} />
-      <Section title="Not enough data to evaluate URLs" rows={noData} />
+      <Section title="URL chưa đủ dữ liệu để đánh giá" rows={noData} />
     </>}
   </Shell>;
 }

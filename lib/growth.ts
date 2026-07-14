@@ -21,7 +21,7 @@ export function getPreviousRange(range: DateRange): DateRange {
   const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / DAY) + 1);
   const previousEnd = new Date(start.getTime() - DAY);
   const previousStart = new Date(previousEnd.getTime() - (days - 1) * DAY);
-  return { startDate: iso(previousStart), endDate: iso(previousEnd), label: `Previous ${days} days` };
+  return { startDate: iso(previousStart), endDate: iso(previousEnd), label: `${days} ngày trước đó` };
 }
 
 export function growthPct(current: number, previous: number) {

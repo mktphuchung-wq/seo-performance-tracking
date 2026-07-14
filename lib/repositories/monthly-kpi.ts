@@ -141,10 +141,13 @@ async function persistProjectDiagnostics(client: Queryable, month: string, membe
     const resolved = projectEvents.filter((event) => event.review_status === "approved" || (event.review_status === "excluded" && Boolean((event.exclusion_reason ?? event.admin_note)?.trim())));
     const reviewedUnits = reviewed.reduce((sum, event) => sum + requiredNumber(event.unit_value, "event unit value"), 0);
     const resolvedUnits = resolved.reduce((sum, event) => sum + requiredNumber(event.unit_value, "event unit value"), 0);
-    const qualityPct = reviewedUnits > 0
+    const qualityPct = reviewed.length > 0
+      ? reviewed.reduce((sum, event) => sum + nullableNumber(event.quality_pct)!, 0) / reviewed.length
+      : null;
+    const unitWeightedQualityDiagnosticPct = reviewedUnits > 0
       ? reviewed.reduce((sum, event) => sum + nullableNumber(event.quality_pct)! * requiredNumber(event.unit_value, "event unit value"), 0) / reviewedUnits
       : null;
-    const qualityCoveragePct = actualUnits > 0 ? resolvedUnits / actualUnits * 100 : null;
+    const qualityCoveragePct = projectEvents.length > 0 ? resolved.length / projectEvents.length * 100 : null;
     const performanceRow = performanceRows.find((row) => row.project === project);
     const performance = mapScoreRow(performanceRow, { ruleVersion: "performance_v2", state: "insufficient_data", reason: "performance_not_refreshed" });
     const contributionPct = memberTargetUnits && memberTargetUnits > 0 ? actualUnits / memberTargetUnits * 100 : null;
@@ -162,7 +165,7 @@ async function persistProjectDiagnostics(client: Queryable, month: string, membe
       month, project, memberName, contributionPct, qualityPct, qualityCoveragePct,
       performance.rawPct, performance.payablePct, performance.coveragePct, performance.confidence, performance.sourceCohort,
       performance.overrideReason, qualityCoveragePct === 100 && qualityPct !== null ? "scored" : "incomplete",
-      JSON.stringify(projectEvents.map((event) => event.id)), JSON.stringify({ actualUnits, memberTargetUnits, quantityMeaning: "project_contribution_to_member_target_not_payroll_cap", qualityAggregation: "event_unit_weighted_average", reviewedUnits, resolvedUnits, eligibleUnits: actualUnits, reviewedEvents: reviewed.length, eligibleEvents: projectEvents.length }),
+      JSON.stringify(projectEvents.map((event) => event.id)), JSON.stringify({ actualUnits, memberTargetUnits, quantityMeaning: "project_contribution_to_member_target_not_payroll_cap", qualityAggregation: "equal_event_average", unitWeightedQualityDiagnosticPct, reviewedUnits, resolvedUnits, eligibleUnits: actualUnits, reviewedEvents: reviewed.length, eligibleEvents: projectEvents.length }),
     ]);
   }
 }
@@ -202,8 +205,8 @@ async function calculateMemberMonth(client: Queryable, month: string, memberName
       quantityPct: quantity.payablePct,
       qualityPct: quality.payablePct,
       qualityCoveragePct: quality.coveragePct,
-      qualityAggregation: "event_unit_weighted_average",
-      equalEventQualityDiagnosticPct: quality.diagnostics.equalEventDiagnosticPct ?? null,
+      qualityAggregation: "equal_event_average",
+      unitWeightedQualityDiagnosticPct: quality.diagnostics.unitWeightedDiagnosticPct ?? null,
     },
   });
   const performanceResult = await client.query(`select * from public.performance_project_member_month_results

@@ -24,6 +24,33 @@ export class KpiApiError extends Error {
 
 export const createRequestId = () => randomUUID();
 
+function localizeMessage(message: string) {
+  const exact: Record<string, string> = {
+    "Admin access is required.": "Cần quyền quản trị viên.",
+    "Google access token is missing. Sign out and sign in with consent again.": "Thiếu access token Google. Hãy đăng xuất rồi đăng nhập lại và cấp quyền.",
+    "Month must use YYYY-MM format.": "Tháng phải có định dạng YYYY-MM.",
+    "Request body must be valid JSON.": "Nội dung yêu cầu phải là JSON hợp lệ.",
+    "Request body must be a JSON object.": "Nội dung yêu cầu phải là một đối tượng JSON.",
+    "Idempotency-Key header is required for this workflow action.": "Thao tác quy trình này bắt buộc có header Idempotency-Key.",
+    "Idempotency-Key must be at most 200 characters.": "Idempotency-Key không được dài quá 200 ký tự.",
+    "This Idempotency-Key was already used with a different request.": "Idempotency-Key này đã được dùng cho một yêu cầu khác.",
+    "An identical workflow action is already running.": "Một thao tác quy trình giống hệt đang chạy.",
+    "The previous identical request failed. Use a new Idempotency-Key after correcting the cause.": "Yêu cầu giống hệt trước đó đã thất bại. Sau khi khắc phục nguyên nhân, hãy dùng Idempotency-Key mới.",
+    "Sign-in is required.": "Bạn cần đăng nhập.",
+    "Members can only view their own KPI.": "Thành viên chỉ có thể xem KPI của chính mình.",
+    "Member identity is not configured for this account.": "Tài khoản này chưa được cấu hình danh tính thành viên.",
+    "At least one review is required.": "Cần ít nhất một đánh giá.",
+    "Invalid approval status.": "Trạng thái phê duyệt không hợp lệ.",
+  };
+  if (exact[message]) return exact[message];
+  const required = message.match(/^(.+) is required\.$/);
+  if (required) return `Bắt buộc nhập ${required[1]}.`;
+  const finite = message.match(/^(.+) must be a finite number\.$/);
+  if (finite) return `${finite[1]} phải là một số hữu hạn.`;
+  if (/ must be an array\.$/.test(message)) return message.replace(" must be an array.", " phải là một mảng.");
+  return message;
+}
+
 export function parseMonth(value: string) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) throw new KpiApiError("INVALID_MONTH", "Month must use YYYY-MM format.", 400, "month");
   return value;
@@ -57,19 +84,19 @@ export function requireIdempotencyKey(request: Request) {
   return key;
 }
 
-export function apiErrorResponse(error: unknown, requestId: string, fallback = "Monthly KPI workflow failed") {
+export function apiErrorResponse(error: unknown, requestId: string, fallback = "Quy trình KPI tháng thất bại") {
   const known = error instanceof KpiApiError;
   const message = error instanceof Error ? error.message.replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[redacted database url]") : fallback;
   const schemaMissing = !known && (/relation .+ does not exist/i.test(message) || /column .+ does not exist/i.test(message));
-  const flagOff = !known && /KPI Engine v2 is disabled/i.test(message);
-  const productionGuard = !known && /production writes are locked/i.test(message);
+  const flagOff = !known && /KPI Engine v2 (?:is disabled|đang tắt)/i.test(message);
+  const productionGuard = !known && /(?:production writes are locked|trên production bị khóa)/i.test(message);
   const databaseMissing = !known && /DATABASE_URL is required/i.test(message);
   const status = known ? error.status : schemaMissing || databaseMissing ? 503 : flagOff || productionGuard ? 409 : 500;
   const code = known ? error.code : schemaMissing ? "KPI_SCHEMA_MISSING" : databaseMissing ? "DATABASE_NOT_CONFIGURED"
     : flagOff ? "KPI_ENGINE_DISABLED" : productionGuard ? "PRODUCTION_WRITE_LOCKED" : "KPI_WORKFLOW_ERROR";
   const actionableMessage = schemaMissing
-    ? "Monthly KPI v2 schema is missing or incomplete. Apply the documented migrations to the dedicated staging branch and retry."
-    : message;
+    ? "Schema KPI tháng v2 bị thiếu hoặc chưa hoàn chỉnh. Hãy áp dụng các migration đã hướng dẫn trên nhánh staging riêng rồi thử lại."
+    : localizeMessage(message);
   return NextResponse.json({
     error: {
       code,
