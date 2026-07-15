@@ -29,7 +29,14 @@ Read-only Google Sheets inspection found the exact five headers and 112 non-empt
 
 ## Verification status
 
-Update this section after the final commit and Preview deployment with exact command results, deployment URL/SHA, authenticated browser evidence, runtime Source/GSC/Performance evidence, and any remaining limitations.
+- Local quality gates passed on the remediation branch: `npm run typecheck`, `npm run lint`, `npm test` (50/50), `npm run build`, `npm run test:e2e` (3 passed, 2 Preview-credential tests skipped locally), and `git diff --check`.
+- Protected Vercel Preview: `https://seo-performance-tracking-ghz1sjbj5-hung-s-projects17xx.vercel.app`, deployed from commit `3d4a671` before the final test-harness-only commit.
+- The deployment is `READY`; `/api/health/db` and `/api/health/cache` both return `ok: true`. The schema check reports no missing tables, views, columns, or migration warnings.
+- Authenticated Playwright against the protected Preview passed 5/5 scenarios in 41.1 seconds using Vercel's automation bypass plus Preview-only test auth. Coverage includes public/anonymous behavior, legacy write locks, all six Admin pages, six canonical Admin GET APIs, all three Member pages, Member redirect behavior, and a Member `403` on an Admin API.
+- Vercel log queries for HTTP 500 and error-level events in the acceptance window returned no events.
+- Runtime cache evidence on the isolated Preview reports 139 Canonical URL rows, 107 Work events, a successful 109-row source sync snapshot, and successful current-month/previous-month/3M/all-time Performance refresh history. The explicit 6M `not_enough_data` state remains non-zero and is not coerced to a score.
+- Google Sheets was inspected read-only through the connected account and currently contains 112 non-empty rows with the exact five-header contract. The app-level Source Preview/Commit and a new GSC refresh were not triggered in this run because the isolated Preview does not have a real Google OAuth session/token. No source, target, KPI configuration, review, finalization, or reopen business write was manufactured to bypass that authorization boundary.
+- The last item is an operator-acceptance limitation rather than an implementation bypass: an authorized Admin must exercise the Google-dependent buttons in Preview before approving merge. Production writes remain disabled and the primary Neon branch remains untouched.
 
 ## Rollback
 

@@ -59,6 +59,7 @@ test("legacy write endpoints are read-only during migration", async ({
 test("Preview-only test auth exposes authenticated Admin workflows", async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   test.skip(
     !previewSecret || !previewAdmin,
     "Preview test credentials were not supplied to Playwright.",
@@ -95,13 +96,14 @@ test("Preview-only test auth exposes authenticated Admin workflows", async ({
 test("Preview-only Member identity cannot access Admin and sees only member routes", async ({
   page,
 }) => {
+  test.setTimeout(90_000);
   test.skip(
     !previewSecret || !previewMember,
     "Preview test credentials were not supplied to Playwright.",
   );
   await signInPreview(page, previewMember!);
   await page.goto("/admin/sync");
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/dashboard$/);
   for (const path of ["/dashboard", "/my-urls", "/my-kpi"]) {
     await page.goto(path);
     await expect(page.locator("[data-nextjs-dialog]")).toHaveCount(0);

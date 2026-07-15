@@ -1,6 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
 const remoteBaseUrl = process.env.PLAYWRIGHT_BASE_URL?.replace(/\/$/, "");
+const protectionBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -12,6 +13,12 @@ export default defineConfig({
     baseURL: remoteBaseUrl ?? "http://127.0.0.1:3100",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    extraHTTPHeaders: protectionBypass
+      ? {
+          "x-vercel-protection-bypass": protectionBypass,
+          "x-vercel-set-bypass-cookie": "true",
+        }
+      : undefined,
   },
   webServer: remoteBaseUrl
     ? undefined
