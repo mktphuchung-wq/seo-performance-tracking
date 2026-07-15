@@ -47,7 +47,7 @@ export function getAdminEmails(): string[] {
 export const appConfig = {
   sheetId: process.env.GOOGLE_SHEET_ID ?? "",
   contentTab: process.env.GOOGLE_SHEET_TAB || "content_urls",
-  slackListSheetId: process.env.GOOGLE_SLACK_LIST_SHEET_ID || process.env.GOOGLE_SHEET_ID || "",
+  slackListSheetId: process.env.GOOGLE_SLACK_LIST_SHEET_ID || "",
   slackListTab: process.env.GOOGLE_SLACK_LIST_TAB || "Data",
   allTimeStartDate: process.env.ALL_TIME_START_DATE || "2024-01-01",
   cacheTtlDays: Number(process.env.CACHE_TTL_DAYS || 7),
