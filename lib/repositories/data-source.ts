@@ -8,7 +8,7 @@ export async function listCanonicalDataSource(input:{month?:string;memberName?:s
   const rows=await query<any>(`select c.id::text,c.url,c.normalized_domain,c.project,c.member_name,c.content_type,c.content_worked_at::text,
     c.classification_status,c.classification_issues,c.classification_version,c.gsc_ready,
     e.id::text as work_event_id,e.work_type,e.work_date::text,e.status as work_status,e.is_countable,e.kpi_ready,e.readiness_issues,
-    e.source,e.source_item_id,r.review_status,r.quality_pct,r.notes as review_notes
+    e.source,e.source_item_id,r.review_status,r.quality_pct,r.admin_note as review_notes
     from public.content_urls c left join lateral(select * from public.url_work_events w where w.content_url_id=c.id order by w.work_date desc,w.id desc limit 1)e on true
     left join lateral(select * from public.url_work_quality_reviews q where q.work_event_id=e.id order by q.updated_at desc,q.id desc limit 1)r on true
     where ${filters.join(" and ")} order by c.project,c.member_name,c.url limit $${params.length}`,params);
