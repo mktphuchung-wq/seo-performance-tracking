@@ -67,7 +67,16 @@ For an existing database already at KPI v2:
 psql "$STAGING_DATABASE_URL" -f migrations/20260715_unified_application.sql
 ```
 
-For a fresh staging database, apply the existing baseline/additive migrations in filename order through `20260714_monthly_kpi_engine_v2.sql`, then apply `20260715_unified_application.sql`.
+For an isolated Preview/staging branch, use the guarded runner with that branch's
+connection string supplied by the operator or secret manager:
+
+```bash
+VERCEL_ENV=preview DATABASE_URL="$STAGING_DATABASE_URL" npm run db:migrate:unified -- --apply --verify-idempotent --acknowledge-staging
+```
+
+Neon connection strings should use `sslmode=verify-full`; the runtime normalizes older Neon `require` URLs while preserving channel binding.
+
+The guarded runner applies `20260710_monthly_kpi.sql`, `20260714_monthly_kpi_engine_v2.sql`, and `20260715_unified_application.sql` in order. It verifies the unified schema and preserves the pre-migration URL/work-event row counts.
 
 Never apply `migrations/001_simple_cache_schema.sql` to a populated database: it is a destructive baseline intended only for a new/reset environment. No migration or backfill is executed automatically by the app.
 

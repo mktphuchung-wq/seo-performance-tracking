@@ -10,11 +10,10 @@
 ## 2. Apply migration
 
 ```bash
-psql "$STAGING_DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/20260715_unified_application.sql
-psql "$STAGING_DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/20260715_unified_application.sql
+VERCEL_ENV=preview DATABASE_URL="$STAGING_DATABASE_URL" npm run db:migrate:unified -- --apply --verify-idempotent --acknowledge-staging
 ```
 
-The second application proves idempotency. Verify `/api/health/db` and `/api/health/cache` before continuing.
+The runner applies the Phase 3, KPI v2, and unified migrations in order. The second application proves full-chain idempotency, verifies required tables/columns, and rejects changes to URL/work-event row counts. Verify `/api/health/db` and `/api/health/cache` before continuing.
 
 ## 3. Configure before scoring
 

@@ -67,13 +67,27 @@ create table if not exists public.kpi_work_unit_rules (
     check (unit_value >= 0)
 );
 
-create unique index if not exists kpi_work_unit_rules_scope_key
-  on public.kpi_work_unit_rules (
-    coalesce(project, ''),
-    coalesce(member_name, ''),
-    work_type,
-    difficulty
-  );
+-- KPI v2 replaces this legacy scope index with a version-aware index. Guard the
+-- legacy index so rerunning the full migration chain does not try to recreate it
+-- over rows from multiple rule versions.
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'kpi_work_unit_rules'
+      and column_name = 'rule_version'
+  ) then
+    create unique index if not exists kpi_work_unit_rules_scope_key
+      on public.kpi_work_unit_rules (
+        coalesce(project, ''),
+        coalesce(member_name, ''),
+        work_type,
+        difficulty
+      );
+  end if;
+end
+$$;
 create index if not exists kpi_work_unit_rules_resolution_idx
   on public.kpi_work_unit_rules (member_name, project, work_type, difficulty)
   where is_active = true;
@@ -102,12 +116,24 @@ create table if not exists public.kpi_quality_criteria (
     check (display_order >= 0)
 );
 
-create unique index if not exists kpi_quality_criteria_scope_key
-  on public.kpi_quality_criteria (
-    coalesce(project, ''),
-    review_level,
-    criterion_key
-  );
+-- KPI v2 replaces this with a rubric-version-aware index.
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'kpi_quality_criteria'
+      and column_name = 'rubric_version_id'
+  ) then
+    create unique index if not exists kpi_quality_criteria_scope_key
+      on public.kpi_quality_criteria (
+        coalesce(project, ''),
+        review_level,
+        criterion_key
+      );
+  end if;
+end
+$$;
 create index if not exists kpi_quality_criteria_active_level_idx
   on public.kpi_quality_criteria (review_level, project, display_order)
   where is_active = true;
