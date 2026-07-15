@@ -1,17 +1,23 @@
 import NextAuth, { type NextAuthOptions } from "next-auth";
+import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import { getAdminEmails } from "./env";
+import {
+  authorizePreviewTestIdentity,
+  previewTestAuthConfig,
+} from "./preview-test-auth";
 
 const googleScopes = [
   "openid",
   "email",
   "profile",
   "https://www.googleapis.com/auth/spreadsheets.readonly",
-  "https://www.googleapis.com/auth/webmasters.readonly"
+  "https://www.googleapis.com/auth/webmasters.readonly",
 ];
 
 async function refreshGoogleAccessToken(token: any) {
-  if (!token.refreshToken) return { ...token, error: "RefreshAccessTokenError" };
+  if (!token.refreshToken)
+    return { ...token, error: "RefreshAccessTokenError" };
 
   try {
     const response = await fetch("https://oauth2.googleapis.com/token", {
@@ -21,8 +27,8 @@ async function refreshGoogleAccessToken(token: any) {
         client_id: process.env.GOOGLE_CLIENT_ID ?? "",
         client_secret: process.env.GOOGLE_CLIENT_SECRET ?? "",
         grant_type: "refresh_token",
-        refresh_token: token.refreshToken
-      })
+        refresh_token: token.refreshToken,
+      }),
     });
     const refreshed = await response.json();
     if (!response.ok) throw refreshed;
@@ -30,9 +36,10 @@ async function refreshGoogleAccessToken(token: any) {
     return {
       ...token,
       accessToken: refreshed.access_token,
-      expiresAt: Math.floor(Date.now() / 1000) + Number(refreshed.expires_in ?? 0),
+      expiresAt:
+        Math.floor(Date.now() / 1000) + Number(refreshed.expires_in ?? 0),
       refreshToken: refreshed.refresh_token ?? token.refreshToken,
-      error: undefined
+      error: undefined,
     };
   } catch {
     return { ...token, error: "RefreshAccessTokenError" };
@@ -40,6 +47,30 @@ async function refreshGoogleAccessToken(token: any) {
 }
 
 export const requiredGoogleScopes = googleScopes;
+
+const previewProvider = previewTestAuthConfig()
+  ? CredentialsProvider({
+      id: "preview-test",
+      name: "Preview test identity",
+      credentials: {
+        email: { label: "Whitelisted test email", type: "email" },
+        secret: { label: "Preview test secret", type: "password" },
+      },
+      async authorize(credentials) {
+        const identity = authorizePreviewTestIdentity(
+          credentials?.email,
+          credentials?.secret,
+        );
+        return identity
+          ? {
+              id: `preview-${identity.role}`,
+              email: identity.email,
+              name: `Preview ${identity.role}`,
+            }
+          : null;
+      },
+    })
+  : null;
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -50,10 +81,11 @@ export const authOptions: NextAuthOptions = {
         params: {
           scope: googleScopes.join(" "),
           access_type: "offline",
-          prompt: "consent"
-        }
-      }
-    })
+          prompt: "consent",
+        },
+      },
+    }),
+    ...(previewProvider ? [previewProvider] : []),
   ],
   callbacks: {
     async jwt({ token, account }) {
@@ -61,7 +93,11 @@ export const authOptions: NextAuthOptions = {
       if (account?.refresh_token) token.refreshToken = account.refresh_token;
       if (account?.expires_at) token.expiresAt = account.expires_at;
 
-      if (token.expiresAt && Date.now() < Number(token.expiresAt) * 1000 - 60_000) return token;
+      if (
+        token.expiresAt &&
+        Date.now() < Number(token.expiresAt) * 1000 - 60_000
+      )
+        return token;
       if (token.refreshToken) return refreshGoogleAccessToken(token);
       return token;
     },
@@ -72,8 +108,8 @@ export const authOptions: NextAuthOptions = {
       const email = session.user?.email?.toLowerCase() ?? "";
       session.user.isAdmin = getAdminEmails().includes(email);
       return session;
-    }
-  }
+    },
+  },
 };
 
 export const handler = NextAuth(authOptions);
