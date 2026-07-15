@@ -30,7 +30,7 @@ export async function refreshMonthlyPerformanceV2(input:{month:string;accessToke
     const eventsResult=await query<any>(`select e.id::text,e.content_url_id::text,e.canonical_url_snapshot,e.project,e.member_name,e.work_type,
       e.work_date::text,e.unit_value,e.status,e.is_countable,c.gsc_property,
       (select min(later.work_date)::text from public.url_work_events later where later.content_url_id=e.content_url_id and later.work_date>e.work_date) as next_work_date
-      from public.url_work_events e join public.content_urls c on c.id=e.content_url_id where e.project=$1 and e.member_name=$2
+      from public.url_work_events e join public.content_urls c on c.id=e.content_url_id where e.project=$1 and e.member_name=$2 and e.kpi_ready=true and c.gsc_ready=true
       and e.work_date>=date_trunc('month',$3::date) and e.work_date<date_trunc('month',$3::date)+interval '1 month'`,[assignment.project,assignment.member_name,month]);
     const events:PerformanceWorkEvent[]=eventsResult.rows.map((row)=>({id:row.id,contentUrlId:row.content_url_id,canonicalUrl:row.canonical_url_snapshot,project:row.project,memberName:row.member_name,workType:row.work_type,workDate:row.work_date,unitValue:Number(row.unit_value),status:row.status,isCountable:Boolean(row.is_countable),nextWorkDate:row.next_work_date}));
     const selected=selectEventCohort({events,project:assignment.project,memberName:assignment.member_name,dataCutoff:cutoff,eligibleWorkTypes:strategy==="stable_audit"?["audit","update"]:["new_content","audit","update"],preWindowDays:Number(assignment.pre_window_days),postWindowDays:Number(assignment.post_window_days),seoLagDays:Number(assignment.seo_lag_days),seasonalityMode:assignment.seasonality_mode});

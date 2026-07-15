@@ -8,7 +8,11 @@ import { labelText } from "../../../lib/metrics";
 import { fmtNum, fmtPct, fmtPos, MetricGrid, Shell } from "../../../components/ui";
 import { TrendChart } from "../../../components/trend-chart";
 
-export default async function UrlDetail({ params, searchParams }: { params: { id: string }; searchParams?: { range?: string } }) {
+export default async function UrlDetail(
+  props: { params: Promise<{ id: string }>; searchParams?: Promise<{ range?: string }> }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) redirect("/");
   const rangeKey = normalizeDateRangeKey(searchParams?.range);

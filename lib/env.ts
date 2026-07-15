@@ -52,13 +52,17 @@ export const appConfig = {
   allTimeStartDate: process.env.ALL_TIME_START_DATE || "2024-01-01",
   cacheTtlDays: Number(process.env.CACHE_TTL_DAYS || 7),
   kpiEngineV2Enabled: process.env.KPI_ENGINE_V2_ENABLED === "true",
+  unifiedAppEnabled: process.env.UNIFIED_APP_ENABLED === "true" || process.env.KPI_ENGINE_V2_ENABLED === "true",
   kpiCalculationVersion: process.env.KPI_CALCULATION_VERSION || "kpi_v2",
   deploymentEnvironment: process.env.VERCEL_ENV || process.env.NODE_ENV || "development",
 };
 
-export function assertKpiV2WriteEnvironment() {
-  if (!appConfig.kpiEngineV2Enabled) throw new Error("KPI Engine v2 is disabled. Set KPI_ENGINE_V2_ENABLED=true on staging only.");
-  if (appConfig.deploymentEnvironment === "production" && process.env.KPI_V2_PRODUCTION_WRITE_ENABLED !== "true") {
-    throw new Error("KPI Engine v2 production writes are locked until staging reconciliation and explicit approval.");
+export function assertUnifiedWriteEnvironment() {
+  if (!appConfig.unifiedAppEnabled) throw new Error("Unified application writes are disabled. Set UNIFIED_APP_ENABLED=true on staging only.");
+  if (appConfig.deploymentEnvironment === "production" && process.env.UNIFIED_PRODUCTION_WRITE_ENABLED !== "true") {
+    throw new Error("Production writes are locked until staging reconciliation and explicit approval.");
   }
 }
+
+/** @deprecated Compatibility alias for old API routes during the redirect window. */
+export const assertKpiV2WriteEnvironment = assertUnifiedWriteEnvironment;

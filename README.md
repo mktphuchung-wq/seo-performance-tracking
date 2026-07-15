@@ -1,214 +1,99 @@
-# Performance SEO Project - SEO Team
+# SEO Performance Workspace
 
-A Vercel-ready Next.js App Router dashboard for SEO teams. The current architecture uses Google Sheets as the source of truth for URL ownership, Neon/Postgres as the cache and reporting database, Google OAuth for authorization, and the Google Search Console API for URL performance data.
+An auditable Next.js application for SEO source reconciliation, project configuration, lifecycle-aware GSC performance, monthly content review, and locked member KPI snapshots.
 
-## Monthly KPI Engine v2
-
-KPI v2 is a feature-gated, staging-first monthly payroll workflow. It reconciles the Slack List `Data` tab and legacy `content_urls` tab, keeps all raw variants, deduplicates by Slack Item ID, normalizes aliases/status/type/URL values, and quarantines unresolved work instead of guessing. Scores are calculated at `Member × Project × Month` before target-unit-weighted member rollup.
-
-Every component stores raw and payable values separately with coverage, confidence, cohort lineage, rule version, source IDs, override reason, and audit diagnostics. Unreliable or missing evidence remains `null/N/A`; true GSC zeroes are stored as `observed_zero`; API/mapping failures are `unknown`. KPI v2 never consumes legacy automatic project floors.
-
-The default monthly formula is Discipline 10%, SEO Content 50%, SEO Performance 20%, and Social/Video 20%. SEO Content is Quantity 20% plus fully reviewed Quality 80%. Default payout is capped at 100%, while raw overachievement remains visible. A locked result is immutable and reopen creates a new version.
-
-See [KPI v2 baseline](docs/KPI_V2_BASELINE.md) and [staging/rollout guide](docs/KPI_V2_ROLLOUT.md).
-
-### V2 migration order
-
-On a dedicated Neon staging branch only:
-
-```bash
-psql "$STAGING_DATABASE_URL" -f migrations/20260710_monthly_kpi.sql
-psql "$STAGING_DATABASE_URL" -f migrations/20260714_monthly_kpi_engine_v2.sql
-```
-
-Do not run `migrations/001_simple_cache_schema.sql` on an existing database. Keep `KPI_ENGINE_V2_ENABLED=false` in production until staging reconciliation and PM/finance sign-off.
-
-### V2 operator flow
-
-1. Configure aliases, targets, project lifecycle strategy, thresholds, and payroll enablement.
-2. Run `POST /api/admin/kpi-month/:month/sync?dryRun=true` and resolve quarantines.
-3. Run the write sync on staging, review every eligible event, and refresh event-attributed GSC performance.
-4. Calculate project/member components, enter Discipline and Social/Video, then inspect the audit export.
-5. Finalize only at full controllable-component coverage and at least 80% top-level coverage.
-6. Lock the approved snapshot. Reopen only with an authorized reason.
-
-Admin pages are `/admin/kpi-month`, `/admin/kpi-month/:month`, and `/admin/monthly-kpi-settings`. Members can access only their own result through `/api/kpi-month/:month`.
-
-## Phase 1-3 KPI architecture
-
-- `member_performance_cache` is keyed by `project + member_name + range_key`.
-- `member_project_performance_final_view` returns one raw multi-range row per project and member. The app loads that project's KPI settings, preserves raw/adjusted values, and only then creates a compatibility member rollup.
-- `url_work_events` is the primary work-history source. `content_urls.content_worked_at`, `content_urls.content_type`, and member fields remain latest-work convenience fields during rollout.
-- A Google Sheet sync upserts URL identity/current fields and independently inserts or updates a deterministic work event. The event key includes project, URL, member, work date, and work type, so later audit/update work never overwrites earlier history.
-- Phase 3 adds monthly member/project targets, scoped work-unit rules, configurable quality criteria, URL work quality reviews/scores, and member-project-month quality reviews. It does not yet add the KPI Month UI or calculate quantity, quality, or final KPI scores.
-
-The `content_urls` sheet columns must be:
+## Canonical architecture
 
 ```text
-A project | B url | C member_name | D date | E type
+Sheet raw rows
+→ Source Pipeline normalization
+→ versioned domain → project classification
+→ validation / quarantine
+→ canonical URL + immutable work events
+→ GSC daily snapshots
+→ Performance Service + Member Review
+→ versioned Final KPI snapshot
 ```
 
-Valid work types are `new_content`, `audit`, `update`, and `portfolio`. Rows missing a date or a valid work type remain in URL inventory and are reported in sync diagnostics, but do not create work events.
+Downstream pages and calculators read Postgres canonical records. They do not read Google Sheets directly and do not independently infer project identity.
 
-For a new database, run the baseline and then the additive migrations in this order:
+## Workspaces
 
-```bash
-psql "$DATABASE_URL" -f migrations/001_simple_cache_schema.sql
-psql "$DATABASE_URL" -f migrations/20260710_member_project_performance.sql
-psql "$DATABASE_URL" -f migrations/20260710_url_work_events.sql
-psql "$DATABASE_URL" -f migrations/20260710_monthly_kpi.sql
-```
+Admin navigation contains exactly:
 
-For an existing database with Phase 1/2 already installed, run only `migrations/20260710_monthly_kpi.sql`. Then check `/api/health/db`; missing or incomplete Phase 1-3 schema includes the exact migration filename in `migrationWarnings`.
+- `/admin/sync` — preview and commit the canonical source pipeline.
+- `/admin/projects` — one Project Settings UI for domain, lifecycle, GSC/KPI readiness, 3M/6M/All Time weights, and member-project contribution weights.
+- `/admin/data-source` — accepted URLs/work events, readiness, source lineage, and quarantine.
+- `/admin/member-performance` — one Performance Service across 3M, 6M, and All Time.
+- `/admin/member-review` — targets, URL rubric scoring, notes, Quantity, Quality, and SEO Content.
+- `/admin/kpi-close` — KPI Template, Social + Video/N/A, preview, lock, audit export, and versioned reopen.
 
-## Current data architecture
+Member navigation contains exactly:
 
-The active Neon/Postgres schema is documented in `migrations/001_simple_cache_schema.sql`. New environments should run that migration as the current schema baseline.
+- `/dashboard` — My Performance, defaulting to the current 3M context with 6M/All Time diagnostics.
+- `/my-urls` — current-month canonical work events and approved review feedback.
+- `/my-kpi` — component breakdown and Final KPI snapshot.
 
-Current tables and views:
+Old pages redirect to these routes. Legacy Sheet sync, legacy range refresh, and legacy Project KPI Settings write endpoints return `410 Gone`; their read models remain available only for shadow comparison during migration.
 
-- `content_urls` — canonical URL inventory synced from the Google Sheet, including project, URL, member ownership, member email, GSC property, active status, and source timestamps.
-- `seo_performance_cache` — URL-level GSC cache for each date range, including current/previous metrics, deltas, growth status, opportunity status, and recommendations.
-- `member_performance_cache` — member-level rollups derived from the URL cache, including URL counts, totals, growth distribution, and support signals.
-- `refresh_runs` — audit table for cache refresh attempts, totals, failures, date ranges, and status.
-- `sync_runs` — audit table for Google Sheet sync attempts, row counts, deactivations, failures, and status.
-- `dashboard_url_performance` — dashboard-facing view over `seo_performance_cache` for URL reporting.
-- `dashboard_member_performance` — dashboard-facing view over `member_performance_cache` for member reporting.
+## Data and scoring rules
 
-Older migrations, including `migrations/001_canonical_schema.sql` and `migrations/20260627_neon_content_url_id.sql`, remain in the repository only for legacy/backward-compatibility support of databases that were created before the simple cache architecture. They are not the canonical schema for new deployments.
-
-## Required Google Sheet format
-
-Use exactly one tab named `content_urls` with exactly these required columns:
-
-```text
-project | url | member_name
-```
-
-The app reads the sheet as the source URL/member inventory. Admin sync actions import those rows into the `content_urls` table and record the outcome in `sync_runs`.
+- Project identity comes from normalized domain and an effective-dated domain mapping. Sheet project labels are reconciliation evidence only.
+- Slack/source item ID is the primary logical work key. Draft/live variants do not count twice.
+- Unknown project/member/type/status/date/URL is quarantined, never guessed into payroll.
+- GSC runs only for `gsc_ready` canonical URLs; KPI runs only for `kpi_ready` countable events.
+- Missing/API error is not observed zero. N/A is not zero.
+- Performance uses Impression 40%, Click 20%, Growth Coverage 25%, and Portfolio Health 15% within the lifecycle strategy.
+- Project ranges use explicit 3M/6M/All Time weights. Member rollup uses explicit member-project contribution weights; equal weighting is not a fallback.
+- SEO Content uses Quantity and approved Quality. Raw overachievement remains visible; payable scores are capped at 100%.
+- Final KPI templates contain only SEO Content, SEO Performance, and optional Social + Video. No production weights are seeded by migration.
+- Locked results are immutable. Reopen preserves the old version and creates a new audited version.
 
 ## Local setup
 
 ```bash
-npm install
-cp .env.example .env.local
+npm ci
+copy .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000` and sign in with Google.
+Required integrations are Google OAuth/Sheets/Search Console and Postgres/Neon. Production writes stay disabled unless both the unified feature flag and the explicit production-write flag are enabled.
 
-## Environment variables
+## Migration order
 
-```text
-NEXTAUTH_URL=http://localhost:3000
-NEXTAUTH_SECRET=your-random-secret
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-GOOGLE_SHEET_ID=1NacfG23BnkKY0ZMktfhDxpZ7cnNGdQRf_UrwQ5kfOIQ
-GOOGLE_SHEET_TAB=content_urls
-GOOGLE_SLACK_LIST_SHEET_ID=your-slack-list-spreadsheet-id
-GOOGLE_SLACK_LIST_TAB=Data
-ADMIN_EMAILS=admin@company.com,leader@company.com
-MEMBER_EMAIL_MAP={"Hưng":"hung@company.com","Linh":"linh@company.com"}
-PROJECT_GSC_MAP={"Tartan Vibes Clothing":"sc-domain:tartanvibesclothing.com"}
-ALL_TIME_START_DATE=2024-01-01
-CACHE_TTL_SECONDS=21600
-DATABASE_URL=postgres://USER:PASSWORD@HOST/DB?sslmode=verify-full
-```
-
-Invalid JSON in `MEMBER_EMAIL_MAP` or `PROJECT_GSC_MAP` is surfaced as a clear setup warning instead of crashing the UI.
-
-## How member authorization works
-
-The logged-in Google email is matched against `MEMBER_EMAIL_MAP` values. The matching key is treated as the member's `member_name`, and normal members only see sheet/database rows with that same `member_name`. Admin emails in `ADMIN_EMAILS` can see every row.
-
-## How project-to-GSC mapping works
-
-Because the sheet only has `project`, `url`, and `member_name`, `PROJECT_GSC_MAP` maps each project to a Search Console property. During sync, mapped values are stored on `content_urls.gsc_property`. If a project is missing from the map, the row remains visible with a warning and GSC refreshes skip that URL.
-
-## Google Cloud setup
-
-1. Create or choose a Google Cloud project.
-2. Configure an OAuth consent screen.
-3. Create OAuth Client ID credentials for a web app.
-4. Enable these APIs:
-   - Google Sheets API
-   - Google Search Console API
-5. Add OAuth redirect URIs:
-   - Local: `http://localhost:3000/api/auth/callback/google`
-   - Production: `https://YOUR_DOMAIN/api/auth/callback/google`
-
-The OAuth scopes are `openid`, `email`, `profile`, `https://www.googleapis.com/auth/spreadsheets.readonly`, and `https://www.googleapis.com/auth/webmasters.readonly`.
-
-## Deploy the current database schema to Neon
-
-Use `migrations/001_simple_cache_schema.sql` as the current schema baseline for Neon/Postgres.
-
-> **Important:** This migration intentionally drops and recreates the current cache tables and dashboard views. Use it for new environments, reset workflows, or deployments where replacing cached SEO data is acceptable. Back up data first if you need to preserve an existing cache.
-
-### Neon SQL Editor
-
-1. Open the Neon Console and select the target branch/database.
-2. Open **SQL Editor**.
-3. Paste the complete contents of `migrations/001_simple_cache_schema.sql`.
-4. Run it once as a single script.
-5. Visit `/api/health/db` in the deployed app. It should return `ok: true` with empty `missingTables`, `missingViews`, and `missingColumns` arrays.
-6. Visit `/api/health/cache` to inspect cache row counts and recent `refresh_runs` / `sync_runs` records.
-
-### psql
+For an existing database already at KPI v2:
 
 ```bash
-psql "$DATABASE_URL" -f migrations/001_simple_cache_schema.sql
-curl -f https://YOUR_APP_HOST/api/health/db
-curl -f https://YOUR_APP_HOST/api/health/cache
+psql "$STAGING_DATABASE_URL" -f migrations/20260715_unified_application.sql
 ```
 
-## Refreshing cached GSC performance
+For a fresh staging database, apply the existing baseline/additive migrations in filename order through `20260714_monthly_kpi_engine_v2.sql`, then apply `20260715_unified_application.sql`.
 
-Admins should use the dashboard **Refresh GSC Performance** action, which posts to `POST /api/refresh/cache`. The refresh reads active rows from `content_urls`, queries Search Console for the selected date range and comparison period, replaces the relevant rows in `seo_performance_cache`, rebuilds `member_performance_cache`, and records the attempt in `refresh_runs`.
+Never apply `migrations/001_simple_cache_schema.sql` to a populated database: it is a destructive baseline intended only for a new/reset environment. No migration or backfill is executed automatically by the app.
 
-The old queued refresh endpoints are not part of the current architecture. `POST /api/refresh/start` and `POST /api/refresh/process` are retained only as removed-endpoint responses and should not be used by operators or integrations.
+After staging migration, verify `/api/health/db`; the unified tables/columns must not appear in `missingTables`, `missingColumns`, or `migrationWarnings`.
 
-## Vercel deployment
+## Feature flags
 
-1. Import the repository into Vercel.
-2. Add every variable from `.env.example` to the Vercel project settings, including `DATABASE_URL`.
-3. Set `NEXTAUTH_URL` to your production URL.
-4. Add the production OAuth redirect URI in Google Cloud.
-5. Deploy.
-6. Run `migrations/001_simple_cache_schema.sql` against the production Neon database if the current schema is not already installed.
-7. Confirm `/api/health/db` and `/api/health/cache` are healthy.
+```text
+UNIFIED_APP_ENABLED=false
+UNIFIED_PRODUCTION_WRITE_ENABLED=false
+```
 
-## GSC permission troubleshooting
+`KPI_ENGINE_V2_ENABLED` remains a temporary compatibility alias for staging deployments. New deployments should use `UNIFIED_APP_ENABLED`.
 
-- The signed-in Google account must have access to the Search Console property from `PROJECT_GSC_MAP`.
-- Use the exact property string, for example `sc-domain:example.com` or a URL-prefix property.
-- Missing permissions or unmapped projects are shown as warnings in the dashboard.
+## Quality gates
 
-## Vercel env troubleshooting
+```bash
+npm run typecheck
+npm test
+npm run build
+npm run test:e2e
+git diff --check
+```
 
-Required Vercel environment variables for Google OAuth, sheet sync, database cache, and authorization:
+Tests use fixtures/mocks and never production Sheet/GSC data. See [staging runbook](docs/UNIFIED_STAGING_RUNBOOK.md) and [implementation checkpoint](docs/UNIFIED_APPLICATION_CHECKPOINT.md).
 
-- `NEXTAUTH_URL`
-- `NEXTAUTH_SECRET`
-- `GOOGLE_CLIENT_ID`
-- `GOOGLE_CLIENT_SECRET`
-- `GOOGLE_SHEET_ID` (`1NacfG23BnkKY0ZMktfhDxpZ7cnNGdQRf_UrwQ5kfOIQ`)
-- `GOOGLE_SHEET_TAB` (`content_urls`)
-- `GOOGLE_SLACK_LIST_SHEET_ID` (the separate Slack List export spreadsheet)
-- `GOOGLE_SLACK_LIST_TAB` (`Data`)
-- `ADMIN_EMAILS`
-- `MEMBER_EMAIL_MAP`
-- `PROJECT_GSC_MAP`
-- `DATABASE_URL`
+## Rollback
 
-Redeploy after changing env vars. JSON env vars must be one-line valid JSON objects. `NEXTAUTH_SECRET` must be set in production.
-
-## Legacy migrations
-
-The repository keeps earlier Neon migrations for compatibility with older production databases:
-
-- `migrations/001_canonical_schema.sql` — legacy queued-refresh/snapshot schema that created `refresh_jobs`, `refresh_job_items`, URL/member snapshot tables, compatibility daily/query snapshot tables, and latest-performance views.
-- `migrations/20260627_neon_content_url_id.sql` — legacy alignment patch for older queued-refresh databases that needed `content_url_id` and refresh job/item compatibility columns.
-
-Do not use those files as the canonical schema for new deployments. Use `migrations/001_simple_cache_schema.sql` unless you are explicitly repairing an older database that still depends on the legacy queued-refresh/snapshot model.
+Before any unified business/audit rows exist, the guarded `migrations/20260715_unified_application_down.sql` can remove only the new objects. After data exists, rollback means disable unified writes and return to read-only shadow views; never delete locked snapshots or audit history.

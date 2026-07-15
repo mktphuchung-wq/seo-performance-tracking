@@ -1,4 +1,6 @@
-# KPI Engine v2 Staging and Rollout
+# KPI Engine v2 Staging and Rollout (Superseded)
+
+Use `UNIFIED_STAGING_RUNBOOK.md` for new staging work. This file remains read-only migration history.
 
 ## Feature gates
 

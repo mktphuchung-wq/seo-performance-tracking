@@ -34,6 +34,13 @@ export const REQUIRED_TABLES = [
   "monthly_member_kpi_component_scores",
   "monthly_member_kpi_results",
   "kpi_override_audit_log",
+  "project_domain_mappings",
+  "project_settings_versions",
+  "member_project_contribution_weights",
+  "performance_range_results",
+  "kpi_templates",
+  "kpi_template_components",
+  "application_audit_log",
 ];
 
 export const REQUIRED_VIEWS = ["dashboard_url_performance", "dashboard_member_performance", "member_project_performance_final_view", "member_performance_final_view", "member_performance_summary"];
@@ -49,24 +56,24 @@ export const PROJECT_KPI_SETTINGS_REQUIRED_COLUMNS = [
 ];
 
 export const REQUIRED_COLUMNS: Record<string, string[]> = {
-  content_urls: ["id", "url_hash", "project", "url", "member_name", "member_email", "gsc_property", "is_active", "source", "first_seen_at", "last_seen_at", "content_worked_at", "content_type", "created_at", "updated_at"],
+  content_urls: ["id", "url_hash", "project_id", "project", "url", "normalized_domain", "classification_status", "classification_issues", "classification_version", "gsc_ready", "member_name", "member_email", "gsc_property", "is_active", "source", "first_seen_at", "last_seen_at", "content_worked_at", "content_type", "created_at", "updated_at"],
   seo_performance_cache: ["id", "cache_key", "content_url_id", "url_hash", "project", "url", "member_name", "member_email", "gsc_property", "content_type", "range_key", "start_date", "end_date", "previous_start_date", "previous_end_date", "clicks", "impressions", "ctr", "position", "previous_clicks", "previous_impressions", "previous_ctr", "previous_position", "click_delta", "click_growth_pct", "impression_delta", "impression_growth_pct", "ctr_delta", "position_delta", "growth_status", "opportunity_status", "recommendation", "refreshed_at", "created_at", "updated_at"],
   member_performance_cache: ["id", "cache_key", "project", "member_name", "member_email", "range_key", "start_date", "end_date", "previous_start_date", "previous_end_date", "url_count", "urls_with_data", "growing_urls", "stable_urls", "declining_urls", "no_data_urls", "clicks", "impressions", "ctr", "position", "previous_clicks", "previous_impressions", "click_delta", "click_growth_pct", "impression_delta", "impression_growth_pct", "quantity_index", "quality_index", "performance_kpi_pct", "impression_performance_score", "click_performance_score", "growth_coverage_score", "portfolio_health_score", "eligible_url_count", "excluded_no_data_url_count", "positive_url_count", "new_growth_url_count", "declining_url_count", "performance_kpi_status", "performance_confidence", "support_signal", "main_strength", "main_risk", "suggested_support", "refreshed_at", "created_at", "updated_at"],
   refresh_runs: ["id", "status", "triggered_by", "range_key", "start_date", "end_date", "previous_start_date", "previous_end_date", "total_urls", "processed_urls", "urls_with_data", "no_data_urls", "failed_urls", "error_message", "started_at", "finished_at", "created_at", "updated_at"],
   sync_runs: ["id", "source", "status", "total_rows", "inserted_rows", "updated_rows", "deactivated_rows", "failed_rows", "triggered_by", "error_message", "started_at", "finished_at", "created_at", "updated_at"],
   project_kpi_settings: PROJECT_KPI_SETTINGS_REQUIRED_COLUMNS,
-  url_work_events: ["id", "content_url_id", "project_id", "member_id", "project", "member_name", "member_email", "work_type", "work_date", "difficulty", "unit_value", "source", "source_row_key", "source_item_id", "source_status", "source_url", "canonical_url_snapshot", "completed_at", "date_confidence", "difficulty_source", "unit_rule_id", "unit_rule_version", "is_countable", "exclusion_reason", "approved_by", "approved_at", "status", "note", "created_at", "updated_at"],
+  url_work_events: ["id", "content_url_id", "project_id", "member_id", "project", "member_name", "member_email", "work_type", "work_date", "difficulty", "unit_value", "source", "source_row_key", "source_item_id", "source_status", "source_url", "canonical_url_snapshot", "completed_at", "date_confidence", "difficulty_source", "unit_rule_id", "unit_rule_version", "is_countable", "kpi_ready", "readiness_issues", "exclusion_reason", "approved_by", "approved_at", "status", "note", "created_at", "updated_at"],
   monthly_member_kpi_targets: ["id", "month_key", "project", "member_name", "member_email", "target_units", "target_urls", "quantity_weight_pct", "quality_weight_pct", "performance_weight_pct", "target_version", "base_target_units", "active_workday_ratio", "target_adjustment_reason", "is_locked", "locked_at", "locked_by", "notes", "created_at", "updated_at"],
   kpi_work_unit_rules: ["id", "project", "member_name", "work_type", "difficulty", "unit_value", "is_active", "rule_version", "valid_from", "valid_to", "created_by", "notes", "created_at", "updated_at"],
   kpi_quality_criteria: ["id", "project", "criterion_key", "criterion_name", "review_level", "weight_pct", "display_order", "is_active", "rubric_version_id", "work_type", "difficulty", "allows_na", "score_anchor_json", "description", "created_at", "updated_at"],
   url_work_quality_reviews: ["id", "work_event_id", "review_status", "quality_pct", "rubric_version_id", "rubric_version_snapshot", "criteria_snapshot", "evidence", "override_reason", "admin_note", "reviewed_by", "reviewed_at", "created_at", "updated_at"],
   url_work_quality_scores: ["id", "review_id", "criterion_id", "score", "is_na", "na_reason", "evidence", "criterion_key_snapshot", "criterion_name_snapshot", "weight_pct_snapshot", "note", "created_at", "updated_at"],
   member_month_quality_reviews: ["id", "month_key", "project", "member_name", "member_email", "frequency_score", "collaboration_score", "review_status", "quality_pct", "admin_note", "reviewed_by", "reviewed_at", "created_at", "updated_at"],
-  projects: ["id", "canonical_name", "is_active", "created_at", "updated_at"],
+  projects: ["id", "canonical_name", "canonical_domain", "lifecycle", "gsc_property", "gsc_ready", "kpi_ready", "is_active", "created_at", "updated_at"],
   project_aliases: ["id", "project_id", "alias", "alias_key", "is_active", "created_by", "created_at", "updated_at"],
   members: ["id", "canonical_name", "email", "is_active", "created_at", "updated_at"],
   member_aliases: ["id", "member_id", "alias", "alias_key", "is_active", "created_by", "created_at", "updated_at"],
-  work_sync_runs: ["id", "source", "status", "raw_row_count", "logical_item_count", "canonical_event_count", "quarantined_count", "duplicate_variant_count", "diagnostics", "triggered_by", "error_message", "started_at", "finished_at", "created_at", "updated_at"],
+  work_sync_runs: ["id", "source", "status", "workflow_stage", "raw_row_count", "logical_item_count", "canonical_event_count", "accepted_row_count", "quarantined_count", "duplicate_variant_count", "diagnostics", "triggered_by", "reviewed_by", "reviewed_at", "approval_reason", "error_message", "started_at", "finished_at", "created_at", "updated_at"],
   work_source_rows: ["id", "sync_run_id", "source", "source_row_number", "source_item_id", "raw_payload", "normalized_payload", "logical_key", "is_canonical_variant", "is_quarantined", "quarantine_reasons", "ingested_at"],
   content_url_aliases: ["id", "content_url_id", "alias_url", "alias_type", "is_active", "created_by", "created_at", "updated_at"],
   kpi_quality_rubrics: ["id", "rubric_key", "name", "project", "work_type", "is_active", "created_at", "updated_at"],
@@ -79,9 +86,16 @@ export const REQUIRED_COLUMNS: Record<string, string[]> = {
   performance_project_member_month_results: ["id", "month_key", "project", "member_name", "cohort_id", "strategy", "raw_pct", "payable_pct", "coverage_pct", "comparison_coverage_pct", "confidence", "source_cohort", "rule_version", "override_reason", "status", "data_as_of", "sub_scores", "diagnostics", "calculated_at", "created_at", "updated_at"],
   monthly_member_project_kpi_results: ["id", "month_key", "project", "member_name", "quantity_raw_pct", "quantity_payable_pct", "quantity_coverage_pct", "quality_raw_pct", "quality_payable_pct", "quality_coverage_pct", "seo_content_raw_pct", "seo_content_payable_pct", "performance_raw_pct", "performance_payable_pct", "performance_coverage_pct", "confidence", "source_cohort", "rule_version", "override_reason", "status", "source_ids", "diagnostics", "calculated_at", "created_at", "updated_at"],
   monthly_kpi_component_definitions: ["id", "component_key", "version", "name", "default_weight_pct", "is_controllable", "is_required", "is_active", "created_at", "updated_at"],
-  monthly_member_kpi_component_scores: ["id", "month_key", "member_name", "component_key", "raw_pct", "payable_pct", "coverage_pct", "confidence", "source_cohort", "rule_version", "override_reason", "status", "reason", "source_ids", "audit_trail", "diagnostics", "data_as_of", "calculated_at", "approved_by", "approved_at", "created_at", "updated_at"],
+  monthly_member_kpi_component_scores: ["id", "month_key", "member_name", "component_key", "raw_pct", "payable_pct", "coverage_pct", "confidence", "source_cohort", "rule_version", "override_reason", "status", "reason", "source_ids", "audit_trail", "diagnostics", "is_not_applicable", "na_reason", "evidence", "data_as_of", "calculated_at", "approved_by", "approved_at", "created_at", "updated_at"],
   monthly_member_kpi_results: ["id", "month_key", "member_name", "version", "raw_pct", "payable_pct", "coverage_pct", "confidence", "source_cohort", "rule_version", "override_reason", "status", "payout_base_vnd", "payout_vnd", "source_ids", "audit_trail", "snapshot_payload", "calculated_at", "approved_by", "approved_at", "locked_by", "locked_at", "reopened_from_id", "created_at", "updated_at"],
   kpi_override_audit_log: ["id", "month_key", "member_name", "project", "component_key", "entity_type", "entity_id", "before_value", "after_value", "reason", "actor", "action", "created_at"],
+  project_domain_mappings: ["id","project_id","normalized_domain","mapping_version","effective_from","effective_to","status","reason","created_by","approved_by","approved_at","created_at","updated_at"],
+  project_settings_versions: ["id","project_id","version","effective_from","effective_to","status","lifecycle","canonical_domain","gsc_property","gsc_ready","kpi_ready","performance_weight_3m_pct","performance_weight_6m_pct","performance_weight_all_time_pct","settings_payload","reason","created_by","approved_by","approved_at","created_at","updated_at"],
+  member_project_contribution_weights: ["id","month_key","member_id","project_id","weight_pct","version","reason","created_by","approved_by","approved_at","created_at","updated_at"],
+  performance_range_results: ["id","as_of_month","project_id","member_id","range_key","impression_performance_pct","click_performance_pct","growth_coverage_pct","portfolio_health_pct","raw_pct","payable_pct","coverage_pct","confidence","status","source_cohort","source_ids","diagnostics","rule_version","data_as_of","calculated_at","created_at","updated_at"],
+  kpi_templates: ["id","template_key","version","name","status","effective_from","effective_to","reason","created_by","approved_by","approved_at","created_at","updated_at"],
+  kpi_template_components: ["id","template_id","component_key","weight_pct","is_required","allows_na","display_order","created_at"],
+  application_audit_log: ["id","actor","action","entity_type","entity_id","before_value","after_value","reason","request_id","created_at"],
 };
 
 export type DbSchemaHealth = { ok: boolean; missingTables: string[]; missingViews: string[]; missingColumns: string[]; missing: string[]; migrationWarnings: string[]; projectKpiSettings: ProjectKpiSettingsDiagnostic };
@@ -159,6 +173,9 @@ export async function checkDbSchemaHealth(): Promise<DbSchemaHealth> {
     (["work_source_rows", "gsc_url_daily_metrics", "monthly_member_project_kpi_results", "monthly_member_kpi_results"].some((table) => missingTables.includes(table))
       || missingColumns.some((column) => column.startsWith("url_work_events.source_item_id") || column.startsWith("project_kpi_settings.measurement_strategy")))
       ? "Monthly KPI Engine v2 is missing or incomplete. Run migrations/20260714_monthly_kpi_engine_v2.sql on staging only." : null,
+    (["project_settings_versions","member_project_contribution_weights","performance_range_results","kpi_templates","application_audit_log"].some((table)=>missingTables.includes(table))
+      || missingColumns.some((column)=>column.startsWith("content_urls.classification_")||column.startsWith("url_work_events.kpi_ready")))
+      ? "Unified application schema is missing or incomplete. Run migrations/20260715_unified_application.sql on staging only." : null,
   ].filter((message): message is string => Boolean(message));
   return { ok: missing.length === 0, missingTables, missingViews, missingColumns, missing, migrationWarnings, projectKpiSettings };
 }

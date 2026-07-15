@@ -1,1 +1,2 @@
-export { default } from "../dashboard/admin/page";
+import { redirect } from "next/navigation";
+export default function AdminIndex(){redirect("/admin/sync");}

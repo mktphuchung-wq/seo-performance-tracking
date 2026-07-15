@@ -22,15 +22,17 @@ export function DataTableContainer({ children }: { children: React.ReactNode }) 
 }
 
 export function Shell({ children, email, isAdmin }: { children: React.ReactNode; email?: string | null; isAdmin?: boolean }) {
-  const navItems = [
+  const navItems = !email ? [] : isAdmin ? [
+    { href: "/admin/sync", label: "Data Sync" },
+    { href: "/admin/projects", label: "Project Settings" },
+    { href: "/admin/data-source", label: "Data Source" },
+    { href: "/admin/member-performance", label: "Member Performance" },
+    { href: "/admin/member-review", label: "Member Review" },
+    { href: "/admin/kpi-close", label: "KPI Close" },
+  ] : [
     { href: "/dashboard", label: "My Performance" },
-    { href: "/url-data-source", label: "URL Data Source" },
-    ...(isAdmin ? [
-      { href: "/member-insights", label: "Member Insights" },
-      { href: "/admin", label: "Admin" },
-      { href: "/admin/project-kpi-settings", label: "Project KPI Settings" },
-      { href: "/admin/kpi-month", label: "Monthly KPI v2" },
-    ] : []),
+    { href: "/my-urls", label: "My URLs" },
+    { href: "/my-kpi", label: "My KPI" },
   ];
 
   return <main className="min-h-screen w-full">
@@ -38,7 +40,7 @@ export function Shell({ children, email, isAdmin }: { children: React.ReactNode;
       <PageContainer className="py-4">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">SEO Team Performance Tracking</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">SEO Performance Workspace</h1>
           </div>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between xl:justify-end">
             <nav aria-label="Main navigation" className="flex flex-wrap gap-2">
@@ -46,7 +48,7 @@ export function Shell({ children, email, isAdmin }: { children: React.ReactNode;
             </nav>
             {email && <div className="flex flex-wrap items-center gap-3 text-sm lg:justify-end">
               <span className="max-w-full truncate text-slate-500">{email}</span>
-              <a className="font-semibold text-blue-700 hover:text-blue-900" href="/api/auth/signout">Sign out</a>
+              <Link className="font-semibold text-blue-700 hover:text-blue-900" href="/api/auth/signout">Sign out</Link>
             </div>}
           </div>
         </div>

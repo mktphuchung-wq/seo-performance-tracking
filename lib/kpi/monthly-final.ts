@@ -1,6 +1,6 @@
 import { clampPct, scoreBase, type AuditableScore } from "./types.ts";
 
-export type MonthlyComponent = { key: string; weightPct: number; score: AuditableScore; required: boolean };
+export type MonthlyComponent = { key: string; weightPct: number; score: AuditableScore; required: boolean; allowsNa?: boolean };
 export type FinalKpiResult = AuditableScore & { payoutVnd: number | null; availableWeightPct: number; originalWeightPct: number };
 
 export function calculateFinalMonthlyKpi(input: {
@@ -14,7 +14,7 @@ export function calculateFinalMonthlyKpi(input: {
   const totalWeight = input.components.reduce((sum, component) => sum + component.weightPct, 0);
   if (Math.abs(totalWeight - 100) > 0.0001) throw new Error(`Active top-level component weights must total 100%; received ${totalWeight}.`);
   const unavailable = input.components.filter((component) => component.score.payablePct === null);
-  const missingControllable = unavailable.filter((component) => component.required && component.key !== "seo_performance");
+  const missingControllable = unavailable.filter((component) => component.required && component.key !== "seo_performance" && !(component.allowsNa && component.score.state === "not_applicable"));
   const unavailablePerformance = unavailable.find((component) => component.key === "seo_performance");
   const performanceAcknowledged = !unavailablePerformance || (input.acknowledgeMissingPerformance && Boolean(input.missingPerformanceReason?.trim()));
   const available = input.components.filter((component) => component.score.payablePct !== null);

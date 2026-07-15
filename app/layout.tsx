@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Performance SEO Project - SEO Team",
-  description: "A lightweight SEO performance dashboard backed by Google Sheets and Search Console."
+  title: "SEO Performance Workspace",
+  description: "Auditable SEO source, project settings, performance, review, and monthly KPI workflows."
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

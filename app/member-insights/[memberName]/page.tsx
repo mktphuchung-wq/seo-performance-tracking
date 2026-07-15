@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-
-export default function MemberInsightLegacyRedirect({ params }: { params: { memberName: string } }) {
-  redirect(`/member-insights?member=${encodeURIComponent(params.memberName)}`);
+import { redirect } from "next/navigation";export default async function LegacyInsight(props:{params: Promise<{memberName:string}>}) {
+  const params = await props.params;
+  redirect(`/admin/member-performance?member=${encodeURIComponent(params.memberName)}`);
 }

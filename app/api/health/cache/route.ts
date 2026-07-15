@@ -4,12 +4,10 @@ import { checkDbSchemaHealth } from "../../../../lib/db-health";
 
 export const dynamic = "force-dynamic";
 
-async function safeCount(sql: string) { try { const r = await query<{ count: string | number }>(sql); return Number(r.rows[0]?.count ?? 0); } catch { return 0; } }
+async function safeCount(sql: string) { try { const r = await query<{ count: string | number }>(sql); return Number(r.rows[0]?.count ?? 0); } catch { return null; } }
 async function contentWorkedAtColumnExists() {
-  try {
-    const r = await query<{ exists: boolean }>("select exists (select 1 from information_schema.columns where table_schema='public' and table_name='content_urls' and column_name='content_worked_at')");
-    return Boolean(r.rows[0]?.exists);
-  } catch { return false; }
+  const r = await query<{ exists: boolean }>("select exists (select 1 from information_schema.columns where table_schema='public' and table_name='content_urls' and column_name='content_worked_at')");
+  return Boolean(r.rows[0]?.exists);
 }
 const clean = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[redacted database url]");
 
@@ -22,8 +20,8 @@ export async function GET() {
       content_worked_at_column_exists: contentWorkedAtExists,
       urls_missing_content_worked_at: contentWorkedAtExists ? await safeCount("select count(*) from public.content_urls where coalesce(is_active,true)=true and content_worked_at is null") : 0,
       warning: contentWorkedAtExists ? null : "content_urls.content_worked_at column is missing. Run migrations/20260708_content_urls_content_worked_at.sql in Neon."
-    }, latestSyncRuns: (await query("select * from public.sync_runs order by created_at desc limit 10").catch(() => ({ rows: [] }))).rows,
-      latestRefreshRuns: (await query("select id, status, range_key, start_date, end_date, total_urls::int, processed_urls::int, failed_urls::int, urls_with_data::int, no_data_urls::int, error_message, created_at, updated_at from public.refresh_runs order by created_at desc limit 10").catch(() => ({ rows: [] }))).rows,
+    }, latestSyncRuns: (await query("select * from public.sync_runs order by created_at desc limit 10")).rows,
+      latestRefreshRuns: (await query("select id, status, range_key, start_date, end_date, total_urls::int, processed_urls::int, failed_urls::int, urls_with_data::int, no_data_urls::int, error_message, created_at, updated_at from public.refresh_runs order by created_at desc limit 10")).rows,
       counts: {
       contentUrls: await safeCount("select count(*) from public.content_urls"),
       activeUrls: await safeCount("select count(*) from public.content_urls where coalesce(is_active,true)=true"),
@@ -36,6 +34,12 @@ export async function GET() {
       urlWorkQualityReviews: await safeCount("select count(*) from public.url_work_quality_reviews"),
       urlWorkQualityScores: await safeCount("select count(*) from public.url_work_quality_scores"),
       memberMonthQualityReviews: await safeCount("select count(*) from public.member_month_quality_reviews"),
+      classifiedContentUrls: await safeCount("select count(*) from public.content_urls where classification_status='accepted'"),
+      quarantinedContentUrls: await safeCount("select count(*) from public.content_urls where classification_status='quarantined'"),
+      kpiReadyWorkEvents: await safeCount("select count(*) from public.url_work_events where kpi_ready=true and is_countable=true"),
+      performanceRangeResults: await safeCount("select count(*) from public.performance_range_results"),
+      projectSettingsVersions: await safeCount("select count(*) from public.project_settings_versions"),
+      applicationAuditEvents: await safeCount("select count(*) from public.application_audit_log"),
       refreshRuns: await safeCount("select count(*) from public.refresh_runs"),
       syncRuns: await safeCount("select count(*) from public.sync_runs"),
     } }, { status: schema.ok && contentWorkedAtExists ? 200 : 503, headers: { "Cache-Control": "no-store" } });
