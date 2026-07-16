@@ -110,7 +110,12 @@ test("Preview-only test auth exposes authenticated Admin workflows", async ({
 
   await page.goto("/admin/member-review?month=2026-07");
   const scoreSelect = page.locator('select[name^="score-"]').first();
-  if (await scoreSelect.count()) await expect(scoreSelect).toHaveValue("");
+  if (await scoreSelect.count()) {
+    const articleText = await scoreSelect.locator("xpath=ancestor::article").textContent();
+    if (articleText?.includes("Chờ đánh giá"))
+      await expect(scoreSelect).toHaveValue("");
+    else await expect(scoreSelect).not.toHaveValue("");
+  }
 
   for (const endpoint of [
     "/api/admin/source-pipeline/status",
