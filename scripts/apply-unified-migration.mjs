@@ -7,19 +7,28 @@ const args = new Set(process.argv.slice(2));
 const apply = args.has("--apply");
 const verifyIdempotent = args.has("--verify-idempotent");
 const acknowledgedStaging = args.has("--acknowledge-staging");
+const acknowledgedProduction = args.has("--acknowledge-production");
 const environment =
   process.env.VERCEL_ENV ?? process.env.DEPLOYMENT_ENVIRONMENT ?? "unknown";
 
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required.");
-if (!acknowledgedStaging)
+if (!acknowledgedStaging && !acknowledgedProduction)
   throw new Error(
-    "Pass --acknowledge-staging after confirming this is an isolated staging database.",
+    "Pass --acknowledge-staging for an isolated database or --acknowledge-production after an approved Preview migration.",
   );
-if (!["preview", "staging"].includes(environment)) {
+if (!["preview", "staging", "production"].includes(environment)) {
   throw new Error(
-    `Refusing to run against environment=${environment}; expected preview or staging.`,
+    `Refusing to run against environment=${environment}; expected preview, staging, or production.`,
   );
 }
+if (environment === "production" && !acknowledgedProduction)
+  throw new Error(
+    "Production migration requires --acknowledge-production after the exact migration chain passes on Preview.",
+  );
+if (environment !== "production" && acknowledgedProduction)
+  throw new Error(
+    `--acknowledge-production cannot be used for environment=${environment}.`,
+  );
 if (process.env.UNIFIED_PRODUCTION_WRITE_ENABLED === "true")
   throw new Error("Refusing to migrate while production writes are enabled.");
 
@@ -56,6 +65,7 @@ const requiredTables = [
   "monthly_member_kpi_config_components",
 ];
 const migrationFiles = [
+  "20260710_url_work_events.sql",
   "20260710_monthly_kpi.sql",
   "20260714_monthly_kpi_engine_v2.sql",
   "20260715_unified_application.sql",
