@@ -9,6 +9,7 @@ import {
   persistWorkSourceReconciliation,
 } from "../repositories/work-source-rows";
 import { getContentUrlsSheetRows } from "../sync/content-urls-sheet";
+import { assertUnifiedSchemaReady } from "../schema-readiness";
 
 function previewRows(result: ReturnType<typeof reconcileWorkSourceRows>) {
   return result.canonicalRows.map((row) => ({
@@ -28,6 +29,7 @@ export async function previewSourcePipeline(input: {
   accessToken: string;
   actor: string;
 }) {
+  await assertUnifiedSchemaReady();
   const [projects, dbMembers, sourceRows] = await Promise.all([
     getProjectAliases(),
     getMemberAliases(),
@@ -64,6 +66,7 @@ export async function commitSourcePipeline(input: {
   previewRunId: string;
   idempotencyKey: string;
 }) {
+  await assertUnifiedSchemaReady();
   if (!input.previewRunId?.trim())
     throw new Error("A ready Preview run ID is required.");
   if (!input.idempotencyKey?.trim())
