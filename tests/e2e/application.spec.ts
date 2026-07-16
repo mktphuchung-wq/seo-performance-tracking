@@ -3,6 +3,11 @@ import { expect, test, type Page } from "@playwright/test";
 const previewSecret = process.env.E2E_TEST_AUTH_SECRET;
 const previewAdmin = process.env.E2E_TEST_ADMIN_EMAIL;
 const previewMember = process.env.E2E_TEST_MEMBER_EMAIL;
+const vercelShareUrl = process.env.VERCEL_SHARE_URL;
+
+test.beforeEach(async ({ page }) => {
+  if (vercelShareUrl) await page.goto(vercelShareUrl);
+});
 
 async function signInPreview(page: Page, email: string) {
   const request = page.context().request;
@@ -34,17 +39,17 @@ test("public entry renders a meaningful sign-in surface without an error overlay
 
 test("Admin and Member workspaces are isolated from anonymous users", async ({
   page,
-  request,
 }) => {
   await page.goto("/admin/sync");
   await expect(page).toHaveURL(/\/$/);
-  const memberApi = await request.get("/api/me/performance");
+  const memberApi = await page.context().request.get("/api/me/performance");
   expect(memberApi.status()).toBe(401);
 });
 
 test("legacy write endpoints are read-only during migration", async ({
-  request,
+  page,
 }) => {
+  const request = page.context().request;
   for (const endpoint of [
     "/api/sync/sheet",
     "/api/refresh/cache",

@@ -149,7 +149,7 @@ export default async function MemberReview(props: {
                     </p>
                   </div>
                   <span>
-                    {viLabel(row.review_status ?? "pending")}
+                    {viLabel(row.review_status ?? "review_pending")}
                     {row.quality_pct !== null && row.quality_pct !== undefined
                       ? ` · ${Number(row.quality_pct).toFixed(1)}%`
                       : ""}
