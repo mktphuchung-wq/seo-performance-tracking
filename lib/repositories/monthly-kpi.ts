@@ -100,7 +100,7 @@ async function upsertAutomatedComponent(
 async function calculateMemberMonth(month: string, target: any) {
   const eventsResult = await query<any>(
     `select id::text,unit_value,status,is_countable,work_date::text,unit_rule_id::text,unit_rule_version
-    from public.url_work_events where member_name=$1 and kpi_ready=true and is_countable=true
+    from public.url_work_events where member_name=$1 and content_kpi_eligible=true and is_countable=true
       and coalesce(unified_source_state,'active')='active' and work_date>=date_trunc('month',$2::date)
       and work_date<date_trunc('month',$2::date)+interval '1 month' order by work_date,id`,
     [target.member_name, month],
@@ -120,7 +120,7 @@ async function calculateMemberMonth(month: string, target: any) {
   });
   const qualityRows = await query<any>(
     `select e.id::text,e.unit_value,r.quality_pct,r.review_status from public.url_work_events e
-    left join public.url_work_quality_reviews r on r.work_event_id=e.id where e.member_name=$1 and e.is_countable=true and e.kpi_ready=true
+    left join public.url_work_quality_reviews r on r.work_event_id=e.id where e.member_name=$1 and e.is_countable=true and e.content_kpi_eligible=true
       and coalesce(e.unified_source_state,'active')='active' and e.status in ('completed','approved')
       and e.work_date>=date_trunc('month',$2::date) and e.work_date<date_trunc('month',$2::date)+interval '1 month'`,
     [target.member_name, month],
@@ -542,7 +542,7 @@ export async function listMonthlyKpiAudit(
       `select e.id::text as work_event_id,e.project,e.member_name,e.work_type,e.work_date::text,e.unit_value,c.url,
       r.review_status,r.quality_pct,r.rubric_version_snapshot,r.admin_note,r.evidence from public.url_work_events e
       join public.content_urls c on c.id=e.content_url_id left join lateral(select * from public.url_work_quality_reviews q where q.work_event_id=e.id order by q.updated_at desc,q.id desc limit 1)r on true
-      where e.kpi_ready=true and e.is_countable=true and coalesce(e.unified_source_state,'active')='active'
+      where e.content_kpi_eligible=true and e.is_countable=true and coalesce(e.unified_source_state,'active')='active'
         and e.work_date>=date_trunc('month',$1::date) and e.work_date<date_trunc('month',$1::date)+interval '1 month'${eventClause}
       order by e.member_name,e.work_date,e.project`,
       eventParams,

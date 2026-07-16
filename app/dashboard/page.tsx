@@ -24,25 +24,25 @@ export default async function MyPerformance(props: {
       <div className="space-y-6">
         <header>
           <p className="text-sm font-semibold uppercase text-blue-700">
-            Member workspace
+            Không gian thành viên
           </p>
-          <h2 className="text-3xl font-bold">My Performance</h2>
+          <h2 className="text-3xl font-bold">Hiệu suất của tôi</h2>
           <p className="mt-2 text-slate-600">
-            Default view: 3M, with 6M and All Time context. Scores expose
-            coverage, confidence, and automatic eligible-work-unit rollup.
+            Mặc định xem 3 tháng, kèm ngữ cảnh 6 tháng và toàn thời gian. Điểm
+            luôn hiển thị độ phủ, độ tin cậy và tổng hợp event đủ điều kiện.
           </p>
         </header>
         <div className="grid gap-4 md:grid-cols-3">
           <MetricCard
-            label="Member Performance"
+            label="Hiệu suất thành viên"
             value={pct(summary?.memberResult.score)}
           />
           <MetricCard
-            label="Coverage"
+            label="Độ phủ"
             value={pct(summary?.memberResult.coveragePct)}
           />
           <MetricCard
-            label="Status"
+            label="Trạng thái"
             value={summary?.memberResult.status ?? "N/A"}
           />
         </div>
@@ -50,13 +50,13 @@ export default async function MyPerformance(props: {
           <table className="min-w-full text-sm">
             <thead className="bg-slate-100 text-left">
               <tr>
-                <th className="p-3">Project</th>
+                <th className="p-3">Dự án</th>
                 <th>3M</th>
                 <th>6M</th>
-                <th>All Time</th>
-                <th>Project score</th>
-                <th>Coverage</th>
-                <th>Lifecycle</th>
+                <th>Toàn thời gian</th>
+                <th>Điểm dự án</th>
+                <th>Độ phủ</th>
+                <th>Vòng đời</th>
               </tr>
             </thead>
             <tbody>
@@ -79,7 +79,7 @@ export default async function MyPerformance(props: {
               {!summary && (
                 <tr>
                   <td className="p-4 text-slate-500" colSpan={7}>
-                    No canonical Performance result is available yet.
+                    Chưa có kết quả Hiệu suất chuẩn.
                   </td>
                 </tr>
               )}

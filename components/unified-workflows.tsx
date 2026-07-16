@@ -11,7 +11,7 @@ async function postJson(url: string, body: unknown) {
   const data = await response
     .json()
     .catch(() => ({ error: `${response.status} ${response.statusText}` }));
-  if (!response.ok) throw new Error(data.error ?? "Request failed");
+  if (!response.ok) throw new Error(data.error ?? "Yêu cầu không thành công");
   return data;
 }
 async function putJson(url: string, body: unknown) {
@@ -23,7 +23,7 @@ async function putJson(url: string, body: unknown) {
   const data = await response
     .json()
     .catch(() => ({ error: `${response.status} ${response.statusText}` }));
-  if (!response.ok) throw new Error(data.error ?? "Request failed");
+  if (!response.ok) throw new Error(data.error ?? "Yêu cầu không thành công");
   return data;
 }
 function Result({
@@ -63,7 +63,7 @@ export function SourcePipelineControls() {
       setPreviewRunId(String(data.syncRunId ?? ""));
       setMessage(JSON.stringify(data, null, 2));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Source preview failed");
+      setError(err instanceof Error ? err.message : "Không thể xem trước thay đổi nguồn");
     } finally {
       setBusy(false);
     }
@@ -79,7 +79,7 @@ export function SourcePipelineControls() {
       });
       setMessage(JSON.stringify(data, null, 2));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Source commit failed");
+      setError(err instanceof Error ? err.message : "Không thể ghi thay đổi nguồn");
     } finally {
       setBusy(false);
     }
@@ -87,25 +87,24 @@ export function SourcePipelineControls() {
   return (
     <section className="rounded-2xl border bg-white p-6 shadow-sm">
       <h3 className="text-lg font-semibold">
-        Content Sheet → canonical source
+        Content Sheet → nguồn dữ liệu chuẩn
       </h3>
       <p className="mt-2 text-sm text-slate-600">
-        Check source changes validates the exact five-column contract without
-        changing Canonical URLs or Work events. Apply uses the reviewed Preview
-        run and is idempotent.
+        Kiểm tra thay đổi theo đúng hợp đồng năm cột mà không sửa URL chuẩn hay
+        event công việc. Chỉ lần Preview đã duyệt mới được ghi và thao tác là idempotent.
       </p>
       <label className="mt-4 block text-sm font-medium">
-        Admin reason
+        Lý do của quản trị viên
         <input
           className="mt-1 w-full rounded-lg border px-3 py-2"
           value={reason}
           onChange={(event) => setReason(event.target.value)}
-          placeholder="Approved counts, aliases, and needs-attention rows"
+          placeholder="Đã duyệt số lượng, alias và các dòng cần xử lý"
         />
       </label>
       {previewRunId && (
         <p className="mt-2 text-xs text-slate-500">
-          Preview run: <span className="font-mono">{previewRunId}</span>
+          Lần Preview: <span className="font-mono">{previewRunId}</span>
         </p>
       )}
       <div className="mt-4 flex flex-wrap gap-3">
@@ -114,14 +113,14 @@ export function SourcePipelineControls() {
           disabled={busy}
           onClick={preview}
         >
-          Check for source changes
+          Kiểm tra thay đổi nguồn
         </button>
         <button
           className="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white disabled:opacity-50"
           disabled={busy || !reason.trim() || !previewRunId}
           onClick={commit}
         >
-          Apply accepted changes
+          Ghi các thay đổi đã chấp nhận
         </button>
       </div>
       <Result message={message} error={error} />
@@ -134,7 +133,7 @@ export type ProjectOption = {
   approvedGscProperty: string | null;
   canonicalDomain: string | null;
   domainConflict: boolean;
-  detectedDomains: Array<{ domain: string; urlCount: number }>;
+  detectedDomains: Array<{ domain: string; urlCount: number; sampleUrl?: string | null }>;
   current?: {
     lifecycle?: string | null;
     gsc_property?: string | null;
@@ -142,6 +141,23 @@ export type ProjectOption = {
     performance_weight_3m_pct?: number | null;
     performance_weight_6m_pct?: number | null;
     performance_weight_all_time_pct?: number | null;
+    gsc_verification_id?: string | number | null;
+    gsc_access_status?: string | null;
+    include_subdomains?: boolean | null;
+    fallback_window_days?: number[] | null;
+    minimum_short_window_days?: number | null;
+    neutral_score_pct?: number | null;
+    confidence_high_factor?: number | null;
+    confidence_medium_factor?: number | null;
+    confidence_low_factor?: number | null;
+    unknown_score_pct?: number | null;
+    observed_zero_policy?: string | null;
+    max_provisional_payable_pct?: number | null;
+    pm_review_threshold_pct?: number | null;
+    min_eligible_events?: number | null;
+    min_known_coverage_pct?: number | null;
+    min_post_impressions?: number | null;
+    range_fallback_policy?: { renormalize_missing?: boolean; deduplicate_effective_horizon?: boolean } | null;
   } | null;
 };
 export function ProjectSettingsForm({
@@ -156,6 +172,7 @@ export function ProjectSettingsForm({
   );
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [verificationIds, setVerificationIds] = useState<Record<string, string>>({});
   const selected = options.find((option) => option.project === selectedProject);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -176,12 +193,32 @@ export function ProjectSettingsForm({
           effectiveMonth: form.get("effectiveMonth"),
           reason: form.get("reason"),
           approve: form.get("approve") === "on",
+          includeSubdomains: form.get("includeSubdomains") === "on",
+          fallbackWindows: form.get("fallbackWindows"),
+          minimumShortWindowDays: Number(form.get("minimumShortWindowDays")),
+          neutralScorePct: Number(form.get("neutralScorePct")),
+          confidenceHighFactor: Number(form.get("confidenceHighFactor")),
+          confidenceMediumFactor: Number(form.get("confidenceMediumFactor")),
+          confidenceLowFactor: Number(form.get("confidenceLowFactor")),
+          unknownScorePct: Number(form.get("unknownScorePct")),
+          observedZeroPolicy: form.get("observedZeroPolicy"),
+          maxProvisionalPayablePct: Number(form.get("maxProvisionalPayablePct")),
+          pmReviewThresholdPct: Number(form.get("pmReviewThresholdPct")),
+          minEligibleEvents: Number(form.get("minEligibleEvents")),
+          minKnownCoveragePct: Number(form.get("minKnownCoveragePct")),
+          minPostImpressions: Number(form.get("minPostImpressions")),
+          renormalizeMissing: form.get("renormalizeMissing") === "on",
+          deduplicateEffectiveHorizon: form.get("deduplicateEffectiveHorizon") === "on",
+          gscVerificationId:
+            verificationIds[selectedProject] ??
+            selected?.current?.gsc_verification_id ??
+            null,
         },
       );
       setMessage(JSON.stringify(data, null, 2));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
+      setError(err instanceof Error ? err.message : "Không thể lưu cấu hình");
     }
   }
   const properties = [
@@ -198,19 +235,46 @@ export function ProjectSettingsForm({
   const propertyAccessible =
     !expectedProperty ||
     gscProperties.some((row) => row.siteUrl === expectedProperty);
+  const verified = Boolean(
+    verificationIds[selectedProject] ??
+      (selected?.current?.gsc_access_status === "verified" &&
+        selected?.current?.gsc_verification_id),
+  );
+  async function verifyGsc(event: React.MouseEvent<HTMLButtonElement>) {
+    const formElement = event.currentTarget.form;
+    if (!formElement) return;
+    const form = new FormData(formElement);
+    try {
+      const result = await postJson(
+        `/api/admin/projects/${encodeURIComponent(selectedProject)}/test-gsc`,
+        {
+          gscProperty: form.get("gscProperty"),
+          includeSubdomains: form.get("includeSubdomains") === "on",
+        },
+      );
+      const verificationId = String(result.verification?.id ?? "");
+      if (!result.accessible || !result.scopeCovered || !verificationId)
+        throw new Error("Xác minh GSC chưa đạt quyền truy cập, phạm vi URL hoặc truy vấn thử.");
+      setVerificationIds((current) => ({ ...current, [selectedProject]: verificationId }));
+      setMessage("Đã xác minh quyền GSC và lưu bằng chứng kiểm toán.");
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể xác minh GSC");
+    }
+  }
   return (
     <form
       onSubmit={submit}
       className="rounded-2xl border bg-white p-6 shadow-sm"
     >
-      <h3 className="text-lg font-semibold">Project Settings</h3>
+      <h3 className="text-lg font-semibold">Cấu hình dự án</h3>
       <p className="mt-1 text-sm text-slate-600">
-        Project and domain come from synced/configured data. Readiness and
-        version are derived automatically.
+        Dự án và tên miền được nhận diện từ dữ liệu đã đồng bộ. Trạng thái sẵn
+        sàng và phiên bản được hệ thống xác định tự động.
       </p>
       <div className="mt-4 grid gap-4 md:grid-cols-3">
         <label className="text-sm">
-          Project
+          Dự án
           <select
             name="projectName"
             value={selectedProject}
@@ -224,7 +288,7 @@ export function ProjectSettingsForm({
           </select>
         </label>
         <label className="text-sm">
-          Canonical domain
+          Tên miền chuẩn
           <input
             type="hidden"
             name="canonicalDomain"
@@ -246,25 +310,25 @@ export function ProjectSettingsForm({
           </select>
           {selected?.domainConflict && (
             <span className="mt-1 block text-xs text-amber-700">
-              Multiple hostnames detected; the dominant hostname is preselected.
+              Phát hiện nhiều hostname; hostname có nhiều URL nhất đang được chọn.
             </span>
           )}
         </label>
         <label className="text-sm">
-          Lifecycle
+          Vòng đời
           <select
             key={`lifecycle-${selectedProject}`}
             name="lifecycle"
             defaultValue={selected?.current?.lifecycle ?? "new_project"}
             className="mt-1 w-full rounded-lg border px-3 py-2"
           >
-            <option value="new_project">New Project</option>
-            <option value="growth_project">Growth Project</option>
-            <option value="stable_project">Stable Project</option>
+              <option value="new_project">New Growth — dự án mới</option>
+              <option value="growth_project">Growth — đang tăng trưởng</option>
+              <option value="stable_project">Stable Audit — ổn định</option>
           </select>
         </label>
         <label className="text-sm">
-          GSC property
+          Thuộc tính GSC
           <select
             key={`gsc-${selectedProject}`}
             name="gscProperty"
@@ -275,21 +339,39 @@ export function ProjectSettingsForm({
             }
             className="mt-1 w-full rounded-lg border px-3 py-2"
           >
-            <option value="">Not selected</option>
+            <option value="">Chưa chọn</option>
             {properties.map((property) => (
               <option key={property}>{property}</option>
             ))}
           </select>
           {!propertyAccessible && gscProperties.length > 0 && (
             <span className="mt-1 block text-xs text-red-700">
-              The configured property is not accessible to this Google session.
+              Phiên Google hiện tại không có quyền với thuộc tính đã cấu hình.
             </span>
           )}
         </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="includeSubdomains"
+            defaultChecked={Boolean(selected?.current?.include_subdomains)}
+          />
+          Cho phép subdomain thuộc phạm vi GSC đã xác minh
+        </label>
+        <button
+          type="button"
+          onClick={verifyGsc}
+          className="rounded-lg border border-blue-300 px-4 py-2 font-semibold text-blue-700"
+        >
+          Xác minh quyền GSC
+        </button>
+        <p className={`text-sm ${verified ? "text-emerald-700" : "text-amber-700"}`}>
+          {verified ? "Đã xác minh, có thể duyệt cấu hình." : "Cần xác minh GSC trước khi duyệt."}
+        </p>
         <Field
           key={`3m-${selectedProject}`}
           name="threeMonthWeight"
-          label="3M weight %"
+          label="Trọng số 3 tháng %"
           type="number"
           defaultValue={
             selected?.current?.performance_weight_3m_pct ?? undefined
@@ -298,7 +380,7 @@ export function ProjectSettingsForm({
         <Field
           key={`6m-${selectedProject}`}
           name="sixMonthWeight"
-          label="6M weight %"
+          label="Trọng số 6 tháng %"
           type="number"
           defaultValue={
             selected?.current?.performance_weight_6m_pct ?? undefined
@@ -307,7 +389,7 @@ export function ProjectSettingsForm({
         <Field
           key={`all-${selectedProject}`}
           name="allTimeWeight"
-          label="All Time weight %"
+          label="Trọng số toàn thời gian %"
           type="number"
           defaultValue={
             selected?.current?.performance_weight_all_time_pct ?? undefined
@@ -316,7 +398,7 @@ export function ProjectSettingsForm({
         <Field
           key={`effective-${selectedProject}`}
           name="effectiveMonth"
-          label="Effective month"
+          label="Tháng hiệu lực"
           type="month"
           required
           defaultValue={
@@ -324,12 +406,33 @@ export function ProjectSettingsForm({
             new Date().toISOString().slice(0, 7)
           }
         />
+        <fieldset className="rounded-xl border p-4 md:col-span-3">
+          <legend className="px-2 font-semibold">Quy tắc Hiệu suất có phiên bản</legend>
+          <p className="mb-3 text-xs text-slate-600">Các giá trị này được lưu cùng version và ngày hiệu lực để phục vụ kiểm toán payroll.</p>
+          <div className="grid gap-3 md:grid-cols-3">
+            <Field name="fallbackWindows" label="Cửa sổ fallback (ngày, cách nhau bằng dấu phẩy)" defaultValue={selected?.current?.fallback_window_days?.join(",") ?? "28,14,7"} required />
+            <Field name="minimumShortWindowDays" label="Cửa sổ ngắn tối thiểu (ngày)" type="number" defaultValue={selected?.current?.minimum_short_window_days ?? 7} required />
+            <Field name="neutralScorePct" label="Điểm trung tính %" type="number" defaultValue={selected?.current?.neutral_score_pct ?? 70} required />
+            <Field name="confidenceHighFactor" label="Hệ số tin cậy cao (0–1)" type="number" defaultValue={selected?.current?.confidence_high_factor ?? 1} required />
+            <Field name="confidenceMediumFactor" label="Hệ số tin cậy trung bình (0–1)" type="number" defaultValue={selected?.current?.confidence_medium_factor ?? 0.7} required />
+            <Field name="confidenceLowFactor" label="Hệ số tin cậy thấp (0–1)" type="number" defaultValue={selected?.current?.confidence_low_factor ?? 0.35} required />
+            <Field name="unknownScorePct" label="Điểm khi không thể quan sát %" type="number" defaultValue={selected?.current?.unknown_score_pct ?? 70} required />
+            <label className="text-sm">Chính sách observed-zero<select name="observedZeroPolicy" defaultValue={selected?.current?.observed_zero_policy ?? "score_zero"} className="mt-1 w-full rounded-lg border px-3 py-2"><option value="score_zero">Chấm 0 khi đã quan sát giá trị 0</option><option value="neutral">Dùng điểm trung tính</option></select></label>
+            <Field name="maxProvisionalPayablePct" label="Trần điểm tạm tính %" type="number" defaultValue={selected?.current?.max_provisional_payable_pct ?? 70} required />
+            <Field name="pmReviewThresholdPct" label="Ngưỡng PM cần đánh giá %" type="number" defaultValue={selected?.current?.pm_review_threshold_pct ?? 55} required />
+            <Field name="minEligibleEvents" label="Event tối thiểu" type="number" defaultValue={selected?.current?.min_eligible_events ?? 1} required />
+            <Field name="minKnownCoveragePct" label="Độ phủ biết được tối thiểu %" type="number" defaultValue={selected?.current?.min_known_coverage_pct ?? 60} required />
+            <Field name="minPostImpressions" label="Lượt hiển thị sau event tối thiểu" type="number" defaultValue={selected?.current?.min_post_impressions ?? 0} required />
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="renormalizeMissing" defaultChecked={selected?.current?.range_fallback_policy?.renormalize_missing ?? true} />Chuẩn hóa lại trọng số khi thiếu kỳ</label>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="deduplicateEffectiveHorizon" defaultChecked={selected?.current?.range_fallback_policy?.deduplicate_effective_horizon ?? true} />Loại trùng cùng cửa sổ hiệu lực</label>
+          </div>
+        </fieldset>
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="approve" />
-          Approve this version
+          <input type="checkbox" name="approve" disabled={!verified} />
+          Duyệt phiên bản này
         </label>
         <label className="text-sm md:col-span-3">
-          Audit reason (required for overrides/changes)
+          Lý do kiểm toán (bắt buộc khi thay đổi/ghi đè)
           <textarea
             name="reason"
             className="mt-1 w-full rounded-lg border px-3 py-2"
@@ -337,7 +440,7 @@ export function ProjectSettingsForm({
         </label>
       </div>
       <button className="mt-4 rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white">
-        Save Project Settings
+        Lưu cấu hình dự án
       </button>
       <Result message={message} error={error} />
     </form>
@@ -365,6 +468,7 @@ function Field({
       <input
         name={name}
         type={type}
+        step={type === "number" ? "any" : undefined}
         required={required}
         placeholder={placeholder}
         defaultValue={defaultValue}
@@ -393,14 +497,14 @@ export function PerformanceRefreshControl({
         ),
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Refresh failed");
+      setError(err instanceof Error ? err.message : "Không thể làm mới Hiệu suất");
     }
   }
   return (
     <section className="rounded-2xl border bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-sm">
-          As-of month
+          Tháng chốt dữ liệu
           <input
             className="mt-1 block rounded-lg border px-3 py-2"
             type="month"
@@ -412,7 +516,7 @@ export function PerformanceRefreshControl({
           onClick={run}
           className="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white"
         >
-          Refresh Performance Service
+          Làm mới dữ liệu Hiệu suất
         </button>
       </div>
       <Result message={message} error={error} />
@@ -460,11 +564,11 @@ export function QualityReviewEditor({
         adminNote: form.get("adminNote"),
       });
       setMessage(
-        `Saved ${Number(data.reviews?.[0]?.qualityPct ?? 0).toFixed(1)}%`,
+        `Đã lưu ${Number(data.reviews?.[0]?.qualityPct ?? 0).toFixed(1)}%`,
       );
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Review save failed");
+      setError(err instanceof Error ? err.message : "Không thể lưu đánh giá");
     }
   }
   return (
@@ -477,23 +581,23 @@ export function QualityReviewEditor({
               name={`score-${index}`}
               className="mt-1 w-full rounded border px-2 py-1"
             >
-              <option value="5">5 — Excellent</option>
-              <option value="4">4 — Meets</option>
-              <option value="3">3 — Acceptable</option>
-              <option value="2">2 — Weak</option>
-              <option value="1">1 — Poor</option>
-              <option value="0">0 — Missing</option>
+              <option value="5">5 — Xuất sắc</option>
+              <option value="4">4 — Đạt tốt</option>
+              <option value="3">3 — Chấp nhận được</option>
+              <option value="2">2 — Yếu</option>
+              <option value="1">1 — Kém</option>
+              <option value="0">0 — Thiếu</option>
             </select>
             {criterion.allowsNa && (
               <span className="mt-1 flex items-center gap-2">
                 <input name={`na-${index}`} type="checkbox" />
-                Not applicable (reason required)
+                Không áp dụng (bắt buộc nêu lý do)
               </span>
             )}
             <input
               name={`note-${index}`}
               className="mt-1 w-full rounded border px-2 py-1"
-              placeholder="Evidence for low score or N/A reason"
+              placeholder="Bằng chứng cho điểm thấp hoặc lý do N/A"
             />
           </label>
         ))}
@@ -501,10 +605,10 @@ export function QualityReviewEditor({
       <textarea
         name="adminNote"
         className="mt-3 w-full rounded border px-3 py-2 text-sm"
-        placeholder="Reviewer notes"
+        placeholder="Ghi chú của người đánh giá"
       />
       <button className="mt-3 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">
-        Approve URL review
+        Duyệt đánh giá URL
       </button>
       <Result message={message} error={error} />
     </form>
@@ -537,7 +641,7 @@ export function TargetForm({
       setMessage(JSON.stringify(data, null, 2));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Target save failed");
+      setError(err instanceof Error ? err.message : "Không thể lưu target");
     }
   }
   return (
@@ -545,10 +649,10 @@ export function TargetForm({
       onSubmit={submit}
       className="rounded-2xl border bg-white p-5 shadow-sm"
     >
-      <h3 className="font-semibold">Member monthly Min post / target units</h3>
+      <h3 className="font-semibold">Min post / đơn vị target theo Thành viên × Tháng</h3>
       <div className="mt-3 grid gap-3 md:grid-cols-3">
         <label className="text-sm">
-          Member
+          Thành viên
           <select
             name="memberName"
             defaultValue={selectedMember}
@@ -559,23 +663,23 @@ export function TargetForm({
             ))}
           </select>
         </label>
-        <Field name="targetUnits" label="Target units" type="number" required />
+        <Field name="targetUnits" label="Đơn vị target" type="number" required />
         <Field
           name="baseTargetUnits"
-          label="Base target"
+          label="Target cơ sở"
           type="number"
           required
         />
         <Field
           name="activeWorkdayRatio"
-          label="Workday ratio (0–1)"
+          label="Tỷ lệ ngày làm việc (0–1)"
           type="number"
           required
         />
-        <Field name="adjustmentReason" label="Adjustment reason" />
+        <Field name="adjustmentReason" label="Lý do điều chỉnh" />
       </div>
       <button className="mt-3 rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white">
-        Save member target
+        Lưu target thành viên
       </button>
       <Result message={message} error={error} />
     </form>
@@ -638,7 +742,7 @@ export function MemberKpiConfigForm({
       setMessage(JSON.stringify(data, null, 2));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Configuration failed");
+      setError(err instanceof Error ? err.message : "Không thể lưu cấu hình");
     }
   }
   return (
@@ -646,14 +750,14 @@ export function MemberKpiConfigForm({
       onSubmit={submit}
       className="rounded-2xl border bg-white p-5 shadow-sm"
     >
-      <h3 className="font-semibold">Member × Month Final KPI configuration</h3>
+      <h3 className="font-semibold">Cấu hình KPI cuối cùng theo Thành viên × Tháng</h3>
       <p className="mt-1 text-sm text-slate-600">
-        Weights are versioned for this member only. Applied weights must total
-        100%. Locked configuration must be reopened before editing.
+        Trọng số được quản lý phiên bản riêng cho thành viên này và phải đủ 100%.
+        Cấu hình đã khóa phải được mở lại trước khi chỉnh sửa.
       </p>
       <div className="mt-3 grid gap-3 md:grid-cols-3">
         <label className="text-sm">
-          Member
+          Thành viên
           <select
             name="memberName"
             defaultValue={selectedMember}
@@ -677,15 +781,15 @@ export function MemberKpiConfigForm({
               if (!event.target.checked) setSocialWeight("0");
             }}
           />
-          Social + Video enabled
+          Bật Social + Video
         </label>
         <span
           className={`self-end rounded px-3 py-2 text-sm ${total === 100 ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}
         >
-          Total: {total}%
+          Tổng: {total}%
         </span>
         <label className="text-sm">
-          SEO Content %
+          SEO Nội dung %
           <input
             type="number"
             min="0"
@@ -697,7 +801,7 @@ export function MemberKpiConfigForm({
           />
         </label>
         <label className="text-sm">
-          SEO Performance %
+          SEO Hiệu suất %
           <input
             type="number"
             min="0"
@@ -722,7 +826,7 @@ export function MemberKpiConfigForm({
           />
         </label>
         <label className="text-sm md:col-span-3">
-          Configuration reason
+          Lý do cấu hình
           <textarea
             name="reason"
             required
@@ -735,8 +839,8 @@ export function MemberKpiConfigForm({
         className="mt-3 rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white disabled:opacity-50"
       >
         {initialConfig?.locked
-          ? "Reopen locked version to edit"
-          : "Approve member configuration"}
+          ? "Mở phiên bản đã khóa để chỉnh sửa"
+          : "Duyệt cấu hình thành viên"}
       </button>
       <Result message={message} error={error} />
     </form>
@@ -767,13 +871,13 @@ export function KpiCloseControls({
           : await postJson(path, body);
       setMessage(JSON.stringify(data, null, 2));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Action failed");
+      setError(err instanceof Error ? err.message : "Thao tác không thành công");
     }
   }
   return (
     <section className="space-y-5 rounded-2xl border bg-white p-5 shadow-sm">
       <div>
-        <h3 className="font-semibold">Final KPI preview</h3>
+        <h3 className="font-semibold">Xem trước KPI cuối cùng</h3>
         <div className="mt-2 flex flex-wrap gap-3">
           <select id="preview-member" className="rounded border px-3 py-2">
             {members.map((member) => (
@@ -791,7 +895,7 @@ export function KpiCloseControls({
             }
             className="rounded-lg border px-4 py-2 font-semibold"
           >
-            Calculate selected member
+            Tính cho thành viên đã chọn
           </button>
         </div>
       </div>
@@ -809,7 +913,7 @@ export function KpiCloseControls({
             min="0"
             max="100"
             className="rounded border px-3 py-2"
-            placeholder="Score 0–100"
+            placeholder="Điểm 0–100"
           />
           <label className="flex items-center gap-2 text-sm">
             <input id="social-na" type="checkbox" />
@@ -818,7 +922,7 @@ export function KpiCloseControls({
           <input
             id="social-reason"
             className="rounded border px-3 py-2"
-            placeholder="Note, evidence, or N/A reason"
+            placeholder="Ghi chú, bằng chứng hoặc lý do N/A"
           />
         </div>
         <button
@@ -850,11 +954,11 @@ export function KpiCloseControls({
           }}
           className="mt-3 rounded-lg border px-4 py-2 font-semibold"
         >
-          Save Social + Video
+          Lưu Social + Video
         </button>
       </div>
       <div>
-        <h3 className="font-semibold">Finalize and lock</h3>
+        <h3 className="font-semibold">Chốt và khóa</h3>
         <div className="mt-2 grid gap-3 md:grid-cols-3">
           <select id="close-member" className="rounded border px-3 py-2">
             {members.map((member) => (
@@ -864,7 +968,7 @@ export function KpiCloseControls({
           <input
             id="close-reason"
             className="rounded border px-3 py-2"
-            placeholder="Missing Performance acknowledgement reason"
+            placeholder="Lý do xác nhận khi thiếu dữ liệu Hiệu suất"
           />
           <button
             onClick={() => {
@@ -883,13 +987,13 @@ export function KpiCloseControls({
             }}
             className="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white"
           >
-            Finalize & lock
+            Chốt và khóa
           </button>
         </div>
       </div>
       {lockedResults.length > 0 && (
         <div>
-          <h3 className="font-semibold">Reopen locked version</h3>
+          <h3 className="font-semibold">Mở lại phiên bản đã khóa</h3>
           <div className="mt-2 grid gap-3 md:grid-cols-3">
             <select id="reopen-result" className="rounded border px-3 py-2">
               {lockedResults.map((row) => (
@@ -901,7 +1005,7 @@ export function KpiCloseControls({
             <input
               id="reopen-reason"
               className="rounded border px-3 py-2"
-              placeholder="Authorized reopen reason"
+              placeholder="Lý do được phép mở lại"
             />
             <button
               onClick={() =>
@@ -919,7 +1023,7 @@ export function KpiCloseControls({
               }
               className="rounded-lg border border-amber-300 px-4 py-2 font-semibold text-amber-800"
             >
-              Reopen as new version
+              Mở lại thành phiên bản mới
             </button>
           </div>
         </div>

@@ -14,16 +14,16 @@ export type RangeWeights = {
 
 export function normalizeDomain(value: string): string {
   const trimmed = value.trim().toLowerCase();
-  if (!trimmed) throw new Error("Canonical domain is required.");
+  if (!trimmed) throw new Error("Tên miền chuẩn là bắt buộc.");
   const candidate = trimmed.includes("://") ? trimmed : `https://${trimmed}`;
   let hostname: string;
   try {
     hostname = new URL(candidate).hostname.toLowerCase().replace(/^www\./, "");
   } catch {
-    throw new Error("Canonical domain must be a valid hostname.");
+    throw new Error("Tên miền chuẩn phải là hostname hợp lệ.");
   }
   if (!hostname || !hostname.includes(".") || /\s/.test(hostname))
-    throw new Error("Canonical domain must be a valid hostname.");
+    throw new Error("Tên miền chuẩn phải là hostname hợp lệ.");
   return hostname;
 }
 
@@ -37,13 +37,13 @@ export function validateRangeWeights(weights: RangeWeights): RangeWeights {
     )
   ) {
     throw new Error(
-      "3M, 6M, and All Time weights must all be configured between 0 and 100, or all left unset.",
+      "Trọng số 3 tháng, 6 tháng và Toàn thời gian phải cùng nằm trong khoảng 0 đến 100, hoặc cùng để trống.",
     );
   }
   const total = values.reduce<number>((sum, value) => sum + Number(value), 0);
   if (Math.abs(total - 100) > 0.0001)
     throw new Error(
-      `Performance range weights must total 100%; received ${total}.`,
+      `Tổng trọng số các khoảng Performance phải bằng 100%; hiện là ${total}.`,
     );
   return weights;
 }
@@ -59,22 +59,24 @@ export function validateProjectSettings(input: {
   version: string;
   effectiveFrom: string;
   reason: string;
+  gscVerificationId?: string | number | null;
+  includeSubdomains?: boolean;
 }) {
   const projectName = input.projectName.trim();
-  if (!projectName) throw new Error("Project name is required.");
+  if (!projectName) throw new Error("Tên dự án là bắt buộc.");
   if (!projectLifecycles.includes(input.lifecycle as ProjectLifecycle))
-    throw new Error("Invalid project lifecycle.");
+    throw new Error("Vòng đời dự án không hợp lệ.");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.effectiveFrom))
-    throw new Error("Effective-from date must use YYYY-MM-DD.");
-  if (!input.version.trim()) throw new Error("Settings version is required.");
-  if (!input.reason.trim()) throw new Error("An audit reason is required.");
+    throw new Error("Ngày bắt đầu hiệu lực phải theo định dạng YYYY-MM-DD.");
+  if (!input.version.trim()) throw new Error("Phiên bản cấu hình là bắt buộc.");
+  if (!input.reason.trim()) throw new Error("Lý do kiểm toán là bắt buộc.");
   if (input.gscReady && !input.gscProperty?.trim())
     throw new Error(
-      "A GSC property is required before a project can be GSC-ready.",
+      "Dự án phải có thuộc tính GSC trước khi được đánh dấu sẵn sàng GSC.",
     );
-  if (input.lifecycle === "new_project" && input.kpiReady)
+  if (input.gscReady && !input.gscVerificationId)
     throw new Error(
-      "A New Project cannot be KPI-ready until an admin promotes its lifecycle.",
+      "Phải có bằng chứng xác minh GSC trước khi duyệt Cài đặt dự án.",
     );
   return {
     ...input,
@@ -86,6 +88,41 @@ export function validateProjectSettings(input: {
     reason: input.reason.trim(),
     weights: validateRangeWeights(input.weights),
   };
+}
+
+export function registrableDomain(hostname: string) {
+  const parts = normalizeDomain(hostname).split(".");
+  return parts.length <= 2 ? parts.join(".") : parts.slice(-2).join(".");
+}
+
+export function gscPropertyCoversUrl(
+  property: string,
+  urlOrHostname: string,
+  includeSubdomains = false,
+) {
+  const selected = property.trim();
+  const candidate = urlOrHostname.includes("://")
+    ? new URL(urlOrHostname)
+    : new URL(`https://${urlOrHostname}`);
+  const hostname = candidate.hostname.toLowerCase().replace(/^www\./, "");
+  if (selected.startsWith("sc-domain:")) {
+    const root = normalizeDomain(selected.slice("sc-domain:".length));
+    return hostname === root || (includeSubdomains && hostname.endsWith(`.${root}`));
+  }
+  try {
+    const prefix = new URL(selected);
+    const prefixHost = prefix.hostname.toLowerCase().replace(/^www\./, "");
+    if (hostname !== prefixHost) return false;
+    const prefixPath = prefix.pathname.endsWith("/")
+      ? prefix.pathname
+      : `${prefix.pathname}/`;
+    const candidatePath = candidate.pathname.endsWith("/")
+      ? candidate.pathname
+      : `${candidate.pathname}/`;
+    return candidate.protocol === prefix.protocol && candidatePath.startsWith(prefixPath);
+  } catch {
+    return false;
+  }
 }
 
 export function lifecycleMeasurementStrategy(lifecycle: ProjectLifecycle) {

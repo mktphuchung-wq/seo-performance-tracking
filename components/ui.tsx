@@ -3,6 +3,7 @@ import type { UrlMetrics, UrlPerformance } from "../lib/google";
 import { labelText, type OpportunityLabel } from "../lib/metrics";
 import { formatNumber, formatPercent, formatSignedPercent, getGrowthClassName } from "../lib/format";
 import type { MemberPerformanceFinalSummary } from "../lib/postgres";
+import { formatViDateTime, viLabel } from "../lib/i18n/vi";
 
 export type UrlSortKey = "url" | "project" | "content_type" | "content_worked_at" | "clicks" | "impressions" | "ctr" | "position" | "click_growth_pct" | "impression_growth_pct" | "growth_status" | "refreshed_at";
 export type UrlSortDirection = "asc" | "desc";
@@ -23,16 +24,16 @@ export function DataTableContainer({ children }: { children: React.ReactNode }) 
 
 export function Shell({ children, email, isAdmin }: { children: React.ReactNode; email?: string | null; isAdmin?: boolean }) {
   const navItems = !email ? [] : isAdmin ? [
-    { href: "/admin/sync", label: "Data Sync" },
-    { href: "/admin/projects", label: "Project Settings" },
-    { href: "/admin/data-source", label: "Data Source" },
-    { href: "/admin/member-performance", label: "Member Performance" },
-    { href: "/admin/member-review", label: "Member Review" },
-    { href: "/admin/kpi-close", label: "KPI Close" },
+    { href: "/admin/sync", label: "Đồng bộ dữ liệu" },
+    { href: "/admin/projects", label: "Cấu hình dự án" },
+    { href: "/admin/data-source", label: "Nguồn dữ liệu" },
+    { href: "/admin/member-performance", label: "Hiệu suất thành viên" },
+    { href: "/admin/member-review", label: "Đánh giá thành viên" },
+    { href: "/admin/kpi-close", label: "Chốt KPI" },
   ] : [
-    { href: "/dashboard", label: "My Performance" },
-    { href: "/my-urls", label: "My URLs" },
-    { href: "/my-kpi", label: "My KPI" },
+    { href: "/dashboard", label: "Hiệu suất của tôi" },
+    { href: "/my-urls", label: "URL của tôi" },
+    { href: "/my-kpi", label: "KPI của tôi" },
   ];
 
   return <main className="min-h-screen w-full">
@@ -40,15 +41,15 @@ export function Shell({ children, email, isAdmin }: { children: React.ReactNode;
       <PageContainer className="py-4">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">SEO Performance Workspace</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">Không gian KPI SEO</h1>
           </div>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between xl:justify-end">
-            <nav aria-label="Main navigation" className="flex flex-wrap gap-2">
+            <nav aria-label="Điều hướng chính" className="flex flex-wrap gap-2">
               {navItems.map((item) => <Link className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 sm:text-[15px]" href={item.href} key={item.href}>{item.label}</Link>)}
             </nav>
             {email && <div className="flex flex-wrap items-center gap-3 text-sm lg:justify-end">
               <span className="max-w-full truncate text-slate-500">{email}</span>
-              <Link className="font-semibold text-blue-700 hover:text-blue-900" href="/api/auth/signout">Sign out</Link>
+              <Link className="font-semibold text-blue-700 hover:text-blue-900" href="/api/auth/signout">Đăng xuất</Link>
             </div>}
           </div>
         </div>
@@ -59,9 +60,9 @@ export function Shell({ children, email, isAdmin }: { children: React.ReactNode;
 }
 
 export function DateRangePicker({ range = "current_month", startDate, endDate, preserve = {} }: { range?: string; startDate?: string; endDate?: string; preserve?: Record<string, string | undefined> }) {
-  const items = [["current_month", "Current month"], ["previous_month", "Previous month"], ["last_3_months", "Last 3 months"], ["last_6_months", "Last 6 months"], ["all_time", "All time"]];
+  const items = [["current_month", "Tháng hiện tại"], ["previous_month", "Tháng trước"], ["last_3_months", "3 tháng gần nhất"], ["last_6_months", "6 tháng gần nhất"], ["all_time", "Toàn thời gian"]];
   const href = (key: string) => { const qs = new URLSearchParams(); Object.entries(preserve).forEach(([k, v]) => { if (v && k !== "startDate" && k !== "endDate") qs.set(k, v); }); qs.set("range", key); return `?${qs.toString()}`; };
-  return <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div className="mb-4 flex flex-wrap gap-2">{items.map(([key, label]) => <Link className={`rounded-full border px-3 py-1 text-sm ${range === key ? "bg-blue-700 text-white" : "bg-white"}`} href={href(key)} key={key}>{label}</Link>)}</div><form className="flex flex-wrap items-end gap-3">{Object.entries(preserve).filter(([k, v]) => v && k !== "range" && k !== "startDate" && k !== "endDate").map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}<input type="hidden" name="range" value="custom" /><label className="text-sm text-slate-600">Custom start<input className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2 sm:ml-2 sm:mt-0 sm:w-auto" name="startDate" type="date" defaultValue={startDate} /></label><label className="text-sm text-slate-600">End<input className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2 sm:ml-2 sm:mt-0 sm:w-auto" name="endDate" type="date" defaultValue={endDate} /></label><button className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white" type="submit">Apply custom range</button></form></div>;
+  return <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div className="mb-4 flex flex-wrap gap-2">{items.map(([key, label]) => <Link className={`rounded-full border px-3 py-1 text-sm ${range === key ? "bg-blue-700 text-white" : "bg-white"}`} href={href(key)} key={key}>{label}</Link>)}</div><form className="flex flex-wrap items-end gap-3">{Object.entries(preserve).filter(([k, v]) => v && k !== "range" && k !== "startDate" && k !== "endDate").map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}<input type="hidden" name="range" value="custom" /><label className="text-sm text-slate-600">Ngày bắt đầu<input className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2 sm:ml-2 sm:mt-0 sm:w-auto" name="startDate" type="date" defaultValue={startDate} /></label><label className="text-sm text-slate-600">Ngày kết thúc<input className="mt-1 w-full min-w-40 rounded-lg border px-3 py-2 sm:ml-2 sm:mt-0 sm:w-auto" name="endDate" type="date" defaultValue={endDate} /></label><button className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white" type="submit">Áp dụng khoảng tùy chỉnh</button></form></div>;
 }
 
 export type MetricTone = "neutral" | "quantity" | "growth-positive" | "growth-negative" | "growth-neutral" | "kpi-excellent" | "kpi-good" | "kpi-monitor" | "kpi-support" | "kpi-risk" | "kpi-null";
@@ -106,13 +107,13 @@ export function fmtNum(n: number) { return formatNumber(n); }
 export function fmtPos(n: number) { return n ? n.toFixed(1) : "—"; }
 
 export function MetricGrid({ metrics, count }: { metrics: UrlMetrics; count?: number }) {
-  return <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">{count !== undefined && <MetricCard label="URL count" value={count} />}<MetricCard label="Clicks" value={fmtNum(metrics.clicks)} /><MetricCard label="Impressions" value={fmtNum(metrics.impressions)} /><MetricCard label="CTR" value={fmtPct(metrics.ctr)} /><MetricCard label="Avg. position" value={fmtPos(metrics.position)} /></div>;
+  return <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">{count !== undefined && <MetricCard label="Số URL" value={count} />}<MetricCard label="Lượt nhấp" value={fmtNum(metrics.clicks)} /><MetricCard label="Lượt hiển thị" value={fmtNum(metrics.impressions)} /><MetricCard label="CTR" value={fmtPct(metrics.ctr)} /><MetricCard label="Vị trí trung bình" value={fmtPos(metrics.position)} /></div>;
 }
 
 export function WarningList({ warnings }: { warnings: (string | undefined)[] }) {
-  const unique = Array.from(new Set(warnings.filter(Boolean).map((warning) => warning === "pending_refresh" ? "Not refreshed yet" : warning)));
+  const unique = Array.from(new Set(warnings.filter(Boolean).map((warning) => warning === "pending_refresh" ? "Chưa làm mới dữ liệu" : warning)));
   if (!unique.length) return null;
-  return <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><strong>Setup warnings:</strong><ul className="mt-2 list-disc pl-5">{unique.map((w) => <li key={w}>{w}</li>)}</ul></div>;
+  return <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><strong>Cảnh báo cấu hình:</strong><ul className="mt-2 list-disc pl-5">{unique.map((w) => <li key={w}>{w}</li>)}</ul></div>;
 }
 
 const opportunityRank: Record<OpportunityLabel, number> = { no_data: 5, ctr_opportunity: 1, ranking_opportunity: 2, winner: 0, low_visibility: 4, normal: 3 };
@@ -147,14 +148,14 @@ function sortedRows(rows: UrlPerformance[], sort: LegacyUrlSortKey, direction?: 
     return (normalized.direction === "asc" ? result : -result) || compareString(left.url, right.url);
   });
 }
-function fmtDateTime(value?: string | null) { if (!value) return "Not refreshed yet"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString(); }
-function fmtWorkedDate(value?: string | null) { if (!value) return "No worked date"; const date = new Date(`${String(value).slice(0, 10)}T00:00:00.000Z`); return Number.isNaN(date.getTime()) ? "No worked date" : date.toISOString().slice(0, 10); }
-export function contentTypeLabel(value?: string | null) { const labels: Record<string, string> = { new_content: "New Content", audit: "Audit", update: "Update", portfolio: "Portfolio" }; return value ? (labels[value] ?? value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase())) : "No type"; }
+function fmtDateTime(value?: string | null) { return value ? formatViDateTime(value) : "Chưa làm mới"; }
+function fmtWorkedDate(value?: string | null) { if (!value) return "Chưa có ngày làm việc"; const date = new Date(`${String(value).slice(0, 10)}T00:00:00.000Z`); return Number.isNaN(date.getTime()) ? "Chưa có ngày làm việc" : date.toISOString().slice(0, 10); }
+export function contentTypeLabel(value?: string | null) { const labels: Record<string, string> = { new_content: "Nội dung mới", audit: "Audit", update: "Cập nhật", portfolio: "Danh mục nền" }; return value ? (labels[value] ?? viLabel(value)) : "Chưa có loại"; }
 export function UrlTable({ rows, sort = "clicks", direction, basePath = "", preserve = {} }: { rows: UrlPerformance[]; sort?: LegacyUrlSortKey; direction?: UrlSortDirection; basePath?: string; preserve?: Record<string, string | undefined> }) {
   const activeSort = normalizeUrlSort(sort, direction || (preserve.direction as UrlSortDirection | undefined));
   const href = (key: UrlSortKey) => { const qs = new URLSearchParams(); Object.entries(preserve).forEach(([k, v]) => { if (v && k !== "sort" && k !== "direction") qs.set(k, v); }); qs.set("sort", key); qs.set("direction", activeSort.key === key && activeSort.direction === "asc" ? "desc" : "asc"); const query = qs.toString(); return `${basePath}${query ? `?${query}` : ""}`; };
-  const header = (key: UrlSortKey, label: string, className = "") => { const active = activeSort.key === key; const nextDirection = active && activeSort.direction === "asc" ? "descending" : "ascending"; return <th className={className || undefined}><Link aria-label={`Sort by ${label} ${nextDirection}`} aria-sort={active ? (activeSort.direction === "asc" ? "ascending" : "descending") : undefined} className={`inline-flex items-center gap-1 py-3 pr-3 font-semibold ${active ? "text-blue-700" : "text-slate-700 hover:text-blue-700"}`} href={href(key)}>{label}<span aria-hidden="true" className={active ? "text-blue-700" : "text-slate-400"}>{active ? (activeSort.direction === "asc" ? "↑" : "↓") : "↕"}</span></Link></th>; };
-  return <DataTableContainer><table className="w-full min-w-[1360px] table-auto text-[13px] sm:text-sm"><thead className="bg-slate-100 text-left"><tr>{header("url", "URL", "p-3")}{header("project", "Project")}<th>Member</th>{header("content_worked_at", "Work Date")}{header("content_type", "Type")}{header("clicks", "Clicks")}{header("impressions", "Impr.")}{header("ctr", "CTR")}{header("position", "Pos.")}{header("click_growth_pct", "Click Growth")}{header("impression_growth_pct", "Impr. Growth")}{header("growth_status", "Status")}<th>Opportunity</th>{header("refreshed_at", "Refreshed")}</tr></thead><tbody>{sortedRows(rows, activeSort.key, activeSort.direction).map((row) => { const r = row as SortableUrlPerformance; return <tr className="border-t" key={r.id}><td className="w-[34rem] max-w-[34rem] p-3"><Link className="block truncate text-blue-700" title={r.url} href={`/url/${r.id}`}>{r.url}</Link>{r.warning && <div className="text-xs text-amber-700">{r.warning}</div>}</td><td>{r.project}</td><td>{r.member_name}</td><td>{fmtWorkedDate(r.content_worked_at)}</td><td><span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-800">{contentTypeLabel(r.content_type)}</span></td><td>{fmtNum(r.clicks)}</td><td>{fmtNum(r.impressions)}</td><td>{fmtPct(r.ctr)}</td><td>{fmtPos(r.position)}</td><td><span className={getGrowthClassName(r.click_growth_pct)}>{r.click_growth_pct === undefined ? "—" : fmtGrowth(r.click_growth_pct)}</span></td><td><span className={getGrowthClassName(r.impression_growth_pct)}>{r.impression_growth_pct === undefined ? "—" : fmtGrowth(r.impression_growth_pct)}</span></td><td>{r.status ? <StatusBadge status={r.status} /> : "—"}</td><td><span className="rounded-full bg-slate-100 px-2 py-1 text-xs">{labelText(r.opportunity)}</span></td><td>{fmtDateTime(r.refreshed_at)}</td></tr>; })}{rows.length === 0 && <tr><td className="p-3 text-slate-500" colSpan={14}>No URLs found for this account.</td></tr>}</tbody></table></DataTableContainer>;
+  const header = (key: UrlSortKey, label: string, className = "") => { const active = activeSort.key === key; const nextDirection = active && activeSort.direction === "asc" ? "giảm dần" : "tăng dần"; return <th className={className || undefined}><Link aria-label={`Sắp xếp theo ${label} ${nextDirection}`} aria-sort={active ? (activeSort.direction === "asc" ? "ascending" : "descending") : undefined} className={`inline-flex items-center gap-1 py-3 pr-3 font-semibold ${active ? "text-blue-700" : "text-slate-700 hover:text-blue-700"}`} href={href(key)}>{label}<span aria-hidden="true" className={active ? "text-blue-700" : "text-slate-400"}>{active ? (activeSort.direction === "asc" ? "↑" : "↓") : "↕"}</span></Link></th>; };
+  return <DataTableContainer><table className="w-full min-w-[1360px] table-auto text-[13px] sm:text-sm"><thead className="bg-slate-100 text-left"><tr>{header("url", "URL", "p-3")}{header("project", "Dự án")}<th>Thành viên</th>{header("content_worked_at", "Ngày làm việc")}{header("content_type", "Loại")}{header("clicks", "Lượt nhấp")}{header("impressions", "Lượt hiển thị")}{header("ctr", "CTR")}{header("position", "Vị trí")}{header("click_growth_pct", "Tăng trưởng click")}{header("impression_growth_pct", "Tăng trưởng hiển thị")}{header("growth_status", "Trạng thái")}<th>Cơ hội</th>{header("refreshed_at", "Làm mới lúc")}</tr></thead><tbody>{sortedRows(rows, activeSort.key, activeSort.direction).map((row) => { const r = row as SortableUrlPerformance; return <tr className="border-t" key={r.id}><td className="w-[34rem] max-w-[34rem] p-3"><Link className="block truncate text-blue-700" title={r.url} href={`/url/${r.id}`}>{r.url}</Link>{r.warning && <div className="text-xs text-amber-700">{r.warning}</div>}</td><td>{r.project}</td><td>{r.member_name}</td><td>{fmtWorkedDate(r.content_worked_at)}</td><td><span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-800">{contentTypeLabel(r.content_type)}</span></td><td>{fmtNum(r.clicks)}</td><td>{fmtNum(r.impressions)}</td><td>{fmtPct(r.ctr)}</td><td>{fmtPos(r.position)}</td><td><span className={getGrowthClassName(r.click_growth_pct)}>{r.click_growth_pct === undefined ? "—" : fmtGrowth(r.click_growth_pct)}</span></td><td><span className={getGrowthClassName(r.impression_growth_pct)}>{r.impression_growth_pct === undefined ? "—" : fmtGrowth(r.impression_growth_pct)}</span></td><td>{r.status ? <StatusBadge status={r.status} /> : "—"}</td><td><span className="rounded-full bg-slate-100 px-2 py-1 text-xs">{labelText(r.opportunity)}</span></td><td>{fmtDateTime(r.refreshed_at)}</td></tr>; })}{rows.length === 0 && <tr><td className="p-3 text-slate-500" colSpan={14}>Không tìm thấy URL phù hợp.</td></tr>}</tbody></table></DataTableContainer>;
 }
 
 export function fmtGrowth(n: number | null) { return n === null ? "—" : formatSignedPercent(n * 100); }
@@ -167,22 +168,22 @@ export function kpiTone(value: number | null | undefined): MetricTone {
   return "kpi-risk";
 }
 
-export function fmtKpi(value: number | null | undefined) { return value == null ? "Insufficient data" : `${value.toFixed(0)}%`; }
-function statusLabel(status?: string | null) { return (status || "insufficient_data").replace(/_/g, " "); }
+export function fmtKpi(value: number | null | undefined) { return value == null ? "Chưa đủ dữ liệu" : `${value.toFixed(0)}%`; }
+function statusLabel(status?: string | null) { return viLabel(status || "insufficient_data"); }
 function rangeMetric(finalPerformance: MemberPerformanceFinalSummary | null | undefined, key: "1m" | "3m" | "6m" | "all_time", weight: string) {
   const value = finalPerformance?.[`performance_kpi_${key}_pct` as keyof MemberPerformanceFinalSummary] as number | null | undefined;
   const eligible = key === "all_time" ? undefined : finalPerformance?.[`eligible_url_count_${key}` as keyof MemberPerformanceFinalSummary] as number | null | undefined;
   const excluded = key === "all_time" ? undefined : finalPerformance?.[`excluded_no_data_url_count_${key}` as keyof MemberPerformanceFinalSummary] as number | null | undefined;
-  return { label: `${key.toUpperCase()} KPI`, value: <div><div>{fmtKpi(value)}</div><div className="mt-2 text-sm font-normal text-slate-600">Weight {weight}{key !== "all_time" ? ` · eligible URLs ${eligible ?? 0} · excluded no-data URLs ${excluded ?? 0}` : " · optional refresh"}</div>{value == null && <div className="mt-2 text-xs font-medium text-slate-500">Excluded from final KPI and weights are normalized.</div>}</div>, tone: kpiTone(value) };
+  return { label: `${key === "all_time" ? "Toàn thời gian" : key.toUpperCase()} KPI`, value: <div><div>{fmtKpi(value)}</div><div className="mt-2 text-sm font-normal text-slate-600">Trọng số {weight}{key !== "all_time" ? ` · URL đủ điều kiện ${eligible ?? 0} · URL thiếu dữ liệu bị loại ${excluded ?? 0}` : " · làm mới tùy chọn"}</div>{value == null && <div className="mt-2 text-xs font-medium text-slate-500">Không tính vào KPI cuối cùng; trọng số còn lại được chuẩn hóa.</div>}</div>, tone: kpiTone(value) };
 }
 
 export function PerformanceKpiPanel({ finalPerformance, memberName, helper }: { finalPerformance?: MemberPerformanceFinalSummary | null; memberName?: string; helper?: string }) {
   const rawValue = finalPerformance?.raw_performance_final_pct ?? finalPerformance?.performance_final_pct;
   const adjustedValue = finalPerformance?.adjusted_performance_final_pct ?? rawValue;
   return <section className={`rounded-2xl border p-5 shadow-sm sm:p-6 ${metricToneStyles[kpiTone(adjustedValue)].card}`}>
-    <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Raw Performance Final %</p><h3 className={`mt-1 text-4xl font-bold ${metricToneStyles[kpiTone(rawValue)].value}`}>{fmtKpi(rawValue)}</h3><p className="mt-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Adjusted Performance Final %</p><h3 className={`mt-1 text-3xl font-bold ${metricToneStyles[kpiTone(adjustedValue)].value}`}>{fmtKpi(adjustedValue)}</h3>{adjustedValue != null && rawValue != null && adjustedValue > rawValue && <p className="mt-2 rounded-lg bg-blue-50 p-2 text-sm font-medium text-blue-800">Adjusted upward due to project KPI protection rules.</p>}{memberName && <p className="mt-1 text-sm text-slate-600">{memberName}</p>}</div><div className="grid gap-2 text-sm sm:grid-cols-3 lg:min-w-[520px]"><div className="rounded-xl bg-white/70 p-3"><span className="block text-xs uppercase text-slate-500">Adjustment Status</span><strong>{statusLabel(finalPerformance?.adjustment_status || finalPerformance?.performance_final_status)}</strong></div><div className="rounded-xl bg-white/70 p-3"><span className="block text-xs uppercase text-slate-500">Project KPI Type</span><strong>{statusLabel(finalPerformance?.project_kpi_type || "growth_project")}</strong></div><div className="rounded-xl bg-white/70 p-3"><span className="block text-xs uppercase text-slate-500">PM Review Required</span><strong>{finalPerformance?.pm_review_required ? "Yes" : "No"}</strong></div><div className="rounded-xl bg-white/70 p-3"><span className="block text-xs uppercase text-slate-500">Confidence</span><strong>{finalPerformance?.performance_confidence || "Low sample"}</strong></div><div className="rounded-xl bg-white/70 p-3"><span className="block text-xs uppercase text-slate-500">Coverage</span><strong>{finalPerformance ? fmtPct(finalPerformance.performance_final_coverage) : "—"}</strong></div><div className="rounded-xl bg-white/70 p-3"><span className="block text-xs uppercase text-slate-500">Raw Status</span><strong>{statusLabel(finalPerformance?.performance_final_status)}</strong></div></div></div>
-    <p className="rounded-xl border border-white/70 bg-white/70 p-3 text-sm text-slate-700"><strong>Formula:</strong> Final KPI uses admin-configured weights (default 1M × 30% + 3M × 40% + 6M × 20% + all_time × 10%). Missing or insufficient ranges are excluded from the final KPI and available weights are normalized.</p>
-    {finalPerformance?.adjustment_reason && <p className="mt-3 rounded-xl border border-white/70 bg-white/70 p-3 text-sm text-slate-700"><strong>Adjustment Reason:</strong> {finalPerformance.adjustment_reason}</p>}
+    <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Điểm Hiệu suất thô cuối cùng %</p><h3 className={`mt-1 text-4xl font-bold ${metricToneStyles[kpiTone(rawValue)].value}`}>{fmtKpi(rawValue)}</h3><p className="mt-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Điểm Hiệu suất sau điều chỉnh %</p><h3 className={`mt-1 text-3xl font-bold ${metricToneStyles[kpiTone(adjustedValue)].value}`}>{fmtKpi(adjustedValue)}</h3>{adjustedValue != null && rawValue != null && adjustedValue > rawValue && <p className="mt-2 rounded-lg bg-blue-50 p-2 text-sm font-medium text-blue-800">Điểm được nâng theo quy tắc bảo vệ KPI dự án.</p>}{memberName && <p className="mt-1 text-sm text-slate-600">{memberName}</p>}</div><div className="grid gap-2 text-sm sm:grid-cols-3 lg:min-w-[520px]"><div className="rounded-xl bg-white/70 p-3"><span className="block text-xs uppercase text-slate-500">Trạng thái điều chỉnh</span><strong>{statusLabel(finalPerformance?.adjustment_status || finalPerformance?.performance_final_status)}</strong></div><div className="rounded-xl bg-white/70 p-3"><span className="block text-xs uppercase text-slate-500">Loại KPI dự án</span><strong>{statusLabel(finalPerformance?.project_kpi_type || "growth_project")}</strong></div><div className="rounded-xl bg-white/70 p-3"><span className="block text-xs uppercase text-slate-500">Cần PM đánh giá</span><strong>{finalPerformance?.pm_review_required ? "Có" : "Không"}</strong></div><div className="rounded-xl bg-white/70 p-3"><span className="block text-xs uppercase text-slate-500">Độ tin cậy</span><strong>{viLabel(finalPerformance?.performance_confidence || "low")}</strong></div><div className="rounded-xl bg-white/70 p-3"><span className="block text-xs uppercase text-slate-500">Độ phủ</span><strong>{finalPerformance ? fmtPct(finalPerformance.performance_final_coverage) : "—"}</strong></div><div className="rounded-xl bg-white/70 p-3"><span className="block text-xs uppercase text-slate-500">Trạng thái điểm thô</span><strong>{statusLabel(finalPerformance?.performance_final_status)}</strong></div></div></div>
+    <p className="rounded-xl border border-white/70 bg-white/70 p-3 text-sm text-slate-700"><strong>Công thức:</strong> KPI cuối cùng dùng trọng số do quản trị viên cấu hình (mặc định 1T × 30% + 3T × 40% + 6T × 20% + toàn thời gian × 10%). Kỳ thiếu dữ liệu bị loại và trọng số còn lại được chuẩn hóa.</p>
+    {finalPerformance?.adjustment_reason && <p className="mt-3 rounded-xl border border-white/70 bg-white/70 p-3 text-sm text-slate-700"><strong>Lý do điều chỉnh:</strong> {finalPerformance.adjustment_reason}</p>}
     {helper && <p className="mt-3 text-sm text-slate-700">{helper}</p>}
     <div className="mt-4 grid gap-4 md:grid-cols-4"><MetricCard {...rangeMetric(finalPerformance, "1m", "30%")} /><MetricCard {...rangeMetric(finalPerformance, "3m", "40%")} /><MetricCard {...rangeMetric(finalPerformance, "6m", "20%")} /><MetricCard {...rangeMetric(finalPerformance, "all_time", "10%")} /></div>
   </section>;
@@ -191,9 +192,9 @@ export function PerformanceKpiPanel({ finalPerformance, memberName, helper }: { 
 export function StatusBadge({ status }: { status: string }) {
   const styles: Record<string,string> = { growing: "bg-green-100 text-green-800", new_signal: "bg-emerald-100 text-emerald-800", declining: "bg-red-100 text-red-800", stable: "bg-slate-100 text-slate-700", no_data: "bg-slate-100 text-slate-700" };
   const arrow = status === "growing" || status === "new_signal" ? "↗" : status === "declining" ? "↘" : "→";
-  const label = status === "new_signal" ? "New growth" : status === "no_data" ? "Not enough data — excluded from KPI performance" : status.replace(/_/g, " ");
+  const label = status === "new_signal" ? "Tín hiệu tăng trưởng mới" : status === "no_data" ? "Chưa đủ dữ liệu — không tính KPI Hiệu suất" : viLabel(status);
   return <span className={`rounded-full px-2 py-1 text-xs font-medium ${styles[status] ?? styles.stable}`}>{arrow} {label}</span>;
 }
 export function RefreshDataButton({ range, startDate, endDate, returnTo, preserve = {} }: { range?: string; startDate?: string; endDate?: string; returnTo?: string; preserve?: Record<string, string | undefined> }) {
-  return <form action="/api/refresh/cache" method="post"><input type="hidden" name="range" value={range || "current_month"} />{startDate && <input type="hidden" name="startDate" value={startDate} />}{endDate && <input type="hidden" name="endDate" value={endDate} />}{returnTo && <input type="hidden" name="returnTo" value={returnTo} />}{Object.entries(preserve).filter(([k, v]) => v && !["range", "startDate", "endDate"].includes(k)).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}<button className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-800" type="submit">Refresh GSC Performance</button></form>;
+  return <form action="/api/refresh/cache" method="post"><input type="hidden" name="range" value={range || "current_month"} />{startDate && <input type="hidden" name="startDate" value={startDate} />}{endDate && <input type="hidden" name="endDate" value={endDate} />}{returnTo && <input type="hidden" name="returnTo" value={returnTo} />}{Object.entries(preserve).filter(([k, v]) => v && !["range", "startDate", "endDate"].includes(k)).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}<button className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-800" type="submit">Làm mới Hiệu suất GSC</button></form>;
 }

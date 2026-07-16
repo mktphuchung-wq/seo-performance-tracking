@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email || !session.user.isAdmin)
     return NextResponse.json(
-      { ok: false, error: "Forbidden", code: "forbidden", requestId },
+      { ok: false, error: "Bạn không có quyền thực hiện thao tác này.", code: "forbidden", requestId },
       { status: 403 },
     );
   try {
@@ -24,6 +24,6 @@ export async function GET(request: Request) {
       : [];
     return apiOk({ options, gscProperties }, requestId);
   } catch (error) {
-    return apiErrorResponse(error, requestId, "Project options failed", 500);
+    return apiErrorResponse(error, requestId, "Không thể tải danh sách dự án", 500);
   }
 }

@@ -5,7 +5,7 @@ import { getDbContentUrls } from "../../../../lib/postgres";
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email || !session.user.isAdmin)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Bạn chưa đăng nhập hoặc không có quyền quản trị." }, { status: 401 });
   const rows = await getDbContentUrls();
   const projects = Object.values(
     rows.reduce<

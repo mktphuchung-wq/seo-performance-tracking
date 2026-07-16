@@ -464,6 +464,67 @@ export async function listSearchConsoleProperties(accessToken: string) {
     .filter((entry) => entry.siteUrl);
 }
 
+export async function testSearchConsolePropertyAccess(input: {
+  accessToken: string;
+  siteUrl: string;
+}) {
+  const properties = await listSearchConsoleProperties(input.accessToken);
+  const property = properties.find((row) => row.siteUrl === input.siteUrl) ?? null;
+  if (!property)
+    return {
+      property: null,
+      accessStatus: "not_accessible" as const,
+      testQueryStatus: "not_run" as const,
+      errorCode: "property_not_accessible",
+      queryRows: 0,
+    };
+  if (property.permissionLevel === "siteUnverifiedUser")
+    return {
+      property,
+      accessStatus: "unverified_permission" as const,
+      testQueryStatus: "not_run" as const,
+      errorCode: "site_unverified_user",
+      queryRows: 0,
+    };
+  const end = new Date();
+  end.setUTCDate(end.getUTCDate() - 3);
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - 6);
+  const webmasters = google.searchconsole({
+    version: "v1",
+    auth: auth(input.accessToken),
+  });
+  try {
+    const response = await webmasters.searchanalytics.query({
+      siteUrl: input.siteUrl,
+      requestBody: {
+        startDate: start.toISOString().slice(0, 10),
+        endDate: end.toISOString().slice(0, 10),
+        dimensions: ["date"],
+        type: "web",
+        rowLimit: 1,
+      },
+    });
+    return {
+      property,
+      accessStatus: "verified" as const,
+      testQueryStatus: "succeeded" as const,
+      errorCode: null,
+      queryRows: response.data.rows?.length ?? 0,
+    };
+  } catch (error) {
+    return {
+      property,
+      accessStatus: "query_failed" as const,
+      testQueryStatus: "failed" as const,
+      errorCode:
+        classifyGoogleApiError(error) ??
+        (error instanceof Error ? error.message : "property_test_failed"),
+      queryRows: 0,
+    };
+  }
+}
+
 export type TrackedGscUrl = {
   project: string;
   gscProperty: string | null;

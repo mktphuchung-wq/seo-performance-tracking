@@ -3,6 +3,7 @@ import { normalizeAliasKey } from "../domain/normalization";
 import { reconcileWorkSourceRows } from "../domain/work-source";
 import { getMemberAliases } from "../repositories/member-aliases";
 import { getProjectAliases } from "../repositories/project-aliases";
+import { getProjectDomainRules } from "../repositories/project-settings";
 import {
   compareCanonicalEventCandidates,
   loadPreviewReconciliation,
@@ -20,6 +21,12 @@ function previewRows(result: ReturnType<typeof reconcileWorkSourceRows>) {
     workType: row.workType,
     workDate: row.workDate,
     canonicalUrl: row.canonicalUrl,
+    observedHostname: row.canonicalUrl ? new URL(row.canonicalUrl).hostname : null,
+    classificationStatus:
+      row.isCountable && !result.quarantinedRows.includes(row)
+        ? "accepted"
+        : "quarantined",
+    contentKpiEligible: row.isCountable,
     accepted: row.isCountable && !result.quarantinedRows.includes(row),
     issues: row.issues,
   }));
@@ -30,8 +37,9 @@ export async function previewSourcePipeline(input: {
   actor: string;
 }) {
   await assertUnifiedSchemaReady();
-  const [projects, dbMembers, sourceRows] = await Promise.all([
+  const [projects, projectDomains, dbMembers, sourceRows] = await Promise.all([
     getProjectAliases(),
+    getProjectDomainRules(),
     getMemberAliases(),
     getContentUrlsSheetRows(input.accessToken),
   ]);
@@ -43,6 +51,7 @@ export async function previewSourcePipeline(input: {
   );
   const reconciliation = reconcileWorkSourceRows(sourceRows, {
     projects,
+    projectDomains,
     members: { ...configuredMembers, ...dbMembers },
   });
   const diff = await compareCanonicalEventCandidates(reconciliation);

@@ -13,7 +13,8 @@
     "test:integration": "node --experimental-strip-types --test lib/domain/integration-monthly-kpi-v2.test.mjs",
     "test:e2e": "playwright test",
     "db:migrate:unified": "node --experimental-strip-types scripts/apply-unified-migration.mjs",
-    "kpi:reconcile": "node --experimental-strip-types scripts/kpi-v2-reconcile.mjs"
+    "kpi:reconcile": "node --experimental-strip-types scripts/kpi-v2-reconcile.mjs",
+    "db:backfill:eligibility": "node --experimental-strip-types scripts/backfill-performance-readiness.mjs"
   },
   "dependencies": {
     "googleapis": "^140.0.1",

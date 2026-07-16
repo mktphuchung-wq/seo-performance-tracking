@@ -7,6 +7,8 @@ import {
 } from "../../../components/unified-workflows";
 import { authOptions } from "../../../lib/auth";
 import { listMonthlyKpiAudit } from "../../../lib/repositories/monthly-kpi";
+import { listMemberOptions } from "../../../lib/repositories/member-options";
+import { formatViDateTime, viLabel } from "../../../lib/i18n/vi";
 
 export const dynamic = "force-dynamic";
 
@@ -23,16 +25,11 @@ export default async function KpiClose(props: {
   if (!session?.user?.email || !session.user.isAdmin) redirect("/");
 
   const month = searchParams?.month ?? new Date().toISOString().slice(0, 7);
-  const audit = await listMonthlyKpiAudit(month);
-  const members = [
-    ...new Set(
-      [
-        ...audit.targets.map((row: any) => row.member_name),
-        ...audit.components.map((row: any) => row.member_name),
-        ...audit.configs.map((row: any) => row.member_name),
-      ].filter(Boolean),
-    ),
-  ] as string[];
+  const [audit, memberOptions] = await Promise.all([
+    listMonthlyKpiAudit(month),
+    listMemberOptions(month, "close"),
+  ]);
+  const members = memberOptions.map((row) => row.memberName);
   const selectedMember = searchParams?.member ?? members[0];
   const selectedConfig = audit.configs.find(
     (row: any) => row.member_name === selectedMember,
@@ -52,18 +49,18 @@ export default async function KpiClose(props: {
       <div className="space-y-6">
         <header>
           <p className="text-sm font-semibold uppercase text-blue-700">
-            Admin workflow 6/6
+            Quy trình quản trị 6/6
           </p>
-          <h2 className="text-3xl font-bold">KPI Close - {month}</h2>
+          <h2 className="text-3xl font-bold">Chốt KPI — {month}</h2>
           <p className="mt-2 text-slate-600">
-            Configure each member-month, preview three components, finalize an
-            immutable result, and reopen only as a new version.
+            Cấu hình từng Thành viên × Tháng, xem trước ba thành phần và chốt
+            một kết quả bất biến. Mở lại luôn tạo phiên bản mới.
           </p>
         </header>
 
         <form className="flex flex-wrap items-end gap-3" method="get">
           <label className="text-sm">
-            Month
+            Tháng
             <input
               name="month"
               type="month"
@@ -72,7 +69,7 @@ export default async function KpiClose(props: {
             />
           </label>
           <label className="text-sm">
-            Member
+            Thành viên
             <select
               name="member"
               defaultValue={selectedMember}
@@ -84,26 +81,26 @@ export default async function KpiClose(props: {
             </select>
           </label>
           <button className="rounded-lg border px-4 py-2 font-semibold">
-            View
+            Xem
           </button>
         </form>
 
         <div className="grid gap-4 md:grid-cols-3">
-          <MetricCard label="Members" value={members.length} />
+          <MetricCard label="Thành viên" value={members.length} />
           <MetricCard
-            label="Configured member-months"
+            label="Thành viên-tháng đã cấu hình"
             value={audit.configs.length}
           />
-          <MetricCard label="Locked versions" value={lockedResults.length} />
+          <MetricCard label="Phiên bản đã khóa" value={lockedResults.length} />
         </div>
 
         {selectedConfig ? (
           <section className="rounded-2xl border bg-white p-5 shadow-sm">
-            <h3 className="font-semibold">Applied configuration</h3>
+            <h3 className="font-semibold">Cấu hình đang áp dụng</h3>
             <p className="mt-2 text-sm text-slate-600">
               {selectedConfig.member_name} / {month} / version{" "}
               {selectedConfig.version}
-              {selectedConfig.locked_at ? " / locked" : " / editable"}
+              {selectedConfig.locked_at ? " / đã khóa" : " / có thể chỉnh sửa"}
             </p>
           </section>
         ) : null}
@@ -140,14 +137,14 @@ export default async function KpiClose(props: {
           <table className="min-w-full text-sm">
             <thead className="bg-slate-100 text-left">
               <tr>
-                <th className="p-3">Member</th>
-                <th>Version</th>
-                <th>Raw</th>
-                <th>Payable</th>
-                <th>Coverage</th>
-                <th>Status</th>
-                <th>Payout</th>
-                <th>Locked</th>
+                <th className="p-3">Thành viên</th>
+                <th>Phiên bản</th>
+                <th>Điểm thô</th>
+                <th>Điểm chi trả</th>
+                <th>Độ phủ</th>
+                <th>Trạng thái</th>
+                <th>Chi trả</th>
+                <th>Đã khóa lúc</th>
               </tr>
             </thead>
             <tbody>
@@ -158,12 +155,12 @@ export default async function KpiClose(props: {
                   <td>{pct(row.raw_pct)}</td>
                   <td>{pct(row.payable_pct)}</td>
                   <td>{pct(row.coverage_pct)}</td>
-                  <td>{row.status}</td>
-                  <td>{row.payout_vnd?.toLocaleString?.() ?? "N/A"}</td>
+                  <td>{viLabel(row.status)}</td>
+                  <td>{row.payout_vnd?.toLocaleString?.("vi-VN") ?? "N/A"}</td>
                   <td>
                     {row.locked_at
-                      ? new Date(row.locked_at).toLocaleString()
-                      : "-"}
+                      ? formatViDateTime(row.locked_at)
+                      : "—"}
                   </td>
                 </tr>
               ))}
@@ -174,7 +171,7 @@ export default async function KpiClose(props: {
           className="inline-flex rounded-lg border px-4 py-2 font-semibold text-blue-700"
           href={`/api/admin/kpi-month/${month}/audit`}
         >
-          Export audit JSON
+          Xuất audit JSON
         </a>
       </div>
     </Shell>

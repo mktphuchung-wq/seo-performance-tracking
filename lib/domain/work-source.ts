@@ -65,6 +65,10 @@ export type ReconciliationResult = {
 export type ReconciliationAliases = {
   projects?: AliasMap;
   members?: AliasMap;
+  projectDomains?: Record<
+    string,
+    { canonicalDomain: string; includeSubdomains: boolean; gscReady: boolean }
+  >;
 };
 
 function fallbackLogicalKey(row: {
@@ -130,6 +134,18 @@ export function normalizeWorkSourceRow(
   if (!normalizedUrl.canonicalUrl)
     issues.push(normalizedUrl.error ?? "url_unresolved");
   else if (!normalizedUrl.isPublic) issues.push("public_url_missing");
+  const domainRule = project ? aliases.projectDomains?.[project] : undefined;
+  if (aliases.projectDomains && project && normalizedUrl.hostname) {
+    if (!domainRule) issues.push("project_settings_missing");
+    else {
+      const hostname = normalizedUrl.hostname.replace(/^www\./, "");
+      const canonical = domainRule.canonicalDomain.replace(/^www\./, "");
+      const allowed =
+        hostname === canonical ||
+        (domainRule.includeSubdomains && hostname.endsWith(`.${canonical}`));
+      if (!allowed) issues.push("project_domain_unapproved");
+    }
+  }
   const identity = {
     project,
     canonicalUrl: normalizedUrl.canonicalUrl,
@@ -151,6 +167,21 @@ export function normalizeWorkSourceRow(
     sourceStatus.isPayableCandidate &&
     normalizedUrl.isPublic &&
     Boolean(project && member && workType && workDate);
+  const classificationValid = !issues.some((issue) =>
+    [
+      "project_unresolved",
+      "member_unresolved",
+      "work_type_unresolved",
+      "status_unresolved",
+      "completion_date_missing",
+      "url_missing",
+      "url_invalid",
+      "url_protocol_unsupported",
+      "public_url_missing",
+      "project_settings_missing",
+      "project_domain_unapproved",
+    ].includes(issue),
+  );
   return {
     ...row,
     project,
@@ -165,7 +196,7 @@ export function normalizeWorkSourceRow(
     logicalKey,
     issues,
     winnerRank: rank,
-    isCountable,
+    isCountable: isCountable && classificationValid,
   };
 }
 

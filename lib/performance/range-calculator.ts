@@ -33,6 +33,7 @@ export type RangeResult = {
   sourceIds: string[];
   dataAsOf: string | null;
   diagnostics: Record<string, unknown>;
+  effectiveHorizon: string | null;
 };
 function weighted(rows: Array<{ value: number; weight: number }>) {
   const total = rows.reduce((sum, row) => sum + row.weight, 0);
@@ -81,6 +82,9 @@ export function aggregatePerformanceRange(
       availableWorkUnits: availableWeight,
       weighting: "eligible_work_units",
     },
+    effectiveHorizon: rows.length
+      ? `${rows.map((row) => row.monthKey).sort()[0]}:${rows.map((row) => row.monthKey).sort().at(-1)}`
+      : null,
   };
   const emptySubScores = {
     impressionPerformance: null,
@@ -171,6 +175,7 @@ export function combineAvailableScores(
     score: number | null;
     weight: number;
     status: string;
+    effectiveHorizon?: string | null;
   }>,
 ) {
   if (rows.some((row) => row.status === "system_error"))
@@ -189,7 +194,13 @@ export function combineAvailableScores(
       reason: "weights_must_total_100",
     };
   const available = rows.filter((row) => row.score !== null);
-  const availableWeight = available.reduce((sum, row) => sum + row.weight, 0);
+  const deduplicated = [...available]
+    .sort((a, b) => b.weight - a.weight)
+    .filter((row, index, all) => {
+      const horizon = row.effectiveHorizon ?? row.key;
+      return all.findIndex((candidate) => (candidate.effectiveHorizon ?? candidate.key) === horizon) === index;
+    });
+  const availableWeight = deduplicated.reduce((sum, row) => sum + row.weight, 0);
   if (!availableWeight)
     return {
       score: null,
@@ -199,10 +210,11 @@ export function combineAvailableScores(
     };
   return {
     score:
-      available.reduce((sum, row) => sum + Number(row.score) * row.weight, 0) /
+      deduplicated.reduce((sum, row) => sum + Number(row.score) * row.weight, 0) /
       availableWeight,
     coveragePct: availableWeight,
     status: "scored",
-    reason: null,
+    reason: deduplicated.length < available.length ? "duplicate_effective_horizon_removed" : null,
+    deduplicatedKeys: available.filter((row) => !deduplicated.includes(row)).map((row) => row.key),
   };
 }

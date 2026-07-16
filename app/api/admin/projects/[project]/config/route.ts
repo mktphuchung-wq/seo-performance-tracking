@@ -18,7 +18,7 @@ export async function GET(request: Request, context: Context) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email || !session.user.isAdmin)
     return NextResponse.json(
-      { ok: false, error: "Forbidden", code: "forbidden", requestId },
+      { ok: false, error: "Bạn không có quyền thực hiện thao tác này.", code: "forbidden", requestId },
       { status: 403 },
     );
   try {
@@ -31,7 +31,7 @@ export async function GET(request: Request, context: Context) {
     return apiErrorResponse(
       error,
       requestId,
-      "Project configuration load failed",
+      "Không thể tải cấu hình dự án",
       404,
     );
   }
@@ -41,7 +41,7 @@ export async function PUT(request: Request, context: Context) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email || !session.user.isAdmin)
     return NextResponse.json(
-      { ok: false, error: "Forbidden", code: "forbidden", requestId },
+      { ok: false, error: "Bạn không có quyền thực hiện thao tác này.", code: "forbidden", requestId },
       { status: 403 },
     );
   try {
@@ -65,7 +65,7 @@ export async function PUT(request: Request, context: Context) {
     return apiErrorResponse(
       error,
       requestId,
-      "Project configuration save failed",
+      "Không thể lưu cấu hình dự án",
     );
   }
 }

@@ -63,6 +63,8 @@ const requiredTables = [
   "monthly_member_targets",
   "monthly_member_kpi_configs",
   "monthly_member_kpi_config_components",
+  "project_gsc_verifications",
+  "project_performance_rule_versions",
 ];
 const migrationFiles = [
   "20260710_url_work_events.sql",
@@ -70,6 +72,7 @@ const migrationFiles = [
   "20260714_monthly_kpi_engine_v2.sql",
   "20260715_unified_application.sql",
   "20260715_unified_remediation.sql",
+  "20260716_project_performance_rules.sql",
 ];
 const requiredColumns = [
   ["content_urls", "normalized_domain"],
@@ -78,7 +81,12 @@ const requiredColumns = [
   ["url_work_events", "kpi_ready"],
   ["url_work_events", "source_lineage"],
   ["url_work_events", "unified_source_state"],
+  ["url_work_events", "content_kpi_eligible"],
+  ["url_work_events", "performance_kpi_eligible"],
+  ["url_work_events", "performance_readiness_state"],
   ["content_urls", "unified_source_state"],
+  ["content_urls", "gsc_eligibility_reason"],
+  ["projects", "gsc_access_status"],
   ["work_sync_runs", "idempotency_key"],
   ["work_sync_runs", "valid_work_record_count"],
 ];

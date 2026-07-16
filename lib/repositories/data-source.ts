@@ -18,13 +18,15 @@ export async function listCanonicalDataSource(
   params.push(Math.min(Math.max(input.limit ?? 500, 1), 2000));
   const rows = await query<any>(
     `select c.id::text,c.url,c.normalized_domain,c.project,c.member_name,c.content_type,c.content_worked_at::text,
-    c.classification_status,c.classification_issues,c.classification_version,c.gsc_ready,c.unified_source_state,
+    c.classification_status,c.classification_issues,c.classification_version,c.gsc_ready,c.gsc_eligibility_reason,
+    c.registrable_domain,c.classified_at,c.unified_source_state,
     e.id::text as work_event_id,e.work_type,e.work_date::text,e.status as work_status,e.is_countable,e.kpi_ready,e.readiness_issues,
+    e.content_kpi_eligible,e.performance_kpi_eligible,e.performance_readiness_state,e.performance_readiness_issues,
     e.source,e.source_item_id,e.source_row_key,e.source_lineage,e.unified_source_state as event_source_state,
     r.review_status,r.quality_pct,r.admin_note as review_notes,
     gm.data_status as gsc_data_status,gm.metric_date::text as latest_gsc_metric_date,gm.updated_at as last_gsc_refresh,gm.error_message as gsc_error,
     case when e.id is null or not coalesce(e.is_countable,false) then 'N/A'
-      when not coalesce(e.kpi_ready,false) then 'Blocked'
+      when not coalesce(e.content_kpi_eligible,false) then 'Blocked'
       when r.review_status='approved' then 'Scored'
       when r.id is not null then 'Review pending'
       else 'Eligible' end as kpi_state

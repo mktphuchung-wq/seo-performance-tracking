@@ -8,6 +8,8 @@ import {
 } from "../../../components/unified-workflows";
 import { listMonthlyKpiAudit } from "../../../lib/repositories/monthly-kpi";
 import { rubricForWorkType } from "../../../lib/kpi/rubrics";
+import { listMemberOptions } from "../../../lib/repositories/member-options";
+import { viLabel } from "../../../lib/i18n/vi";
 
 export const dynamic = "force-dynamic";
 const pct = (value: unknown) =>
@@ -22,13 +24,11 @@ export default async function MemberReview(props: {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email || !session.user.isAdmin) redirect("/");
   const month = searchParams?.month ?? new Date().toISOString().slice(0, 7);
-  const audit = await listMonthlyKpiAudit(month);
-  const members = [
-    ...new Set([
-      ...audit.reviews.map((row: any) => row.member_name),
-      ...audit.targets.map((row: any) => row.member_name),
-    ]),
-  ];
+  const [audit, memberOptions] = await Promise.all([
+    listMonthlyKpiAudit(month),
+    listMemberOptions(month, "review"),
+  ]);
+  const members = memberOptions.map((row) => row.memberName);
   const selectedMember = members.includes(searchParams?.member ?? "")
     ? searchParams?.member
     : members[0];
@@ -47,17 +47,17 @@ export default async function MemberReview(props: {
       <div className="space-y-6">
         <header>
           <p className="text-sm font-semibold uppercase text-blue-700">
-            Admin workflow 5/6
+            Quy trình quản trị 5/6
           </p>
-          <h2 className="text-3xl font-bold">Member Review — {month}</h2>
+          <h2 className="text-3xl font-bold">Đánh giá thành viên — {month}</h2>
           <p className="mt-2 text-slate-600">
-            Month → Member → every canonical URL performed that month. The
-            target is Member × Month; Project comes from each Work event.
+            Tháng → Thành viên → từng URL chuẩn đã thực hiện. Target thuộc Thành
+            viên × Tháng; dự án được xác định từ từng event công việc.
           </p>
         </header>
         <form className="flex flex-wrap items-end gap-3" method="get">
           <label className="text-sm">
-            Month
+            Tháng
             <input
               name="month"
               type="month"
@@ -66,7 +66,7 @@ export default async function MemberReview(props: {
             />
           </label>
           <label className="text-sm">
-            Member
+            Thành viên
             <select
               name="member"
               defaultValue={selectedMember}
@@ -78,7 +78,7 @@ export default async function MemberReview(props: {
             </select>
           </label>
           <button className="rounded-lg border px-4 py-2 font-semibold">
-            Load cohort
+            Tải nhóm event
           </button>
         </form>
         {members.length > 0 && (
@@ -89,22 +89,22 @@ export default async function MemberReview(props: {
           />
         )}
         <div className="grid gap-4 md:grid-cols-4">
-          <MetricCard label="Monthly URLs" value={reviews.length} />
-          <MetricCard label="Projects represented" value={projectCount} />
+          <MetricCard label="URL trong tháng" value={reviews.length} />
+          <MetricCard label="Số dự án" value={projectCount} />
           <MetricCard
             label="SEO Content"
             value={pct(seoContent?.payable_pct)}
           />
           <MetricCard
-            label="Review coverage"
+            label="Độ phủ đánh giá"
             value={pct(seoContent?.coverage_pct)}
           />
         </div>
         <section className="space-y-4">
           <h3 className="text-xl font-semibold">
             {selectedMember
-              ? `${selectedMember} URL review queue`
-              : "URL review queue"}
+              ? `Hàng đợi đánh giá URL của ${selectedMember}`
+              : "Hàng đợi đánh giá URL"}
           </h3>
           {reviews.map((row: any) => {
             const rubric = rubricForWorkType(row.work_type);
@@ -124,12 +124,12 @@ export default async function MemberReview(props: {
                       {row.url}
                     </a>
                     <p className="mt-1 text-sm text-slate-600">
-                      {row.project} · {row.work_type} · {row.work_date} ·{" "}
-                      {Number(row.unit_value).toFixed(2)} units
+                      {row.project} · {viLabel(row.work_type)} · {row.work_date} ·{" "}
+                      {Number(row.unit_value).toFixed(2)} đơn vị
                     </p>
                   </div>
                   <span>
-                    {row.review_status ?? "Pending"}{" "}
+                    {viLabel(row.review_status ?? "pending")}{" "}
                     {row.quality_pct !== null && row.quality_pct !== undefined
                       ? `· ${Number(row.quality_pct).toFixed(1)}%`
                       : ""}
@@ -151,8 +151,7 @@ export default async function MemberReview(props: {
           })}
           {!reviews.length && (
             <p className="rounded-xl border border-dashed p-6 text-slate-500">
-              No canonical eligible Work events for the selected member and
-              month.
+              Chưa có event trong tháng.
             </p>
           )}
         </section>

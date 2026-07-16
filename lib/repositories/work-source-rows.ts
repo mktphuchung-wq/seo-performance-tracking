@@ -1,5 +1,6 @@
 import { query, transaction, type Queryable } from "../db";
 import { canonicalContentUrlHash } from "../domain/work-events";
+import { registrableDomain } from "../domain/project-settings";
 import type {
   NormalizedWorkSourceRow,
   ReconciliationResult,
@@ -114,7 +115,8 @@ async function persistCanonicalEvent(
     return "skipped";
   const projectIdentity = await client.query(
     `insert into public.projects(canonical_name) values($1)
-    on conflict(canonical_name) do update set updated_at=now() returning id::text,gsc_ready,kpi_ready,gsc_property`,
+    on conflict(canonical_name) do update set updated_at=now()
+    returning id::text,gsc_ready,kpi_ready,gsc_property,canonical_domain,include_subdomains,gsc_access_status`,
     [row.project],
   );
   const memberIdentity = await client.query(
@@ -126,7 +128,53 @@ async function persistCanonicalEvent(
   const normalizedDomain = new URL(row.canonicalUrl).hostname
     .toLowerCase()
     .replace(/^www\./, "");
-  const contentUrl = await client.query(
+  const canonicalDomain = String(projectIdentity.rows[0].canonical_domain ?? "");
+  const domainAllowed = Boolean(
+    canonicalDomain &&
+      (normalizedDomain === canonicalDomain ||
+        (projectIdentity.rows[0].include_subdomains &&
+          normalizedDomain.endsWith(`.${canonicalDomain}`))),
+  );
+  const classificationStatus = row.isCountable && domainAllowed ? "accepted" : "quarantined";
+  const classificationIssues = [
+    ...row.issues,
+    ...(domainAllowed ? [] : ["project_domain_unapproved"]),
+  ];
+  const contentEligible = row.isCountable && classificationStatus === "accepted";
+  const gscEligible =
+    contentEligible &&
+    projectIdentity.rows[0].gsc_access_status === "verified" &&
+    Boolean(projectIdentity.rows[0].gsc_ready);
+  const performanceIssues = !contentEligible
+    ? classificationIssues
+    : gscEligible
+      ? []
+      : ["gsc_property_unverified"];
+  const canonicalIdentity = await client.query(
+    `select id::text from public.content_urls
+     where project_id=$1 and url=$2
+     order by (classification_status='accepted') desc,updated_at desc,id
+     limit 1`,
+    [projectIdentity.rows[0].id, row.canonicalUrl],
+  );
+  const contentUrl = canonicalIdentity.rows[0]
+    ? await client.query(
+        `update public.content_urls set project=$2,normalized_domain=$3,gsc_ready=$4,gsc_property=$5,
+         member_name=$6,content_worked_at=$7,content_type=$8,is_active=true,source=$9,
+         last_seen_at=now(),updated_at=now() where id=$1 returning id::text`,
+        [
+          canonicalIdentity.rows[0].id,
+          row.project,
+          normalizedDomain,
+          Boolean(projectIdentity.rows[0].gsc_ready),
+          projectIdentity.rows[0].gsc_property ?? null,
+          row.member,
+          row.workDate,
+          row.workType,
+          row.source,
+        ],
+      )
+    : await client.query(
     `insert into public.content_urls
     (url_hash,project_id,project,url,normalized_domain,classification_status,classification_issues,classification_version,gsc_ready,gsc_property,
      member_name,member_email,content_worked_at,content_type,is_active,source,first_seen_at,last_seen_at,created_at,updated_at)
@@ -147,6 +195,23 @@ async function persistCanonicalEvent(
       row.workDate,
       row.workType,
       row.source,
+    ],
+      );
+  await client.query(
+    `update public.content_urls set registrable_domain=$2,classification_status=$3,
+     classification_issues=$4::jsonb,classified_at=now(),gsc_ready=$5,
+     gsc_eligibility_reason=$6,updated_at=now() where id=$1`,
+    [
+      contentUrl.rows[0].id,
+      registrableDomain(normalizedDomain),
+      classificationStatus,
+      JSON.stringify(classificationIssues),
+      gscEligible,
+      gscEligible
+        ? "verified_property_scope"
+        : domainAllowed
+          ? "gsc_property_unverified"
+          : "project_domain_unapproved",
     ],
   );
   const rule = await resolveUnitRule(client, row);
@@ -221,11 +286,25 @@ async function persistCanonicalEvent(
       unified_source_state='active',source_missing_at=null,updated_at=now() where id=$1`,
       [existing.rows[0].id, row.source, sourceRowKey, lineage],
     );
+    await client.query(
+      `update public.url_work_events set kpi_ready=$2,content_kpi_eligible=$2,
+       performance_kpi_eligible=$3,performance_readiness_state=$4,
+       performance_readiness_issues=$5::jsonb,
+       readiness_issues=(coalesce(readiness_issues,'[]'::jsonb)-'project_not_kpi_ready'),updated_at=now()
+       where id=$1`,
+      [
+        existing.rows[0].id,
+        contentEligible,
+        gscEligible,
+        gscEligible ? "fallback" : contentEligible ? "pm_review" : "blocked_system_error",
+        JSON.stringify(performanceIssues),
+      ],
+    );
     return existing.rows[0].source === row.source
       ? "updated"
       : "legacy_matched";
   }
-  await client.query(
+  const inserted = await client.query(
     `insert into public.url_work_events
     (content_url_id,project_id,member_id,project,member_name,member_email,work_type,work_date,difficulty,unit_value,source,source_row_key,
       source_item_id,source_status,source_url,canonical_url_snapshot,completed_at,date_confidence,difficulty_source,
@@ -238,7 +317,8 @@ async function persistCanonicalEvent(
       source_url=excluded.source_url,canonical_url_snapshot=excluded.canonical_url_snapshot,date_confidence=excluded.date_confidence,
       unit_rule_id=excluded.unit_rule_id,unit_rule_version=excluded.unit_rule_version,is_countable=excluded.is_countable,
       kpi_ready=excluded.kpi_ready,readiness_issues=excluded.readiness_issues,exclusion_reason=excluded.exclusion_reason,
-      status=excluded.status,note=excluded.note,updated_at=now()`,
+      status=excluded.status,note=excluded.note,updated_at=now()
+    returning id::text`,
     [
       contentUrl.rows[0].id,
       projectIdentity.rows[0].id,
@@ -273,6 +353,20 @@ async function persistCanonicalEvent(
       row.status,
       row.issues.join(",") || null,
       lineage,
+    ],
+  );
+  await client.query(
+    `update public.url_work_events set kpi_ready=$2,content_kpi_eligible=$2,
+     performance_kpi_eligible=$3,performance_readiness_state=$4,
+     performance_readiness_issues=$5::jsonb,
+     readiness_issues=(coalesce(readiness_issues,'[]'::jsonb)-'project_not_kpi_ready'),updated_at=now()
+     where id=$1`,
+    [
+      inserted.rows[0].id,
+      contentEligible,
+      gscEligible,
+      gscEligible ? "fallback" : contentEligible ? "pm_review" : "blocked_system_error",
+      JSON.stringify(performanceIssues),
     ],
   );
   return "inserted";
@@ -398,7 +492,11 @@ export async function persistWorkSourceReconciliation(
       const missing = await client.query(
         `update public.url_work_events e set
         unified_source_state=case when e.source='content_urls_sheet' then 'source_missing' else 'inactive_for_unified_kpi' end,
-        source_missing_at=now(),kpi_ready=false,
+        source_missing_at=now(),kpi_ready=false,content_kpi_eligible=false,performance_kpi_eligible=false,
+        performance_readiness_state='blocked_system_error',
+        performance_readiness_issues=case when coalesce(e.performance_readiness_issues,'[]'::jsonb) ? 'source_missing'
+          then coalesce(e.performance_readiness_issues,'[]'::jsonb)
+          else coalesce(e.performance_readiness_issues,'[]'::jsonb)||'["source_missing"]'::jsonb end,
         readiness_issues=case when coalesce(e.readiness_issues,'[]'::jsonb) ? 'source_missing' then coalesce(e.readiness_issues,'[]'::jsonb)
           else coalesce(e.readiness_issues,'[]'::jsonb)||'["source_missing"]'::jsonb end,updated_at=now()
         from public.content_urls c where c.id=e.content_url_id and e.source in ('content_urls_sheet','slack_list_sheet','google_sheet','legacy_sheet')

@@ -14,6 +14,10 @@ export type EventPerformanceMetric = {
   controlGrowthPct?: number | null;
   contaminated?: boolean;
   comparable?: boolean;
+  effectiveWindowDays?: number;
+  fallbackLevel?: string;
+  ageDays?: number;
+  postCoveragePct?: number;
 };
 
 export type PerformanceThresholds = {
@@ -22,10 +26,24 @@ export type PerformanceThresholds = {
   minTotalImpressions: number;
   zeroSignalScorePct: number;
   newSignalScorePct: number;
+  neutralScorePct?: number;
+  confidenceHighFactor?: number;
+  confidenceMediumFactor?: number;
+  confidenceLowFactor?: number;
+  unknownScorePct?: number;
+  observedZeroPolicy?: "score_zero" | "neutral";
+  maxProvisionalPayablePct?: number;
+  pmReviewThresholdPct?: number;
+  minimumShortWindowDays?: number;
+  growthAlphaClicks?: number;
+  growthAlphaImpressions?: number;
 };
 
 const growth = (current: number, previous: number) => previous > 0 ? (current - previous) / previous * 100 : current > 0 ? null : 0;
-const mappedGrowthScore = (current: number, previous: number, newSignalScore: number) => previous === 0 && current > 0 ? newSignalScore : clampPct(50 + (growth(current, previous) ?? 0));
+const mappedGrowthScore = (current: number, previous: number, alpha: number, controlGrowthPct = 0) => {
+  const adjustedCurrent = current / Math.max(0.01, 1 + controlGrowthPct / 100);
+  return clampPct(50 + 25 * Math.log2((adjustedCurrent + alpha) / (previous + alpha)));
+};
 const robustWeight = (metric: EventPerformanceMetric) => Math.max(0.1, metric.unitValue) * Math.sqrt(Math.min(Math.max(metric.preImpressions, metric.postImpressions, 1), 10_000));
 const weighted = (rows: Array<{ value: number; weight: number }>) => rows.reduce((sum, row) => sum + row.value * row.weight, 0) / rows.reduce((sum, row) => sum + row.weight, 0);
 
@@ -57,12 +75,18 @@ export function calculatePerformanceCohort(input: {
     if (metric.status === "observed_zero") return { impression: input.thresholds.zeroSignalScorePct, click: input.thresholds.zeroSignalScorePct, positive: 0, healthy: 0, weight };
     const impressionGrowth = (growth(metric.postImpressions, metric.preImpressions) ?? 0) - (metric.controlGrowthPct ?? 0);
     const clickGrowth = (growth(metric.postClicks, metric.preClicks) ?? 0) - (metric.controlGrowthPct ?? 0);
-    return { impression: mappedGrowthScore(metric.postImpressions, metric.preImpressions, input.thresholds.newSignalScorePct), click: mappedGrowthScore(metric.postClicks, metric.preClicks, input.thresholds.newSignalScorePct), positive: impressionGrowth > 0 || clickGrowth > 0 ? 100 : 0, healthy: impressionGrowth < 0 && clickGrowth < 0 ? 0 : 100, weight };
+    return { impression: mappedGrowthScore(metric.postImpressions, metric.preImpressions, input.thresholds.growthAlphaImpressions ?? 10, metric.controlGrowthPct ?? 0), click: mappedGrowthScore(metric.postClicks, metric.preClicks, input.thresholds.growthAlphaClicks ?? 1, metric.controlGrowthPct ?? 0), positive: impressionGrowth > 0 || clickGrowth > 0 ? 100 : 0, healthy: impressionGrowth < 0 && clickGrowth < 0 ? 0 : 100, weight };
   });
   const impressionPerformance = weighted(eventRows.map((row) => ({ value: row.impression, weight: row.weight })));
   const clickPerformance = weighted(eventRows.map((row) => ({ value: row.click, weight: row.weight })));
   const growthCoverage = weighted(eventRows.map((row) => ({ value: row.positive, weight: row.weight })));
   const portfolioHealth = weighted(eventRows.map((row) => ({ value: row.healthy, weight: row.weight })));
   const rawPct = clampPct(impressionPerformance * 0.4 + clickPerformance * 0.2 + growthCoverage * 0.25 + portfolioHealth * 0.15);
-  return scoreBase({ ...common, state: "scored", rawPct, payablePct: rawPct, confidence: coverage.coveragePct === 100 && coverage.comparisonCoveragePct === 100 ? "high" : "medium", diagnostics: { ...common.diagnostics, impressionPerformance, clickPerformance, growthCoverage, portfolioHealth } });
+  const minWindow = Math.min(...known.map((metric) => metric.effectiveWindowDays ?? 28));
+  const confidence = minWindow >= 28 && coverage.coveragePct >= 90 ? "high" : minWindow >= 14 && coverage.coveragePct >= 70 ? "medium" : "low";
+  const factor = confidence === "high" ? input.thresholds.confidenceHighFactor ?? 1 : confidence === "medium" ? input.thresholds.confidenceMediumFactor ?? 0.7 : input.thresholds.confidenceLowFactor ?? 0.35;
+  const neutral = input.thresholds.neutralScorePct ?? 70;
+  const payablePct = clampPct(neutral + factor * (rawPct - neutral));
+  const fallback = minWindow < 28;
+  return scoreBase({ ...common, state: fallback ? "fallback_scored" : "scored", rawPct, payablePct, confidence, reason: fallback ? `fallback_${minWindow}d` : null, diagnostics: { ...common.diagnostics, impressionPerformance, clickPerformance, growthCoverage, portfolioHealth, effectiveWindowDays: minWindow, confidenceFactor: factor, neutralScorePct: neutral } });
 }

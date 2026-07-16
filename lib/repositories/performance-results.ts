@@ -12,13 +12,17 @@ export async function persistPerformanceResult(input:{month:string;project:strin
     const cohortId=cohort.rows[0].id;
     for(const metric of input.metrics){await client.query(`insert into public.performance_event_evaluations
       (cohort_id,work_event_id,evaluation_key,evaluation_horizon,data_status,comparison_coverage_pct,raw_metrics,sub_scores,
-       raw_pct,payable_pct,confidence,status,contamination_reason,control_fallback_reason,rule_version,created_at,updated_at)
-      values($1,$2,$3,'28d',$4,$5,$6::jsonb,'{}'::jsonb,null,null,$7,$8,$9,$10,$11,now(),now())
+      raw_pct,payable_pct,confidence,status,contamination_reason,control_fallback_reason,effective_window_days,fallback_level,
+      readiness_reason,rule_version,created_at,updated_at)
+      values($1,$2,$3,$4,$5,$6,$7::jsonb,'{}'::jsonb,null,null,$8,$9,$10,$11,$12,$13,$14,$15,now(),now())
       on conflict(work_event_id,evaluation_key,rule_version) do update set cohort_id=excluded.cohort_id,data_status=excluded.data_status,
       comparison_coverage_pct=excluded.comparison_coverage_pct,raw_metrics=excluded.raw_metrics,confidence=excluded.confidence,
-      status=excluded.status,contamination_reason=excluded.contamination_reason,control_fallback_reason=excluded.control_fallback_reason,updated_at=now()`,[
-      cohortId,metric.eventId,input.cohortKey,metric.status,metric.comparisonObserved?100:0,JSON.stringify(metric),input.score.confidence,
-      input.score.state,metric.contaminated?'later_event_contamination':null,metric.controlGrowthPct===null||metric.controlGrowthPct===undefined?'control_unavailable':null,input.ruleVersion]);}
+      status=excluded.status,contamination_reason=excluded.contamination_reason,control_fallback_reason=excluded.control_fallback_reason,
+      effective_window_days=excluded.effective_window_days,fallback_level=excluded.fallback_level,readiness_reason=excluded.readiness_reason,updated_at=now()`,[
+      cohortId,metric.eventId,input.cohortKey,`${metric.effectiveWindowDays??28}d`,metric.status,metric.comparisonObserved?100:0,
+      JSON.stringify(metric),input.score.confidence,input.score.state,metric.contaminated?'later_event_contamination':null,
+      metric.controlGrowthPct===null||metric.controlGrowthPct===undefined?'control_unavailable':null,metric.effectiveWindowDays??null,
+      metric.fallbackLevel??null,input.score.reason,input.ruleVersion]);}
     const result=await client.query(`insert into public.performance_project_member_month_results
       (month_key,project,member_name,cohort_id,strategy,raw_pct,payable_pct,coverage_pct,comparison_coverage_pct,confidence,
        source_cohort,rule_version,override_reason,status,data_as_of,sub_scores,diagnostics,calculated_at,created_at,updated_at)

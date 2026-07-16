@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "SEO Performance Workspace",
-  description: "Auditable SEO source, project settings, performance, review, and monthly KPI workflows."
+  title: "Không gian KPI SEO",
+  description: "Nguồn dữ liệu, hiệu suất và KPI SEO có bằng chứng kiểm toán."
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="vi">
       <body>{children}</body>
     </html>
   );
