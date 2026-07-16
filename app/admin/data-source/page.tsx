@@ -1,7 +1,9 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { DataTableContainer, MetricCard, Shell } from "../../../components/ui";
+import { SchemaMigrationRequired } from "../../../components/schema-migration-required";
 import { authOptions } from "../../../lib/auth";
+import { checkDbSchemaHealth } from "../../../lib/db-health";
 import { listCanonicalDataSource } from "../../../lib/repositories/data-source";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +16,13 @@ export default async function DataSourcePage(props: {
   const searchParams = await props.searchParams;
   const session = await getServerSession(authOptions);
   if (!session?.user?.email || !session.user.isAdmin) redirect("/");
+  const schema = await checkDbSchemaHealth();
+  if (!schema.ok)
+    return (
+      <Shell email={session.user.email} isAdmin>
+        <SchemaMigrationRequired schema={schema} />
+      </Shell>
+    );
   const month = searchParams?.month;
   const member = searchParams?.member;
   const data = await listCanonicalDataSource({ month, memberName: member });
