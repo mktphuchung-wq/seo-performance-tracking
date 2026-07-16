@@ -232,7 +232,11 @@ async function persistCanonicalEvent(
     `select id::text,source from public.url_work_events where
     (project_id=$1 and content_url_id=$2 and member_id=$3 and work_date=$4 and work_type=$5)
     or (source=$6 and (($7::text is not null and source_item_id=$7) or ($7::text is null and source_row_key=$8)))
-    order by (project_id=$1 and content_url_id=$2 and member_id=$3 and work_date=$4 and work_type=$5) desc,id limit 1`,
+    order by
+      (project_id=$1 and content_url_id=$2 and member_id=$3 and work_date=$4 and work_type=$5) desc,
+      (unified_source_state='active') desc,
+      id
+    limit 1`,
     [
       projectIdentity.rows[0].id,
       contentUrl.rows[0].id,
