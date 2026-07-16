@@ -1,3 +1,5 @@
+import { normalizePostgresConnectionString } from "./database-url";
+
 export type QueryResult = { rows: any[]; rowCount: number | null };
 export type Queryable = { query: (text: string, params?: unknown[]) => Promise<QueryResult> };
 type PoolLike = Queryable & { connect?: () => Promise<Queryable & { release: () => void }> };
@@ -5,9 +7,9 @@ type PoolLike = Queryable & { connect?: () => Promise<Queryable & { release: () 
 let poolPromise: Promise<PoolLike> | undefined;
 
 export async function db(): Promise<PoolLike> {
-  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required for Supabase Postgres access.");
+  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required for Postgres access.");
   if (!poolPromise) {
-    poolPromise = import("pg").then(({ Pool }) => new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_URL?.includes("supabase") || process.env.DATABASE_URL?.includes("neon") ? { rejectUnauthorized: false } : undefined }) as PoolLike);
+    poolPromise = import("pg").then(({ Pool }) => new Pool({ connectionString: normalizePostgresConnectionString(process.env.DATABASE_URL!) }) as PoolLike);
   }
   return poolPromise;
 }

@@ -5,7 +5,7 @@ import { rubricForWorkType } from "../kpi/rubrics";
 
 export async function saveQualityReview(input: { workEventId: string; criteria: CriterionReview[]; status: "approved" | "excluded"; exclusionReason?: string | null; adminNote?: string | null; evidence?: Record<string, unknown>; reviewer: string }) {
   return transaction(async (client) => {
-    const event = await client.query(`select id::text,work_type,unit_value from public.url_work_events where id=$1 and is_countable=true limit 1`, [input.workEventId]);
+    const event = await client.query(`select id::text,work_type,unit_value from public.url_work_events where id=$1 and is_countable=true and kpi_ready=true limit 1`, [input.workEventId]);
     if (!event.rows[0]) throw new Error("Countable work event not found.");
     const workType = event.rows[0].work_type as WorkType;
     const rubric = rubricForWorkType(workType);
@@ -46,7 +46,7 @@ export async function listQualityReviewQueue(month: string) {
   const result = await query(`select e.id::text as work_event_id,e.project,e.member_name,e.work_type,e.work_date::text,
     e.unit_value,e.canonical_url_snapshot,r.review_status,r.quality_pct,r.rubric_version_snapshot
     from public.url_work_events e left join public.url_work_quality_reviews r on r.work_event_id=e.id
-    where e.is_countable=true and e.work_date>=date_trunc('month',$1::date) and e.work_date<date_trunc('month',$1::date)+interval '1 month'
+    where e.is_countable=true and e.kpi_ready=true and e.work_date>=date_trunc('month',$1::date) and e.work_date<date_trunc('month',$1::date)+interval '1 month'
     order by e.member_name,e.project,e.work_date,e.id`, [month]);
   return result.rows;
 }

@@ -1,4 +1,6 @@
-# KPI Engine v2 Safety Baseline
+# KPI Engine v2 Safety Baseline (Historical / Read-only Shadow)
+
+This document is retained for migration audit only. New implementation work belongs to the unified application and must not extend this scaffold in parallel.
 
 Recorded on 2026-07-14 before implementation changes on branch `feat/monthly-kpi-engine-v2`.
 

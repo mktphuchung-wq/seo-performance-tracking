@@ -174,6 +174,8 @@ export function AdminDataControls({ range = "current_month" }: { range?: string;
     }
   }
 
+  // Legacy shadow-only control: initial status is loaded after mount and no longer drives the unified workflow.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadStatus().catch(() => undefined); }, []);
 
   async function runWorkflowFrom(startIndex = 0) {

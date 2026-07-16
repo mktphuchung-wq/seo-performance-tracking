@@ -1,4 +1,6 @@
-# KPI Engine v2 Implementation Checkpoint
+# KPI Engine v2 Implementation Checkpoint (Historical / Read-only Shadow)
+
+This checkpoint is retained as evidence. The active architecture is documented in `UNIFIED_APPLICATION_CHECKPOINT.md`.
 
 Recorded on 2026-07-14 for branch `feat/monthly-kpi-engine-v2`.
 
