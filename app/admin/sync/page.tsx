@@ -1,14 +1,23 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { SourcePipelineControls } from "../../../components/unified-workflows";
+import { SchemaMigrationRequired } from "../../../components/schema-migration-required";
 import { DataTableContainer, MetricCard, Shell } from "../../../components/ui";
 import { authOptions } from "../../../lib/auth";
+import { checkDbSchemaHealth } from "../../../lib/db-health";
 import { listCanonicalDataSource } from "../../../lib/repositories/data-source";
 
 export const dynamic = "force-dynamic";
 export default async function SyncPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email || !session.user.isAdmin) redirect("/");
+  const schema = await checkDbSchemaHealth();
+  if (!schema.ok)
+    return (
+      <Shell email={session.user.email} isAdmin>
+        <SchemaMigrationRequired schema={schema} />
+      </Shell>
+    );
   const data = await listCanonicalDataSource({ limit: 1 });
   const latest = data.runs[0];
   return (
