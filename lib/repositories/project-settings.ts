@@ -15,11 +15,16 @@ export async function listProjectOptions() {
       r.fallback_window_days,r.minimum_short_window_days,r.neutral_score_pct,r.confidence_high_factor,
       r.confidence_medium_factor,r.confidence_low_factor,r.unknown_score_pct,r.observed_zero_policy,
       r.max_provisional_payable_pct,r.pm_review_threshold_pct,r.min_eligible_events,
-      r.min_known_coverage_pct,r.min_post_impressions,r.range_fallback_policy
+      r.min_known_coverage_pct,r.min_post_impressions,r.range_fallback_policy,
+      gv.domain_scope_status as gsc_domain_scope_status,gv.test_query_status as gsc_test_query_status,
+      gv.expires_at as gsc_verification_expires_at,gv.error_code as gsc_verification_error_code,
+      gv.diagnostics as gsc_verification_diagnostics
       from public.projects p left join lateral(select * from public.project_settings_versions v where v.project_id=p.id
         order by (v.status='approved') desc,v.effective_from desc,v.id desc limit 1)s on true
       left join lateral(select * from public.project_performance_rule_versions v where v.project_id=p.id
         order by (v.status='approved') desc,v.effective_from desc,v.id desc limit 1)r on true
+      left join lateral(select * from public.project_gsc_verifications v where v.project_id=p.id
+        order by v.created_at desc,v.id desc limit 1)gv on true
       where p.is_active=true order by p.canonical_name`,
     ),
     query<any>(`select distinct normalized_payload->>'project' as project from public.work_source_rows
@@ -53,8 +58,8 @@ export async function listProjectOptions() {
       current,
       approvedGscProperty: approvedMap[name] ?? null,
       detectedDomains,
-      canonicalDomain:
-        detectedDomains[0]?.domain ?? current?.canonical_domain ?? null,
+      canonicalDomain: current?.canonical_domain ??
+        (detectedDomains.length === 1 ? detectedDomains[0]?.domain : null),
       domainConflict: detectedDomains.length > 1,
     };
   });
@@ -199,7 +204,11 @@ export async function saveUnifiedProjectSettings(raw: {
   confidenceMediumFactor?: number;
   confidenceLowFactor?: number;
   unknownScorePct?: number;
-  observedZeroPolicy?: string;
+  observedZeroPolicy?: {
+    under14DaysPct: number;
+    days14To27Pct: number;
+    days28PlusPct: number;
+  };
   maxProvisionalPayablePct?: number;
   pmReviewThresholdPct?: number;
   minEligibleEvents?: number;
@@ -256,10 +265,6 @@ export async function saveUnifiedProjectSettings(raw: {
       )
     : { rows: [] as any[] };
   const validVerification = verification.rows[0] ?? null;
-  if (raw.approve && !validVerification)
-    throw new Error(
-      "Chỉ có thể duyệt Cài đặt dự án sau khi xác minh GSC hiện tại thành công.",
-    );
   const gscReady = Boolean(validVerification);
   const kpiReady = Boolean(canonicalDomain);
   const defaults = raw.lifecycle === "new_project"
@@ -281,7 +286,11 @@ export async function saveUnifiedProjectSettings(raw: {
     confidenceMediumFactor: Number(raw.confidenceMediumFactor ?? 0.7),
     confidenceLowFactor: Number(raw.confidenceLowFactor ?? 0.35),
     unknownScorePct: Number(raw.unknownScorePct ?? 70),
-    observedZeroPolicy: raw.observedZeroPolicy === "neutral" ? "neutral" : "score_zero",
+    observedZeroPolicy: {
+      under_14_days: Number(raw.observedZeroPolicy?.under14DaysPct ?? 70),
+      days_14_to_27: Number(raw.observedZeroPolicy?.days14To27Pct ?? 55),
+      days_28_plus: Number(raw.observedZeroPolicy?.days28PlusPct ?? 40),
+    },
     maxProvisionalPayablePct: Number(raw.maxProvisionalPayablePct ?? 70),
     pmReviewThresholdPct: Number(raw.pmReviewThresholdPct ?? 55),
     minEligibleEvents: Number(raw.minEligibleEvents ?? defaults.minEvents),
@@ -290,7 +299,14 @@ export async function saveUnifiedProjectSettings(raw: {
     renormalizeMissing: raw.renormalizeMissing !== false,
     deduplicateEffectiveHorizon: raw.deduplicateEffectiveHorizon !== false,
   };
-  const percentFields = [rule.neutralScorePct, rule.unknownScorePct, rule.maxProvisionalPayablePct, rule.pmReviewThresholdPct, rule.minKnownCoveragePct];
+  const percentFields = [
+    rule.neutralScorePct,
+    rule.unknownScorePct,
+    rule.maxProvisionalPayablePct,
+    rule.pmReviewThresholdPct,
+    rule.minKnownCoveragePct,
+    ...Object.values(rule.observedZeroPolicy),
+  ];
   const factorFields = [rule.confidenceHighFactor, rule.confidenceMediumFactor, rule.confidenceLowFactor];
   if (percentFields.some((value) => !Number.isFinite(value) || value < 0 || value > 100))
     throw new Error("Ngưỡng điểm Performance và độ phủ phải nằm trong khoảng 0 đến 100.");
@@ -475,7 +491,7 @@ export async function saveUnifiedProjectSettings(raw: {
           approved_at=now(),updated_at=now()`,
         [projectId,input.version,input.lifecycle,input.effectiveFrom,rule.fallbackWindows,rule.minimumShortWindowDays,
          rule.neutralScorePct,rule.confidenceHighFactor,rule.confidenceMediumFactor,rule.confidenceLowFactor,
-         rule.unknownScorePct,rule.observedZeroPolicy,rule.maxProvisionalPayablePct,rule.pmReviewThresholdPct,
+         rule.unknownScorePct,JSON.stringify(rule.observedZeroPolicy),rule.maxProvisionalPayablePct,rule.pmReviewThresholdPct,
          rule.minEligibleEvents,rule.minKnownCoveragePct,rule.minPostImpressions,
          JSON.stringify({renormalize_missing:rule.renormalizeMissing,deduplicate_effective_horizon:rule.deduplicateEffectiveHorizon}),input.reason,raw.actor],
       );

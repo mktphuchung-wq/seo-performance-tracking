@@ -19,7 +19,7 @@ export default async function SyncPage() {
         <SchemaMigrationRequired schema={schema} />
       </Shell>
     );
-  const data = await listCanonicalDataSource({ limit: 1 });
+  const data = await listCanonicalDataSource({ pageSize: 1 });
   const latest = data.runs[0];
   return (
     <Shell email={session.user.email} isAdmin>
@@ -34,23 +34,24 @@ export default async function SyncPage() {
             tra Dự án, URL, Thành viên, Ngày và Loại trước khi ghi idempotent đã duyệt.
           </p>
         </header>
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-5">
           <MetricCard
-            label="Dòng nguồn"
-            value={latest?.raw_row_count ?? "N/A"}
+            label="Active canonical URLs"
+            value={data.counts.active_canonical_urls}
           />
           <MetricCard
-            label="Event hợp lệ"
-            value={latest?.logical_item_count ?? "N/A"}
+            label="Event mới"
+            value={latest?.new_event_count ?? 0}
           />
           <MetricCard
-            label="Ứng viên đã chấp nhận"
-            value={latest?.accepted_row_count ?? "N/A"}
+            label="Event cập nhật"
+            value={latest?.updated_event_count ?? 0}
           />
           <MetricCard
             label="Cần xử lý"
-            value={latest?.quarantined_count ?? "N/A"}
+            value={latest?.needs_attention_count ?? 0}
           />
+          <MetricCard label="Trạng thái" value={viLabel(latest?.status ?? "Chưa chạy")} />
         </div>
         <SourcePipelineControls />
         <DataTableContainer>
@@ -84,6 +85,13 @@ export default async function SyncPage() {
                   </td>
                 </tr>
               ))}
+              {!data.runs.length && (
+                <tr>
+                  <td className="p-6 text-center text-slate-500" colSpan={8}>
+                    Chưa có lần làm mới nào. Bấm “Làm mới dữ liệu” để bắt đầu.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </DataTableContainer>

@@ -20,12 +20,16 @@ export async function GET(request: Request) {
   try {
     await assertUnifiedSchemaReady();
     const url = new URL(request.url);
-    const limit = Number(url.searchParams.get("limit") ?? 500);
+    const page = Number(url.searchParams.get("page") ?? 1);
+    const pageSize = Number(url.searchParams.get("pageSize") ?? 100);
     return apiOk(
       await listCanonicalDataSource({
         month: url.searchParams.get("month") ?? undefined,
         memberName: url.searchParams.get("member") ?? undefined,
-        limit: Number.isFinite(limit) ? limit : 500,
+        project: url.searchParams.get("project") ?? undefined,
+        status: url.searchParams.get("status") ?? undefined,
+        page: Number.isFinite(page) ? page : 1,
+        pageSize: Number.isFinite(pageSize) ? pageSize : 100,
       }),
       requestId,
     );

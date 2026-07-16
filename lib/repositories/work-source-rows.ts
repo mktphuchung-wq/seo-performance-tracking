@@ -6,7 +6,8 @@ import type {
   ReconciliationResult,
 } from "../domain/work-source";
 
-export type PersistedReconciliation = ReconciliationResult["diagnostics"] & {
+export type PersistedReconciliation = ReconciliationResult["diagnostics"] &
+  SourcePreviewDiff & {
   syncRunId: string;
   persistenceMode: "raw_only" | "canonical_events";
   eventsInserted: number;
@@ -128,19 +129,26 @@ async function persistCanonicalEvent(
   const normalizedDomain = new URL(row.canonicalUrl).hostname
     .toLowerCase()
     .replace(/^www\./, "");
-  const canonicalDomain = String(projectIdentity.rows[0].canonical_domain ?? "");
+  const canonicalDomain = String(projectIdentity.rows[0].canonical_domain ?? "")
+    .toLowerCase()
+    .replace(/^www\./, "");
   const domainAllowed = Boolean(
     canonicalDomain &&
       (normalizedDomain === canonicalDomain ||
         (projectIdentity.rows[0].include_subdomains &&
           normalizedDomain.endsWith(`.${canonicalDomain}`))),
   );
-  const classificationStatus = row.isCountable && domainAllowed ? "accepted" : "quarantined";
+  const domainConflict = Boolean(canonicalDomain && !domainAllowed);
+  const classificationStatus = !row.isCountable
+    ? "quarantined"
+    : domainConflict
+      ? "pending"
+      : "accepted";
   const classificationIssues = [
-    ...row.issues,
-    ...(domainAllowed ? [] : ["project_domain_unapproved"]),
+    ...row.issues.filter((issue) => issue !== "project_settings_missing"),
+    ...(domainConflict ? ["project_domain_conflict"] : []),
   ];
-  const contentEligible = row.isCountable && classificationStatus === "accepted";
+  const contentEligible = row.isCountable && classificationStatus !== "quarantined";
   const gscEligible =
     contentEligible &&
     projectIdentity.rows[0].gsc_access_status === "verified" &&
@@ -149,7 +157,9 @@ async function persistCanonicalEvent(
     ? classificationIssues
     : gscEligible
       ? []
-      : ["gsc_property_unverified"];
+      : domainConflict
+        ? ["project_domain_conflict"]
+        : ["gsc_property_unverified"];
   const canonicalIdentity = await client.query(
     `select id::text from public.content_urls
      where project_id=$1 and url=$2
@@ -209,9 +219,11 @@ async function persistCanonicalEvent(
       gscEligible,
       gscEligible
         ? "verified_property_scope"
-        : domainAllowed
+        : contentEligible && !domainConflict
           ? "gsc_property_unverified"
-          : "project_domain_unapproved",
+          : domainConflict
+            ? "project_domain_conflict"
+            : "source_invalid",
     ],
   );
   const rule = await resolveUnitRule(client, row);
@@ -522,7 +534,11 @@ export async function persistWorkSourceReconciliation(
       reviewed_at=case when workflow_stage='committed' then now() else null end,finished_at=now(),updated_at=now() where id=$1`,
       [
         syncRunId,
-        options.persistEvents ? "committed" : "preview_ready",
+        options.persistEvents
+          ? result.diagnostics.needsAttention > 0
+            ? "partial"
+            : "committed"
+          : "preview_ready",
         JSON.stringify(finalDiagnostics),
         actor,
       ],
@@ -538,6 +554,40 @@ export async function persistWorkSourceReconciliation(
       sourceMissingEvents,
     };
   });
+}
+
+export async function recordFailedSourcePipelineRun(input: {
+  source?: string;
+  actor: string;
+  requestId: string;
+  error: unknown;
+}) {
+  const message =
+    input.error instanceof Error ? input.error.message : String(input.error);
+  const result = await query<any>(
+    `insert into public.work_sync_runs
+      (source,status,workflow_stage,raw_row_count,logical_item_count,canonical_event_count,
+       quarantined_count,duplicate_variant_count,diagnostics,triggered_by,error_message,
+       valid_work_record_count,canonical_url_count,new_event_count,updated_event_count,
+       needs_attention_count,started_at,finished_at,created_at,updated_at)
+     values($1,'failed','committed',0,0,0,0,0,$2::jsonb,$3,$4,0,0,0,0,0,now(),now(),now(),now())
+     returning id::text`,
+    [
+      input.source ?? "content_urls_sheet",
+      JSON.stringify({ requestId: input.requestId, failurePersisted: true }),
+      input.actor,
+      message.slice(0, 2000),
+    ],
+  );
+  return result.rows[0];
+}
+
+export async function countActiveCanonicalUrls() {
+  const result = await query<any>(
+    `select count(*)::int as count from public.content_urls
+     where coalesce(is_active,true)=true and coalesce(unified_source_state,'active')='active'`,
+  );
+  return Number(result.rows[0]?.count ?? 0);
 }
 
 export async function loadPreviewReconciliation(

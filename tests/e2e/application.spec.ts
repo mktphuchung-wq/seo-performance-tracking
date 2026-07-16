@@ -3,6 +3,11 @@ import { expect, test, type Page } from "@playwright/test";
 const previewSecret = process.env.E2E_TEST_AUTH_SECRET;
 const previewAdmin = process.env.E2E_TEST_ADMIN_EMAIL;
 const previewMember = process.env.E2E_TEST_MEMBER_EMAIL;
+const vercelShareUrl = process.env.VERCEL_SHARE_URL;
+
+test.beforeEach(async ({ page }) => {
+  if (vercelShareUrl) await page.goto(vercelShareUrl);
+});
 
 async function signInPreview(page: Page, email: string) {
   const request = page.context().request;
@@ -24,27 +29,27 @@ test("public entry renders a meaningful sign-in surface without an error overlay
 }) => {
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "SEO Performance Workspace" }),
+    page.getByRole("heading", { name: "Không gian KPI SEO" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Sign in with Google" }),
+    page.getByRole("heading", { name: "Đăng nhập bằng Google" }),
   ).toBeVisible();
   await expect(page.locator("[data-nextjs-dialog]")).toHaveCount(0);
 });
 
 test("Admin and Member workspaces are isolated from anonymous users", async ({
   page,
-  request,
 }) => {
   await page.goto("/admin/sync");
   await expect(page).toHaveURL(/\/$/);
-  const memberApi = await request.get("/api/me/performance");
+  const memberApi = await page.context().request.get("/api/me/performance");
   expect(memberApi.status()).toBe(401);
 });
 
 test("legacy write endpoints are read-only during migration", async ({
-  request,
+  page,
 }) => {
+  const request = page.context().request;
   for (const endpoint of [
     "/api/sync/sheet",
     "/api/refresh/cache",
@@ -78,6 +83,40 @@ test("Preview-only test auth exposes authenticated Admin workflows", async ({
     await expect(page.locator("[data-nextjs-dialog]")).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText("Application error");
   }
+
+  await page.goto("/admin/sync");
+  await expect(page.getByRole("button", { name: "Làm mới dữ liệu" })).toBeVisible();
+  await expect(page.getByText("Active canonical URLs", { exact: true })).toBeVisible();
+
+  await page.goto("/admin/projects");
+  await expect(page.getByText("Tài khoản Google:", { exact: true })).toBeVisible();
+  await expect(page.getByText("Trọng số 3 tháng %", { exact: true })).toBeVisible();
+
+  await page.goto("/admin/data-source");
+  for (const label of [
+    "Raw rows",
+    "Valid work records",
+    "Logical events",
+    "Active canonical URLs",
+    "Nguồn và phân loại",
+    "Content KPI",
+    "GSC observation",
+    "Performance readiness",
+  ])
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+
+  await page.goto("/admin/member-performance?month=2026-07");
+  await expect(page.getByText("Chọn tất cả", { exact: true })).toBeVisible();
+
+  await page.goto("/admin/member-review?month=2026-07");
+  const scoreSelect = page.locator('select[name^="score-"]').first();
+  if (await scoreSelect.count()) {
+    const articleText = await scoreSelect.locator("xpath=ancestor::article").textContent();
+    if (articleText?.includes("Chờ đánh giá"))
+      await expect(scoreSelect).toHaveValue("");
+    else await expect(scoreSelect).not.toHaveValue("");
+  }
+
   for (const endpoint of [
     "/api/admin/source-pipeline/status",
     "/api/admin/projects/options",

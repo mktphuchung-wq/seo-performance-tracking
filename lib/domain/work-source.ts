@@ -71,6 +71,21 @@ export type ReconciliationAliases = {
   >;
 };
 
+const sourceBlockingIssues = new Set([
+  "project_unresolved",
+  "member_unresolved",
+  "work_type_unresolved",
+  "status_unresolved",
+  "completion_date_missing",
+  "url_missing",
+  "url_invalid",
+  "url_protocol_unsupported",
+  "public_url_missing",
+]);
+
+export const isSourceBlockingIssue = (issue: string) =>
+  sourceBlockingIssues.has(issue);
+
 function fallbackLogicalKey(row: {
   project: string | null;
   canonicalUrl: string | null;
@@ -143,7 +158,7 @@ export function normalizeWorkSourceRow(
       const allowed =
         hostname === canonical ||
         (domainRule.includeSubdomains && hostname.endsWith(`.${canonical}`));
-      if (!allowed) issues.push("project_domain_unapproved");
+      if (!allowed) issues.push("project_domain_conflict");
     }
   }
   const identity = {
@@ -167,21 +182,7 @@ export function normalizeWorkSourceRow(
     sourceStatus.isPayableCandidate &&
     normalizedUrl.isPublic &&
     Boolean(project && member && workType && workDate);
-  const classificationValid = !issues.some((issue) =>
-    [
-      "project_unresolved",
-      "member_unresolved",
-      "work_type_unresolved",
-      "status_unresolved",
-      "completion_date_missing",
-      "url_missing",
-      "url_invalid",
-      "url_protocol_unsupported",
-      "public_url_missing",
-      "project_settings_missing",
-      "project_domain_unapproved",
-    ].includes(issue),
-  );
+  const classificationValid = !issues.some(isSourceBlockingIssue);
   return {
     ...row,
     project,
@@ -223,7 +224,7 @@ export function reconcileWorkSourceRows(
   }
   const quarantinedRows = canonicalRows.filter(
     (row) =>
-      row.issues.some((issue) => issue !== "public_url_missing") ||
+      row.issues.some(isSourceBlockingIssue) ||
       (row.status === "completed" && !row.isPublicUrl),
   );
   const acceptedCandidates = canonicalRows.filter(

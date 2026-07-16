@@ -113,7 +113,7 @@ export function parseSourceDate(value: unknown): string | null {
   let match = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (match) return validDate(Number(match[1]), Number(match[2]), Number(match[3]));
   match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  return match ? validDate(Number(match[3]), Number(match[1]), Number(match[2])) : null;
+  return match ? validDate(Number(match[3]), Number(match[2]), Number(match[1])) : null;
 }
 
 function validDate(year: number, month: number, day: number): string | null {

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 async function postJson(url: string, body: unknown) {
   const response = await fetch(url, {
@@ -50,36 +52,27 @@ function Result({
 }
 
 export function SourcePipelineControls() {
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [previewRunId, setPreviewRunId] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
+  const [summary, setSummary] = useState<null | {
+    status: string;
+    activeCanonicalUrls: number;
+    newEvents: number;
+    updatedEvents: number;
+    unchangedEvents: number;
+    needsAttention: number;
+    finishedAt: string;
+  }>(null);
   const [error, setError] = useState<string | null>(null);
-  const [reason, setReason] = useState("");
-  async function preview() {
+  async function refresh() {
     setBusy(true);
     setError(null);
     try {
-      const data = await postJson("/api/admin/source-pipeline/preview", {});
-      setPreviewRunId(String(data.syncRunId ?? ""));
-      setMessage(JSON.stringify(data, null, 2));
+      const data = await postJson("/api/admin/source-pipeline/refresh", {});
+      setSummary(data);
+      router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không thể xem trước thay đổi nguồn");
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function commit() {
-    setBusy(true);
-    setError(null);
-    try {
-      const data = await postJson("/api/admin/source-pipeline/commit", {
-        previewRunId,
-        approvalReason: reason,
-        idempotencyKey: crypto.randomUUID(),
-      });
-      setMessage(JSON.stringify(data, null, 2));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Không thể ghi thay đổi nguồn");
+      setError(err instanceof Error ? err.message : "Không thể làm mới dữ liệu");
     } finally {
       setBusy(false);
     }
@@ -90,40 +83,33 @@ export function SourcePipelineControls() {
         Content Sheet → nguồn dữ liệu chuẩn
       </h3>
       <p className="mt-2 text-sm text-slate-600">
-        Kiểm tra thay đổi theo đúng hợp đồng năm cột mà không sửa URL chuẩn hay
-        event công việc. Chỉ lần Preview đã duyệt mới được ghi và thao tác là idempotent.
+        Đọc Sheet, chuẩn hóa và ghi event idempotent trong một lần làm mới.
+        Hệ thống tự lưu người thực hiện và mã yêu cầu để kiểm toán.
       </p>
-      <label className="mt-4 block text-sm font-medium">
-        Lý do của quản trị viên
-        <input
-          className="mt-1 w-full rounded-lg border px-3 py-2"
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-          placeholder="Đã duyệt số lượng, alias và các dòng cần xử lý"
-        />
-      </label>
-      {previewRunId && (
-        <p className="mt-2 text-xs text-slate-500">
-          Lần Preview: <span className="font-mono">{previewRunId}</span>
-        </p>
-      )}
-      <div className="mt-4 flex flex-wrap gap-3">
-        <button
-          className="rounded-lg border px-4 py-2 font-semibold"
-          disabled={busy}
-          onClick={preview}
-        >
-          Kiểm tra thay đổi nguồn
-        </button>
+      <div className="mt-4">
         <button
           className="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white disabled:opacity-50"
-          disabled={busy || !reason.trim() || !previewRunId}
-          onClick={commit}
+          disabled={busy}
+          onClick={refresh}
         >
-          Ghi các thay đổi đã chấp nhận
+          {busy ? "Đang làm mới…" : "Làm mới dữ liệu"}
         </button>
       </div>
-      <Result message={message} error={error} />
+      {summary && (
+        <div className="mt-4 grid gap-3 rounded-xl bg-emerald-50 p-4 text-sm md:grid-cols-3">
+          <p><strong>Trạng thái:</strong> {summary.status}</p>
+          <p><strong>Active URL:</strong> {summary.activeCanonicalUrls}</p>
+          <p><strong>Event mới:</strong> {summary.newEvents}</p>
+          <p><strong>Event cập nhật:</strong> {summary.updatedEvents}</p>
+          <p><strong>Không đổi:</strong> {summary.unchangedEvents}</p>
+          <p><strong>Cần xử lý:</strong> {summary.needsAttention}</p>
+          <p className="md:col-span-3">
+            <strong>Hoàn tất:</strong>{" "}
+            {new Date(summary.finishedAt).toLocaleString("vi-VN")}
+          </p>
+        </div>
+      )}
+      <Result message={null} error={error} />
     </section>
   );
 }
@@ -151,7 +137,16 @@ export type ProjectOption = {
     confidence_medium_factor?: number | null;
     confidence_low_factor?: number | null;
     unknown_score_pct?: number | null;
-    observed_zero_policy?: string | null;
+    observed_zero_policy?: {
+      under_14_days?: number;
+      days_14_to_27?: number;
+      days_28_plus?: number;
+    } | null;
+    gsc_permission_level?: string | null;
+    gsc_domain_scope_status?: string | null;
+    gsc_test_query_status?: string | null;
+    gsc_verification_expires_at?: string | null;
+    gsc_verification_error_code?: string | null;
     max_provisional_payable_pct?: number | null;
     pm_review_threshold_pct?: number | null;
     min_eligible_events?: number | null;
@@ -163,9 +158,15 @@ export type ProjectOption = {
 export function ProjectSettingsForm({
   options,
   gscProperties,
+  googleAccount,
 }: {
   options: ProjectOption[];
   gscProperties: Array<{ siteUrl: string; permissionLevel: string }>;
+  googleAccount: {
+    email: string;
+    tokenError?: string | null;
+    tokenExpiresAt?: number | null;
+  };
 }) {
   const [selectedProject, setSelectedProject] = useState(
     options[0]?.project ?? "",
@@ -173,7 +174,13 @@ export function ProjectSettingsForm({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [verificationIds, setVerificationIds] = useState<Record<string, string>>({});
+  const [domainSelections, setDomainSelections] = useState<Record<string, string>>({});
   const selected = options.find((option) => option.project === selectedProject);
+  const selectedDomain =
+    domainSelections[selectedProject] ??
+    selected?.canonicalDomain ??
+    selected?.detectedDomains[0]?.domain ??
+    "";
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -201,7 +208,11 @@ export function ProjectSettingsForm({
           confidenceMediumFactor: Number(form.get("confidenceMediumFactor")),
           confidenceLowFactor: Number(form.get("confidenceLowFactor")),
           unknownScorePct: Number(form.get("unknownScorePct")),
-          observedZeroPolicy: form.get("observedZeroPolicy"),
+          observedZeroPolicy: {
+            under14DaysPct: Number(form.get("observedZeroUnder14")),
+            days14To27Pct: Number(form.get("observedZero14To27")),
+            days28PlusPct: Number(form.get("observedZero28Plus")),
+          },
           maxProvisionalPayablePct: Number(form.get("maxProvisionalPayablePct")),
           pmReviewThresholdPct: Number(form.get("pmReviewThresholdPct")),
           minEligibleEvents: Number(form.get("minEligibleEvents")),
@@ -250,6 +261,7 @@ export function ProjectSettingsForm({
         {
           gscProperty: form.get("gscProperty"),
           includeSubdomains: form.get("includeSubdomains") === "on",
+          canonicalDomain: form.get("canonicalDomain"),
         },
       );
       const verificationId = String(result.verification?.id ?? "");
@@ -289,15 +301,17 @@ export function ProjectSettingsForm({
         </label>
         <label className="text-sm">
           Tên miền chuẩn
-          <input
-            type="hidden"
-            name="canonicalDomain"
-            value={selected?.canonicalDomain ?? ""}
-          />
           <select
-            value={selected?.canonicalDomain ?? ""}
-            disabled
-            className="mt-1 w-full rounded-lg border bg-slate-50 px-3 py-2"
+            name="canonicalDomain"
+            value={selectedDomain}
+            onChange={(event) =>
+              setDomainSelections((current) => ({
+                ...current,
+                [selectedProject]: event.target.value,
+              }))
+            }
+            className="mt-1 w-full rounded-lg border px-3 py-2"
+            required
           >
             {selected?.detectedDomains.map((row) => (
               <option key={row.domain} value={row.domain}>
@@ -310,7 +324,7 @@ export function ProjectSettingsForm({
           </select>
           {selected?.domainConflict && (
             <span className="mt-1 block text-xs text-amber-700">
-              Phát hiện nhiều hostname; hostname có nhiều URL nhất đang được chọn.
+              Phát hiện nhiều hostname. Hãy chọn rõ phạm vi dự án; hệ thống không tự quyết định theo số URL.
             </span>
           )}
         </label>
@@ -365,8 +379,26 @@ export function ProjectSettingsForm({
         >
           Xác minh quyền GSC
         </button>
+        <div className="rounded-xl border bg-slate-50 p-3 text-sm md:col-span-2">
+          <p><strong>Tài khoản Google:</strong> {googleAccount.email}</p>
+          <p><strong>Permission:</strong> {selected?.current?.gsc_permission_level ?? "Chưa xác minh"}</p>
+          <p><strong>Phạm vi:</strong> {selected?.current?.gsc_domain_scope_status ?? "Chưa kiểm tra"}</p>
+          <p><strong>Truy vấn thử:</strong> {selected?.current?.gsc_test_query_status ?? "Chưa chạy"}</p>
+          <p><strong>Hết hạn xác minh:</strong> {selected?.current?.gsc_verification_expires_at ?? "Chưa có"}</p>
+          {(googleAccount.tokenError || selected?.current?.gsc_verification_error_code) && (
+            <p className="text-red-700"><strong>Lỗi:</strong> {googleAccount.tokenError ?? selected?.current?.gsc_verification_error_code}</p>
+          )}
+          <Link
+            className="mt-2 inline-block font-semibold text-blue-700 underline"
+            href="/api/auth/signin/google?callbackUrl=/admin/projects"
+          >
+            Đăng nhập lại Google
+          </Link>
+        </div>
         <p className={`text-sm ${verified ? "text-emerald-700" : "text-amber-700"}`}>
-          {verified ? "Đã xác minh, có thể duyệt cấu hình." : "Cần xác minh GSC trước khi duyệt."}
+          {verified
+            ? "GSC đã xác minh."
+            : "GSC chưa xác minh; vẫn có thể duyệt lifecycle/rules. Performance sẽ ở provisional hoặc PM review."}
         </p>
         <Field
           key={`3m-${selectedProject}`}
@@ -417,7 +449,9 @@ export function ProjectSettingsForm({
             <Field name="confidenceMediumFactor" label="Hệ số tin cậy trung bình (0–1)" type="number" defaultValue={selected?.current?.confidence_medium_factor ?? 0.7} required />
             <Field name="confidenceLowFactor" label="Hệ số tin cậy thấp (0–1)" type="number" defaultValue={selected?.current?.confidence_low_factor ?? 0.35} required />
             <Field name="unknownScorePct" label="Điểm khi không thể quan sát %" type="number" defaultValue={selected?.current?.unknown_score_pct ?? 70} required />
-            <label className="text-sm">Chính sách observed-zero<select name="observedZeroPolicy" defaultValue={selected?.current?.observed_zero_policy ?? "score_zero"} className="mt-1 w-full rounded-lg border px-3 py-2"><option value="score_zero">Chấm 0 khi đã quan sát giá trị 0</option><option value="neutral">Dùng điểm trung tính</option></select></label>
+            <Field name="observedZeroUnder14" label="Observed zero dưới 14 ngày %" type="number" defaultValue={selected?.current?.observed_zero_policy?.under_14_days ?? 70} required />
+            <Field name="observedZero14To27" label="Observed zero 14–27 ngày %" type="number" defaultValue={selected?.current?.observed_zero_policy?.days_14_to_27 ?? 55} required />
+            <Field name="observedZero28Plus" label="Observed zero từ 28 ngày %" type="number" defaultValue={selected?.current?.observed_zero_policy?.days_28_plus ?? 40} required />
             <Field name="maxProvisionalPayablePct" label="Trần điểm tạm tính %" type="number" defaultValue={selected?.current?.max_provisional_payable_pct ?? 70} required />
             <Field name="pmReviewThresholdPct" label="Ngưỡng PM cần đánh giá %" type="number" defaultValue={selected?.current?.pm_review_threshold_pct ?? 55} required />
             <Field name="minEligibleEvents" label="Event tối thiểu" type="number" defaultValue={selected?.current?.min_eligible_events ?? 1} required />
@@ -428,7 +462,7 @@ export function ProjectSettingsForm({
           </div>
         </fieldset>
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="approve" disabled={!verified} />
+          <input type="checkbox" name="approve" />
           Duyệt phiên bản này
         </label>
         <label className="text-sm md:col-span-3">
@@ -528,16 +562,23 @@ export type ReviewCriterion = {
   criterionKey: string;
   label: string;
   allowsNa: boolean;
+  initialScore?: number | null;
+  initialIsNa?: boolean;
+  initialNaReason?: string | null;
+  initialNote?: string | null;
 };
 export function QualityReviewEditor({
   month,
   workEventId,
   criteria,
+  initialAdminNote,
 }: {
   month: string;
   workEventId: string;
   criteria: ReviewCriterion[];
+  initialAdminNote?: string | null;
 }) {
+  const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -547,9 +588,12 @@ export function QualityReviewEditor({
       const answers = criteria.map((criterion, index) => {
         const isNa = form.get(`na-${index}`) === "on";
         const note = String(form.get(`note-${index}`) ?? "");
+        const rawScore = String(form.get(`score-${index}`) ?? "");
+        if (!isNa && rawScore === "")
+          throw new Error(`Chưa chấm điểm: ${criterion.label}`);
         return {
           criterionKey: criterion.criterionKey,
-          score: isNa ? null : Number(form.get(`score-${index}`)),
+          score: isNa ? null : Number(rawScore),
           isNa,
           naReason: isNa ? note : undefined,
           note,
@@ -567,6 +611,7 @@ export function QualityReviewEditor({
         `Đã lưu ${Number(data.reviews?.[0]?.qualityPct ?? 0).toFixed(1)}%`,
       );
       setError(null);
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Không thể lưu đánh giá");
     }
@@ -580,7 +625,14 @@ export function QualityReviewEditor({
             <select
               name={`score-${index}`}
               className="mt-1 w-full rounded border px-2 py-1"
+              defaultValue={
+                criterion.initialScore === null ||
+                criterion.initialScore === undefined
+                  ? ""
+                  : String(criterion.initialScore)
+              }
             >
+              <option value="">Chọn điểm</option>
               <option value="5">5 — Xuất sắc</option>
               <option value="4">4 — Đạt tốt</option>
               <option value="3">3 — Chấp nhận được</option>
@@ -590,13 +642,22 @@ export function QualityReviewEditor({
             </select>
             {criterion.allowsNa && (
               <span className="mt-1 flex items-center gap-2">
-                <input name={`na-${index}`} type="checkbox" />
+                <input
+                  name={`na-${index}`}
+                  type="checkbox"
+                  defaultChecked={criterion.initialIsNa}
+                />
                 Không áp dụng (bắt buộc nêu lý do)
               </span>
             )}
             <input
               name={`note-${index}`}
               className="mt-1 w-full rounded border px-2 py-1"
+              defaultValue={
+                criterion.initialIsNa
+                  ? criterion.initialNaReason ?? criterion.initialNote ?? ""
+                  : criterion.initialNote ?? ""
+              }
               placeholder="Bằng chứng cho điểm thấp hoặc lý do N/A"
             />
           </label>
@@ -605,6 +666,7 @@ export function QualityReviewEditor({
       <textarea
         name="adminNote"
         className="mt-3 w-full rounded border px-3 py-2 text-sm"
+        defaultValue={initialAdminNote ?? ""}
         placeholder="Ghi chú của người đánh giá"
       />
       <button className="mt-3 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">

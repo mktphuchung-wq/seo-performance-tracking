@@ -34,7 +34,7 @@ async function loadMonthlyRows(
     `with work as (
     select date_trunc('month',e.work_date)::date as month_key,e.project,e.member_name,e.project_id,e.member_id,
       sum(e.unit_value)::numeric as work_units
-    from public.url_work_events e where e.performance_kpi_eligible=true and e.is_countable=true
+    from public.url_work_events e where e.content_kpi_eligible=true and e.is_countable=true
       and coalesce(e.unified_source_state,'active')='active'
       and e.work_date<date_trunc('month',$1::date)+interval '1 month'
     group by 1,2,3,4,5
@@ -131,13 +131,19 @@ export async function rebuildPerformanceRanges(asOfMonthInput: string) {
 export async function getPerformanceWorkspace(input: {
   asOfMonth: string;
   memberName?: string;
+  memberNames?: string[];
 }) {
   const month = asMonth(input.asOfMonth);
   const params: any[] = [month];
   let memberFilter = "";
-  if (input.memberName) {
-    params.push(input.memberName);
-    memberFilter = " and m.canonical_name=$2";
+  const selectedMembers = input.memberNames?.length
+    ? input.memberNames
+    : input.memberName
+      ? [input.memberName]
+      : [];
+  if (selectedMembers.length) {
+    params.push(selectedMembers);
+    memberFilter = " and m.canonical_name=any($2::text[])";
   }
   const [ranges, settings, workUnits] = await Promise.all([
     query<any>(
@@ -156,20 +162,31 @@ export async function getPerformanceWorkspace(input: {
     query<any>(
       `select e.member_name,e.project,sum(e.unit_value)::numeric as work_units
       from public.url_work_events e join public.members m on m.id=e.member_id
-      where e.performance_kpi_eligible=true and e.is_countable=true and coalesce(e.unified_source_state,'active')='active'
+      where e.content_kpi_eligible=true and e.is_countable=true and coalesce(e.unified_source_state,'active')='active'
+        and e.work_date>=date_trunc('month',$1::date)
         and e.work_date<date_trunc('month',$1::date)+interval '1 month'${memberFilter}
       group by e.member_name,e.project order by e.member_name,e.project`,
       params,
     ),
   ]);
   const projectRows = ranges.rows;
-  const members = [...new Set(projectRows.map((row: any) => row.member_name))];
+  const members = [
+    ...new Set([
+      ...projectRows.map((row: any) => row.member_name),
+      ...workUnits.rows.map((row: any) => row.member_name),
+    ]),
+  ];
   const summaries = members.map((memberName) => {
     const memberRanges = projectRows.filter(
       (row: any) => row.member_name === memberName,
     );
     const projects = [
-      ...new Set(memberRanges.map((row: any) => row.project)),
+      ...new Set([
+        ...memberRanges.map((row: any) => row.project),
+        ...workUnits.rows
+          .filter((row: any) => row.member_name === memberName)
+          .map((row: any) => row.project),
+      ]),
     ].map((project) => {
       const projectRanges = memberRanges.filter(
         (row: any) => row.project === project,

@@ -6,8 +6,10 @@ import { getProjectAliases } from "../repositories/project-aliases";
 import { getProjectDomainRules } from "../repositories/project-settings";
 import {
   compareCanonicalEventCandidates,
+  countActiveCanonicalUrls,
   loadPreviewReconciliation,
   persistWorkSourceReconciliation,
+  recordFailedSourcePipelineRun,
 } from "../repositories/work-source-rows";
 import { getContentUrlsSheetRows } from "../sync/content-urls-sheet";
 import { assertUnifiedSchemaReady } from "../schema-readiness";
@@ -103,4 +105,65 @@ export async function commitSourcePipeline(input: {
     status: "committed",
     committedFromRunId: input.previewRunId.trim(),
   };
+}
+
+export async function refreshSourcePipeline(input: {
+  accessToken: string;
+  actor: string;
+  requestId: string;
+}) {
+  try {
+    await assertUnifiedSchemaReady();
+    const [projects, projectDomains, dbMembers, sourceRows] = await Promise.all([
+      getProjectAliases(),
+      getProjectDomainRules(),
+      getMemberAliases(),
+      getContentUrlsSheetRows(input.accessToken),
+    ]);
+    const configuredMembers = Object.fromEntries(
+      Object.keys(getMemberEmailMap()).map((name) => [
+        normalizeAliasKey(name),
+        name,
+      ]),
+    );
+    const reconciliation = reconcileWorkSourceRows(sourceRows, {
+      projects,
+      projectDomains,
+      members: { ...configuredMembers, ...dbMembers },
+    });
+    const diff = await compareCanonicalEventCandidates(reconciliation);
+    assertUnifiedWriteEnvironment();
+    const persisted = await persistWorkSourceReconciliation(
+      reconciliation,
+      input.actor,
+      {
+        persistEvents: true,
+        approvalReason: "manual_content_sheet_refresh",
+        idempotencyKey: input.requestId,
+        previewDiff: diff,
+      },
+    );
+    return {
+      source: "content_urls_sheet",
+      status:
+        reconciliation.diagnostics.needsAttention > 0
+          ? "partial"
+          : "committed",
+      syncRunId: persisted.syncRunId,
+      activeCanonicalUrls: await countActiveCanonicalUrls(),
+      newEvents: persisted.newEvents,
+      updatedEvents: persisted.updatedEvents,
+      unchangedEvents: persisted.unchangedEvents,
+      needsAttention: reconciliation.diagnostics.needsAttention,
+      finishedAt: new Date().toISOString(),
+      requestId: input.requestId,
+    };
+  } catch (error) {
+    await recordFailedSourcePipelineRun({
+      actor: input.actor,
+      requestId: input.requestId,
+      error,
+    }).catch(() => undefined);
+    throw error;
+  }
 }
