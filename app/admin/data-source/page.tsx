@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { DataTableContainer, MetricCard, Shell } from "../../../components/ui";
@@ -12,7 +13,13 @@ const displayDate = (value: unknown) =>
   value ? formatViDateTime(value) : "Chưa có";
 
 export default async function DataSourcePage(props: {
-  searchParams?: Promise<{ month?: string; member?: string }>;
+  searchParams?: Promise<{
+    month?: string;
+    member?: string;
+    project?: string;
+    status?: string;
+    page?: string;
+  }>;
 }) {
   const searchParams = await props.searchParams;
   const session = await getServerSession(authOptions);
@@ -24,16 +31,23 @@ export default async function DataSourcePage(props: {
         <SchemaMigrationRequired schema={schema} />
       </Shell>
     );
-  const month = searchParams?.month;
-  const member = searchParams?.member;
-  const data = await listCanonicalDataSource({ month, memberName: member });
-  const members = [
-    ...new Set(data.rows.map((row: any) => row.member_name).filter(Boolean)),
-  ] as string[];
-  const accepted = data.rows.filter(
-    (row: any) => row.classification_status === "accepted",
-  );
+  const page = Math.max(Number(searchParams?.page ?? 1) || 1, 1);
+  const data = await listCanonicalDataSource({
+    month: searchParams?.month,
+    memberName: searchParams?.member,
+    project: searchParams?.project,
+    status: searchParams?.status,
+    page,
+    pageSize: 100,
+  });
   const { source, gsc, performance } = data.freshness;
+  const pageHref = (target: number) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(searchParams ?? {}))
+      if (value && key !== "page") params.set(key, value);
+    params.set("page", String(target));
+    return `/admin/data-source?${params.toString()}`;
+  };
   return (
     <Shell email={session.user.email} isAdmin>
       <div className="space-y-6">
@@ -43,163 +57,59 @@ export default async function DataSourcePage(props: {
           </p>
           <h2 className="text-3xl font-bold">Nguồn dữ liệu chuẩn</h2>
           <p className="mt-2 text-slate-600">
-            Trạng thái phân loại, dữ liệu GSC thực tế, eligibility Nội dung và
-            eligibility Hiệu suất được theo dõi độc lập. Dữ liệu thiếu giữ nguyên N/A.
+            Raw row, work record, logical event và canonical URL là bốn đại lượng riêng.
+            Content KPI không phụ thuộc việc GSC đã sẵn sàng hay chưa.
           </p>
         </header>
         <div className="grid gap-4 md:grid-cols-3">
-          <MetricCard
-            label="Nguồn được ghi gần nhất"
-            value={displayDate(source?.finished_at)}
-          />
-          <MetricCard
-            label="Dữ liệu GSC đến ngày"
-            value={gsc?.latest_complete_date ?? gsc?.data_cutoff ?? "N/A"}
-          />
-          <MetricCard
-            label="Hiệu suất tính gần nhất"
-            value={displayDate(performance?.last_calculated)}
-          />
+          <MetricCard label="Nguồn ghi gần nhất" value={displayDate(source?.finished_at)} />
+          <MetricCard label="GSC đến ngày" value={gsc?.latest_complete_date ?? gsc?.data_cutoff ?? "Chưa có"} />
+          <MetricCard label="Performance tính gần nhất" value={displayDate(performance?.last_calculated)} />
         </div>
-        <div className="grid gap-4 md:grid-cols-4">
-          <MetricCard label="URL chuẩn" value={data.rows.length} />
-          <MetricCard label="Đã phân loại" value={accepted.length} />
-          <MetricCard
-            label="Đủ điều kiện GSC"
-            value={data.rows.filter((row: any) => row.gsc_ready).length}
-          />
-          <MetricCard
-            label="Đủ điều kiện KPI Nội dung"
-            value={data.rows.filter((row: any) => row.content_kpi_eligible).length}
-          />
-          <MetricCard
-            label="Đủ điều kiện KPI Hiệu suất"
-            value={data.rows.filter((row: any) => row.performance_kpi_eligible).length}
-          />
+        <div className="grid gap-4 md:grid-cols-5">
+          <MetricCard label="Raw rows" value={data.counts.raw_rows} />
+          <MetricCard label="Valid work records" value={data.counts.valid_work_records} />
+          <MetricCard label="Logical events" value={data.counts.logical_events} />
+          <MetricCard label="Active canonical URLs" value={data.counts.active_canonical_urls} />
+          <MetricCard label="Cần xử lý" value={data.counts.needs_attention} />
         </div>
         <form method="get" className="flex flex-wrap items-end gap-3">
-          <label className="text-sm">
-            Tháng
-            <input
-              name="month"
-              type="month"
-              defaultValue={month}
-              className="mt-1 block rounded-lg border px-3 py-2"
-            />
-          </label>
-          <label className="text-sm">
-            Thành viên
-            <select
-              name="member"
-              defaultValue={member}
-              className="mt-1 block rounded-lg border px-3 py-2"
-            >
-              <option value="">Tất cả thành viên</option>
-              {members.map((name) => (
-                <option key={name}>{name}</option>
-              ))}
-            </select>
-          </label>
-          <button className="rounded-lg border px-4 py-2 font-semibold">
-            Lọc
-          </button>
+          <label className="text-sm">Tháng<input name="month" type="month" defaultValue={searchParams?.month} className="mt-1 block rounded-lg border px-3 py-2" /></label>
+          <label className="text-sm">Dự án<select name="project" defaultValue={searchParams?.project} className="mt-1 block rounded-lg border px-3 py-2"><option value="">Tất cả dự án</option>{(data.filterOptions.projects ?? []).map((name: string) => <option key={name}>{name}</option>)}</select></label>
+          <label className="text-sm">Thành viên<select name="member" defaultValue={searchParams?.member} className="mt-1 block rounded-lg border px-3 py-2"><option value="">Tất cả thành viên</option>{(data.filterOptions.members ?? []).map((name: string) => <option key={name}>{name}</option>)}</select></label>
+          <label className="text-sm">Trạng thái<select name="status" defaultValue={searchParams?.status} className="mt-1 block rounded-lg border px-3 py-2"><option value="">Tất cả trạng thái</option><option value="accepted">Đã chấp nhận</option><option value="pending">Chờ xác nhận</option><option value="pm_review">PM review</option><option value="provisional">Tạm tính</option><option value="observed">GSC có dữ liệu</option><option value="observed_zero">GSC observed zero</option><option value="fetch_error">GSC lỗi</option></select></label>
+          <button className="rounded-lg border px-4 py-2 font-semibold">Lọc</button>
         </form>
+        <p className="text-sm text-slate-600">Hiển thị {data.rows.length} / {data.total} dòng, trang {data.page} / {data.pageCount}.</p>
         <DataTableContainer>
-          <table className="min-w-[1700px] text-sm">
+          <table className="min-w-[1900px] text-sm">
             <thead className="bg-slate-100 text-left">
-              <tr>
-                <th className="p-3">URL</th>
-                <th>Domain / Dự án</th>
-                <th>Thành viên</th>
-                <th>Công việc</th>
-                <th>Phân loại</th>
-                <th>Eligibility GSC</th>
-                <th>Dữ liệu GSC thực tế</th>
-                <th>KPI Nội dung</th>
-                <th>KPI Hiệu suất</th>
-                <th>Trạng thái nguồn</th>
-                <th>Lý do</th>
-              </tr>
+              <tr className="border-b"><th className="p-3" colSpan={5}>Nguồn và phân loại</th><th colSpan={2}>Content KPI</th><th colSpan={2}>GSC observation</th><th colSpan={2}>Performance readiness</th></tr>
+              <tr><th className="p-3">URL</th><th>Dự án</th><th>Thành viên</th><th>Ngày / loại</th><th>Phân loại</th><th>Eligibility</th><th>Review</th><th>Trạng thái</th><th>Cập nhật</th><th>Trạng thái</th><th>Lý do / hành động</th></tr>
             </thead>
             <tbody>
               {data.rows.map((row: any) => (
-                <tr
-                  className="border-t"
-                  key={`${row.id}-${row.work_event_id ?? "url"}`}
-                >
-                  <td
-                    className="max-w-lg truncate p-3 text-blue-700"
-                    title={row.url}
-                  >
-                    {row.url}
-                  </td>
-                  <td>
-                    {row.normalized_domain} / {row.project}
-                  </td>
-                  <td>{row.member_name ?? "N/A"}</td>
-                  <td>
-                    {viLabel(row.work_type ?? row.content_type ?? "N/A")} /{" "}
-                    {row.work_date ?? "N/A"}
-                  </td>
+                <tr className="border-t align-top" key={`${row.id}-${row.work_event_id ?? "url"}`}>
+                  <td className="max-w-lg truncate p-3 text-blue-700" title={row.url}>{row.url}</td>
+                  <td>{row.project || "Chưa xác định"}<br /><span className="text-xs text-slate-500">{row.normalized_domain || "Chưa có domain"}</span></td>
+                  <td>{row.event_member_name || row.member_name || "Chưa xác định"}</td>
+                  <td>{row.work_date || "Chưa có ngày"} / {viLabel(row.work_type ?? row.content_type ?? "Chưa có loại")}</td>
                   <td>{viLabel(row.classification_status)}</td>
-                  <td>{row.gsc_ready ? "Đủ điều kiện" : "Không đủ điều kiện"}</td>
-                  <td>
-                    {viLabel(row.gsc_data_status ?? "Chưa làm mới")}
-                    {row.latest_gsc_metric_date
-                      ? ` đến ${row.latest_gsc_metric_date}`
-                      : ""}
-                    {row.gsc_error ? ` - ${row.gsc_error}` : ""}
-                  </td>
                   <td>{row.content_kpi_eligible ? "Đủ điều kiện" : "Không đủ điều kiện"}</td>
-                  <td>
-                    {row.performance_kpi_eligible ? "Đủ điều kiện" : "Không đủ điều kiện"}
-                    {row.performance_readiness_issues?.length
-                      ? ` · ${row.performance_readiness_issues.map(viReason).join(", ")}`
-                      : ""}
-                  </td>
-                  <td>
-                    {viLabel(row.event_source_state ?? row.unified_source_state ?? "active")}
-                  </td>
-                  <td>
-                    {[
-                      ...(row.classification_issues ?? []),
-                      ...(row.readiness_issues ?? []),
-                      ...(row.performance_readiness_issues ?? []),
-                    ].map(viReason).join(", ") || "—"}
-                  </td>
+                  <td>{viLabel(row.content_kpi_state)}</td>
+                  <td>{viLabel(row.gsc_observation_state)}</td>
+                  <td>{row.latest_gsc_metric_date ?? "Chưa tải"}</td>
+                  <td>{viLabel(row.performance_readiness_state ?? "Chưa có event")}</td>
+                  <td>{viReason(row.performance_readiness_issues?.[0] ?? row.gsc_error ?? row.classification_issues?.[0] ?? "Không có cảnh báo")}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </DataTableContainer>
-        <section>
-          <h3 className="mb-3 text-xl font-semibold">
-            Các dòng cần xử lý gần nhất
-          </h3>
-          <DataTableContainer>
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-100 text-left">
-                <tr>
-                  <th className="p-3">Dòng trên Sheet</th>
-                  <th>Mục nguồn</th>
-                  <th>Lý do</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.quarantine.map((row: any) => (
-                  <tr
-                    className="border-t"
-                    key={`${row.sync_run_id}-${row.source_row_number}`}
-                  >
-                    <td className="p-3">{row.source_row_number}</td>
-                    <td>{row.source_item_id ?? "-"}</td>
-                    <td>{row.quarantine_reasons.map(viReason).join(", ")}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </DataTableContainer>
-        </section>
+        <nav className="flex items-center justify-between">
+          {data.page > 1 ? <Link className="rounded-lg border px-4 py-2" href={pageHref(data.page - 1)}>Trang trước</Link> : <span />}
+          {data.page < data.pageCount ? <Link className="rounded-lg border px-4 py-2" href={pageHref(data.page + 1)}>Trang sau</Link> : <span />}
+        </nav>
       </div>
     </Shell>
   );

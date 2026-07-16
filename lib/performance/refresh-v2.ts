@@ -42,7 +42,8 @@ export async function refreshMonthlyPerformanceV2(input: { month: string; access
        from public.monthly_member_kpi_targets t where t.month_key=$1 group by t.project,t.member_name
        union
        select e.project,e.member_name,null::numeric
-       from public.url_work_events e where e.performance_kpi_eligible=true
+       from public.url_work_events e where e.content_kpi_eligible=true
+        and e.is_countable=true and coalesce(e.unified_source_state,'active')='active'
         and e.work_date>=date_trunc('month',$1::date)
         and e.work_date<date_trunc('month',$1::date)+interval '1 month'
        group by e.project,e.member_name
@@ -63,9 +64,10 @@ export async function refreshMonthlyPerformanceV2(input: { month: string; access
        coalesce(rv.confidence_low_factor,0.35) confidence_low_factor,
        coalesce(rv.minimum_short_window_days,7) minimum_short_window_days,
        coalesce(rv.unknown_score_pct,70) unknown_score_pct,
-       coalesce(rv.observed_zero_policy,'score_zero') observed_zero_policy,
+       coalesce(rv.observed_zero_policy,'{"under_14_days":70,"days_14_to_27":55,"days_28_plus":40}'::jsonb) observed_zero_policy,
        coalesce(rv.max_provisional_payable_pct,70) max_provisional_payable_pct,
-       coalesce(rv.pm_review_threshold_pct,55) pm_review_threshold_pct
+       coalesce(rv.pm_review_threshold_pct,55) pm_review_threshold_pct,
+       p.gsc_access_status,p.gsc_ready,p.lifecycle
      from assignment_keys a join public.projects p on p.canonical_name=a.project
      left join public.project_kpi_settings s on s.project=a.project
      left join lateral(
@@ -84,7 +86,8 @@ export async function refreshMonthlyPerformanceV2(input: { month: string; access
        (select min(later.work_date)::text from public.url_work_events later
         where later.content_url_id=e.content_url_id and later.work_date>e.work_date) next_work_date
        from public.url_work_events e join public.content_urls c on c.id=e.content_url_id
-       where e.project=$1 and e.member_name=$2 and e.performance_kpi_eligible=true and c.gsc_ready=true
+       where e.project=$1 and e.member_name=$2 and e.content_kpi_eligible=true
+        and e.is_countable=true and coalesce(e.unified_source_state,'active')='active'
         and e.work_date>=date_trunc('month',$3::date)
         and e.work_date<date_trunc('month',$3::date)+interval '1 month'`,
       [assignment.project, assignment.member_name, month],
@@ -133,8 +136,11 @@ export async function refreshMonthlyPerformanceV2(input: { month: string; access
     };
     let metrics: EventPerformanceMetric[] = [];
     let fetched: GscDailyFetchRow[] = [];
+    const hasVerifiedGsc =
+      assignment.gsc_access_status === "verified" &&
+      Boolean(assignment.gsc_ready);
     const fetchable = selected.filter((event) => event.exclusionReason !== "post_window_incomplete");
-    if (fetchable.length) {
+    if (fetchable.length && hasVerifiedGsc) {
       const start = fetchable.reduce((min, event) => event.preStartDate < min ? event.preStartDate : min, fetchable[0].preStartDate);
       const end = fetchable.reduce((max, event) => event.postEndDate > max ? event.postEndDate : max, fetchable[0].postEndDate);
       fetched = await fetchTrackedGscDaily(
@@ -179,12 +185,33 @@ export async function refreshMonthlyPerformanceV2(input: { month: string; access
       dataAsOf: cutoff,
       seasonalComparabilityLow: selected.filter((event) => event.exclusionReason === "seasonality_pm_review").length > selected.length / 2,
     });
+    if (!hasVerifiedGsc)
+      score = scoreBase({
+        ruleVersion: assignment.performance_rule_version,
+        state:
+          assignment.lifecycle === "new_project"
+            ? "provisional"
+            : "pm_review_required",
+        reason:
+          assignment.lifecycle === "new_project"
+            ? "gsc_history_provisional"
+            : "gsc_property_unverified",
+        sourceCohort: `${strategy}:${month.slice(0, 7)}`,
+        sourceIds: selected.map((event) => event.id),
+        dataAsOf: cutoff,
+        diagnostics: {
+          eligibleEvents: selected.length,
+          gscAccessStatus: assignment.gsc_access_status,
+          gscReady: Boolean(assignment.gsc_ready),
+          payableCapPct: Number(assignment.max_provisional_payable_pct),
+        },
+      });
     if (!assignment.performance_enabled_for_payroll)
       score = scoreBase({
         ...score,
-        state: "blocked_system_error",
+        state: hasVerifiedGsc ? "pm_review_required" : score.state,
         payablePct: null,
-        reason: "project_settings_not_approved",
+        reason: score.reason ?? "project_settings_not_approved",
         diagnostics: { ...score.diagnostics, diagnosticRawPct: score.rawPct },
       });
     const persisted = await persistPerformanceResult({

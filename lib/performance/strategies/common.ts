@@ -20,6 +20,12 @@ export type EventPerformanceMetric = {
   postCoveragePct?: number;
 };
 
+export type ObservedZeroPolicy = {
+  under_14_days: number;
+  days_14_to_27: number;
+  days_28_plus: number;
+};
+
 export type PerformanceThresholds = {
   minEligibleEvents: number;
   minDataCoveragePct: number;
@@ -31,7 +37,7 @@ export type PerformanceThresholds = {
   confidenceMediumFactor?: number;
   confidenceLowFactor?: number;
   unknownScorePct?: number;
-  observedZeroPolicy?: "score_zero" | "neutral";
+  observedZeroPolicy?: ObservedZeroPolicy;
   maxProvisionalPayablePct?: number;
   pmReviewThresholdPct?: number;
   minimumShortWindowDays?: number;
@@ -46,6 +52,18 @@ const mappedGrowthScore = (current: number, previous: number, alpha: number, con
 };
 const robustWeight = (metric: EventPerformanceMetric) => Math.max(0.1, metric.unitValue) * Math.sqrt(Math.min(Math.max(metric.preImpressions, metric.postImpressions, 1), 10_000));
 const weighted = (rows: Array<{ value: number; weight: number }>) => rows.reduce((sum, row) => sum + row.value * row.weight, 0) / rows.reduce((sum, row) => sum + row.weight, 0);
+
+export function observedZeroScore(
+  metric: Pick<EventPerformanceMetric, "ageDays">,
+  policy: ObservedZeroPolicy | undefined,
+  fallback: number,
+) {
+  if (!policy) return fallback;
+  const ageDays = Number(metric.ageDays ?? 0);
+  if (ageDays < 14) return policy.under_14_days;
+  if (ageDays < 28) return policy.days_14_to_27;
+  return policy.days_28_plus;
+}
 
 export function calculatePerformanceCohort(input: {
   metrics: EventPerformanceMetric[];
@@ -72,7 +90,14 @@ export function calculatePerformanceCohort(input: {
   if (reliabilityReasons.length) return scoreBase({ ...common, state: "insufficient_data", reason: reliabilityReasons.join(","), confidence: "low" });
   const eventRows = known.map((metric) => {
     const weight = robustWeight(metric);
-    if (metric.status === "observed_zero") return { impression: input.thresholds.zeroSignalScorePct, click: input.thresholds.zeroSignalScorePct, positive: 0, healthy: 0, weight };
+    if (metric.status === "observed_zero") {
+      const zeroScore = observedZeroScore(
+        metric,
+        input.thresholds.observedZeroPolicy,
+        input.thresholds.zeroSignalScorePct,
+      );
+      return { impression: zeroScore, click: zeroScore, positive: 0, healthy: 0, weight };
+    }
     const impressionGrowth = (growth(metric.postImpressions, metric.preImpressions) ?? 0) - (metric.controlGrowthPct ?? 0);
     const clickGrowth = (growth(metric.postClicks, metric.preClicks) ?? 0) - (metric.controlGrowthPct ?? 0);
     return { impression: mappedGrowthScore(metric.postImpressions, metric.preImpressions, input.thresholds.growthAlphaImpressions ?? 10, metric.controlGrowthPct ?? 0), click: mappedGrowthScore(metric.postClicks, metric.preClicks, input.thresholds.growthAlphaClicks ?? 1, metric.controlGrowthPct ?? 0), positive: impressionGrowth > 0 || clickGrowth > 0 ? 100 : 0, healthy: impressionGrowth < 0 && clickGrowth < 0 ? 0 : 100, weight };

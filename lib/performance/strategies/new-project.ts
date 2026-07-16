@@ -1,5 +1,9 @@
 import { clampPct, scoreBase, type AuditableScore } from "../../kpi/types.ts";
-import type { EventPerformanceMetric, PerformanceThresholds } from "./common.ts";
+import {
+  observedZeroScore,
+  type EventPerformanceMetric,
+  type PerformanceThresholds,
+} from "./common.ts";
 
 const weighted = (rows: Array<{ value: number; weight: number }>) => {
   const total = rows.reduce((sum, row) => sum + row.weight, 0);
@@ -43,7 +47,14 @@ export function scoreNewGrowthProject(input: {
   const rows = known.map((metric) => {
     const weight = Math.max(0.1, metric.unitValue);
     if (metric.status === "observed_zero") {
-      return { value: input.thresholds.observedZeroPolicy === "neutral" ? neutral : 0, weight };
+      return {
+        value: observedZeroScore(
+          metric,
+          input.thresholds.observedZeroPolicy,
+          input.thresholds.zeroSignalScorePct,
+        ),
+        weight,
+      };
     }
     const observable = 100;
     const impressions = clampPct(25 * Math.log2(metric.postImpressions + 1));

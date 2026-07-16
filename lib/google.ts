@@ -2,7 +2,11 @@ import { google } from "googleapis";
 import { appConfig, getMemberEmailMap, getProjectGscMap } from "./env";
 import { getDateRange, type DateRange } from "./dates";
 import { classifyOpportunity, type OpportunityLabel } from "./metrics";
-import { normalizeWorkType, parseSourceDate } from "./domain/normalization";
+import {
+  normalizeCanonicalUrl,
+  normalizeWorkType,
+  parseSourceDate,
+} from "./domain/normalization";
 import { parseLegacyContentSheet } from "./sync/legacy-content-sheet";
 
 export type ContentUrl = {
@@ -464,12 +468,32 @@ export async function listSearchConsoleProperties(accessToken: string) {
     .filter((entry) => entry.siteUrl);
 }
 
+export function normalizeGscPropertyKey(value: string) {
+  const property = value.trim();
+  if (property.toLowerCase().startsWith("sc-domain:"))
+    return `sc-domain:${property.slice("sc-domain:".length).trim().toLowerCase().replace(/^www\./, "")}`;
+  try {
+    const url = new URL(property);
+    url.hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    url.hash = "";
+    url.search = "";
+    if (!url.pathname.endsWith("/")) url.pathname += "/";
+    return url.toString();
+  } catch {
+    return property;
+  }
+}
+
 export async function testSearchConsolePropertyAccess(input: {
   accessToken: string;
   siteUrl: string;
 }) {
   const properties = await listSearchConsoleProperties(input.accessToken);
-  const property = properties.find((row) => row.siteUrl === input.siteUrl) ?? null;
+  const expected = normalizeGscPropertyKey(input.siteUrl);
+  const property =
+    properties.find(
+      (row) => normalizeGscPropertyKey(row.siteUrl) === expected,
+    ) ?? null;
   if (!property)
     return {
       property: null,
@@ -633,14 +657,19 @@ export async function fetchTrackedGscDaily(
         range,
       );
       const byUrlDate = new Map(
-        bulk.map((metric) => [
-          `${String(metric.keys?.[0] ?? "")}|${String(metric.keys?.[1] ?? "")}`,
-          metric,
-        ]),
+        bulk.flatMap((metric) => {
+          const page = normalizeCanonicalUrl(metric.keys?.[0]).canonicalUrl;
+          return page
+            ? [[`${page}|${String(metric.keys?.[1] ?? "")}`, metric] as const]
+            : [];
+        }),
       );
       for (const trackedUrl of tracked) {
+        const canonicalTrackedUrl =
+          normalizeCanonicalUrl(trackedUrl.canonicalUrl).canonicalUrl ??
+          trackedUrl.canonicalUrl;
         const hasBulk = dates.some((date) =>
-          byUrlDate.has(`${trackedUrl.canonicalUrl}|${date}`),
+          byUrlDate.has(`${canonicalTrackedUrl}|${date}`),
         );
         let exact: any[] = [];
         let exactError: string | null = null;
@@ -665,7 +694,7 @@ export async function fetchTrackedGscDaily(
         );
         for (const date of dates) {
           const metric =
-            byUrlDate.get(`${trackedUrl.canonicalUrl}|${date}`) ??
+            byUrlDate.get(`${canonicalTrackedUrl}|${date}`) ??
             exactByDate.get(date);
           if (metric)
             output.push({

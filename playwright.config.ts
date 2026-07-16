@@ -30,10 +30,15 @@ export default defineConfig({
           NEXTAUTH_URL: "http://127.0.0.1:3100",
           VERCEL_ENV: "preview",
           E2E_TEST_AUTH_ENABLED: "true",
-          E2E_TEST_AUTH_SECRET: "playwright-preview-secret-123456789",
-          E2E_TEST_ADMIN_EMAIL: "admin-preview@example.com",
-          E2E_TEST_MEMBER_EMAIL: "member-preview@example.com",
-          ADMIN_EMAILS: "admin-preview@example.com",
+          E2E_TEST_AUTH_SECRET:
+            process.env.E2E_TEST_AUTH_SECRET ??
+            "playwright-preview-secret-123456789",
+          E2E_TEST_ADMIN_EMAIL:
+            process.env.E2E_TEST_ADMIN_EMAIL ?? "admin-preview@example.com",
+          E2E_TEST_MEMBER_EMAIL:
+            process.env.E2E_TEST_MEMBER_EMAIL ?? "member-preview@example.com",
+          ADMIN_EMAILS:
+            process.env.E2E_TEST_ADMIN_EMAIL ?? "admin-preview@example.com",
         },
         reuseExistingServer: false,
         timeout: 120_000,

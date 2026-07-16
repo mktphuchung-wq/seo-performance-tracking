@@ -73,6 +73,8 @@ const migrationFiles = [
   "20260715_unified_application.sql",
   "20260715_unified_remediation.sql",
   "20260716_project_performance_rules.sql",
+  "20260716_review_remediation_v2.sql",
+  "20260716_review_remediation_identity_email.sql",
 ];
 const requiredColumns = [
   ["content_urls", "normalized_domain"],

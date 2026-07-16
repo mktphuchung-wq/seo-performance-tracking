@@ -39,13 +39,14 @@ export async function POST(request: Request, context: Context) {
     const selectedProperty = String(body.gscProperty ?? "").trim();
     if (!selectedProperty) throw new Error("Hãy chọn thuộc tính GSC cần xác minh.");
     const includeSubdomains = Boolean(body.includeSubdomains);
+    const canonicalDomain = String(body.canonicalDomain ?? "").trim();
     const access = await testSearchConsolePropertyAccess({
       accessToken: session.accessToken,
       siteUrl: selectedProperty,
     });
-    const scopeCandidates = config.option.detectedDomains.map(
-      (row) => row.sampleUrl || `https://${row.domain}/`,
-    );
+    const scopeCandidates = config.option.detectedDomains
+      .filter((row) => !canonicalDomain || row.domain === canonicalDomain)
+      .map((row) => row.sampleUrl || `https://${row.domain}/`);
     const covered =
       scopeCandidates.length > 0 &&
       scopeCandidates.every((candidate) =>

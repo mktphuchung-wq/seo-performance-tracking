@@ -512,6 +512,7 @@ export async function listMonthlyKpiAudit(
     overrides,
     reviews,
     reconciliation,
+    reviewDiagnostics,
   ] = await Promise.all([
     query(
       `select * from public.monthly_member_targets where month_key=$1${memberClause} order by member_name`,
@@ -540,8 +541,16 @@ export async function listMonthlyKpiAudit(
     ),
     query(
       `select e.id::text as work_event_id,e.project,e.member_name,e.work_type,e.work_date::text,e.unit_value,c.url,
-      r.review_status,r.quality_pct,r.rubric_version_snapshot,r.admin_note,r.evidence from public.url_work_events e
+      r.review_status,r.quality_pct,r.rubric_version_snapshot,r.admin_note,r.evidence,
+      coalesce(scores.criteria,'[]'::jsonb) as saved_criteria from public.url_work_events e
       join public.content_urls c on c.id=e.content_url_id left join lateral(select * from public.url_work_quality_reviews q where q.work_event_id=e.id order by q.updated_at desc,q.id desc limit 1)r on true
+      left join lateral(
+        select jsonb_agg(jsonb_build_object(
+          'criterionKey',s.criterion_key_snapshot,'score',s.score,'isNa',s.is_na,
+          'naReason',s.na_reason,'note',s.note,'evidence',s.evidence
+        ) order by s.id) as criteria
+        from public.url_work_quality_scores s where s.review_id=r.id
+      ) scores on true
       where e.content_kpi_eligible=true and e.is_countable=true and coalesce(e.unified_source_state,'active')='active'
         and e.work_date>=date_trunc('month',$1::date) and e.work_date<date_trunc('month',$1::date)+interval '1 month'${eventClause}
       order by e.member_name,e.work_date,e.project`,
@@ -551,6 +560,38 @@ export async function listMonthlyKpiAudit(
       ? Promise.resolve({ rows: [] })
       : query(`select r.*,coalesce((select json_agg(json_build_object('sourceRowNumber',s.source_row_number,'reasons',s.quarantine_reasons)) from public.work_source_rows s where s.sync_run_id=r.id and s.is_quarantined=true),'[]'::json) as quarantine_rows
       from public.work_sync_runs r where r.source='content_urls_sheet' order by r.created_at desc limit 1`),
+    query(
+      `with latest_run as (
+        select id from public.work_sync_runs where source='content_urls_sheet'
+        order by created_at desc limit 1
+      ), source_counts as (
+        select count(*)::int as source_rows
+        from public.work_source_rows s join latest_run l on l.id=s.sync_run_id
+        where ($2::text is null or s.normalized_payload->>'member'=$2)
+          and case
+            when s.normalized_payload->>'workDate' ~ '^\\d{4}-\\d{2}-\\d{2}$'
+              then (s.normalized_payload->>'workDate')::date
+            else null
+          end>=date_trunc('month',$1::date)
+          and case
+            when s.normalized_payload->>'workDate' ~ '^\\d{4}-\\d{2}-\\d{2}$'
+              then (s.normalized_payload->>'workDate')::date
+            else null
+          end<date_trunc('month',$1::date)+interval '1 month'
+      ), event_counts as (
+        select count(*)::int as active_events,
+          count(*) filter(where e.content_kpi_eligible=true and e.is_countable=true)::int as eligible_events,
+          count(*) filter(where e.content_kpi_eligible=true and e.is_countable=true and r.id is not null)::int as reviewed_events
+        from public.url_work_events e
+        left join public.url_work_quality_reviews r on r.work_event_id=e.id
+        where ($2::text is null or e.member_name=$2)
+          and coalesce(e.unified_source_state,'active')='active'
+          and e.work_date>=date_trunc('month',$1::date)
+          and e.work_date<date_trunc('month',$1::date)+interval '1 month'
+      ) select source_rows,active_events,eligible_events,reviewed_events
+      from source_counts cross join event_counts`,
+      [month, memberName ?? null],
+    ),
   ]);
   return {
     month,
@@ -562,5 +603,11 @@ export async function listMonthlyKpiAudit(
     overrides: overrides.rows,
     reviews: reviews.rows,
     reconciliation: reconciliation.rows[0] ?? null,
+    reviewDiagnostics: reviewDiagnostics.rows[0] ?? {
+      source_rows: 0,
+      active_events: 0,
+      eligible_events: 0,
+      reviewed_events: 0,
+    },
   };
 }

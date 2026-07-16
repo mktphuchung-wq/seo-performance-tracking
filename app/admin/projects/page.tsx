@@ -30,6 +30,11 @@ export default async function ProjectsPage() {
         <ProjectSettingsForm
           options={data.options}
           gscProperties={gscProperties}
+          googleAccount={{
+            email: session.user.email,
+            tokenError: session.error ?? null,
+            tokenExpiresAt: session.tokenExpiresAt ?? null,
+          }}
         />
         <DataTableContainer>
           <table className="min-w-full text-sm">
