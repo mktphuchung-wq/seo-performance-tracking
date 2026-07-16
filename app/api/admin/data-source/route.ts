@@ -7,6 +7,7 @@ import {
 } from "../../../../lib/api/errors";
 import { authOptions } from "../../../../lib/auth";
 import { listCanonicalDataSource } from "../../../../lib/repositories/data-source";
+import { assertUnifiedSchemaReady } from "../../../../lib/schema-readiness";
 
 export async function GET(request: Request) {
   const requestId = requestIdFor(request);
@@ -17,6 +18,7 @@ export async function GET(request: Request) {
       { status: 403 },
     );
   try {
+    await assertUnifiedSchemaReady();
     const url = new URL(request.url);
     const limit = Number(url.searchParams.get("limit") ?? 500);
     return apiOk(

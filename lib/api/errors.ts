@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { ContentSheetContractError } from "../sync/content-urls-sheet";
+import { SchemaMigrationRequiredError } from "../schema-readiness";
 
 export function requestIdFor(request: Request) {
   return request.headers.get("x-request-id")?.trim() || crypto.randomUUID();
@@ -13,16 +14,20 @@ export function apiErrorResponse(
   status = 400,
 ) {
   const contract = error instanceof ContentSheetContractError ? error : null;
+  const schema = error instanceof SchemaMigrationRequiredError ? error : null;
   const message = error instanceof Error ? error.message : fallback;
   return NextResponse.json(
     {
       ok: false,
       error: message,
-      code: contract?.code ?? "request_failed",
-      details: contract?.details ?? undefined,
+      code: contract?.code ?? schema?.code ?? "request_failed",
+      details: contract?.details ?? schema?.details ?? undefined,
       requestId,
     },
-    { status, headers: { "x-request-id": requestId } },
+    {
+      status: schema?.status ?? status,
+      headers: { "x-request-id": requestId },
+    },
   );
 }
 
