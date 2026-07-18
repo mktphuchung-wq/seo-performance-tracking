@@ -71,12 +71,14 @@ test("Preview-only test auth exposes authenticated Admin workflows", async ({
   );
   await signInPreview(page, previewAdmin!);
   for (const path of [
+    "/admin",
     "/admin/sync",
     "/admin/projects",
     "/admin/data-source",
     "/admin/member-performance",
     "/admin/member-review",
     "/admin/kpi-close",
+    "/admin/rules",
   ]) {
     await page.goto(path);
     await expect(page).not.toHaveURL(/\/$/);
@@ -107,6 +109,17 @@ test("Preview-only test auth exposes authenticated Admin workflows", async ({
 
   await page.goto("/admin/member-performance?month=2026-07");
   await expect(page.getByText("Chọn tất cả", { exact: true })).toBeVisible();
+  await expect(page.getByText("Tháng hiện tại", { exact: true }).first()).toBeVisible();
+
+  await page.goto("/admin?month=2026-07");
+  await expect(page.getByRole("link", { name: "Xuất báo cáo HTML" })).toBeVisible();
+  const report = await page.context().request.get("/api/admin/reports/monthly?month=2026-07");
+  expect(report.status(), await report.text()).toBe(200);
+  expect(report.headers()["content-type"]).toContain("text/html");
+
+  await page.goto("/admin/rules");
+  for (const tab of ["Performance", "Work units", "Quality", "Final KPI"])
+    await expect(page.getByRole("link", { name: tab, exact: true })).toBeVisible();
 
   await page.goto("/admin/member-review?month=2026-07");
   const scoreSelect = page.locator('select[name^="score-"]').first();
@@ -124,6 +137,7 @@ test("Preview-only test auth exposes authenticated Admin workflows", async ({
     "/api/admin/performance/status",
     "/api/admin/member-review?month=2026-07",
     "/api/admin/kpi-close?month=2026-07",
+    "/api/admin/rules",
   ]) {
     const response = await page.context().request.get(endpoint);
     expect(response.status(), `${endpoint}: ${await response.text()}`).toBe(

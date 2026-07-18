@@ -141,3 +141,101 @@ export async function listMemberCurrentUrls(memberName: string, month: string) {
   });
   return result.rows.filter((row: any) => row.work_event_id);
 }
+
+export type MemberUrlWorkspaceFilters = {
+  memberName: string;
+  month: string;
+  project?: string;
+  workType?: string;
+  reviewState?: string;
+  gscState?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+export async function listMemberUrlWorkspace(input: MemberUrlWorkspaceFilters) {
+  const page = Math.max(input.page ?? 1, 1);
+  const pageSize = Math.min(Math.max(input.pageSize ?? 50, 1), 100);
+  const params: unknown[] = [`${input.month.slice(0, 7)}-01`, input.memberName];
+  const filters = [
+    "e.member_name=$2",
+    "e.work_date>=date_trunc('month',$1::date)",
+    "e.work_date<date_trunc('month',$1::date)+interval '1 month'",
+    "e.is_countable=true",
+    "coalesce(e.unified_source_state,'active')='active'",
+  ];
+  if (input.project) {
+    params.push(input.project);
+    filters.push(`e.project=$${params.length}`);
+  }
+  if (input.workType) {
+    params.push(input.workType);
+    filters.push(`e.work_type=$${params.length}`);
+  }
+  if (input.reviewState) {
+    params.push(input.reviewState);
+    filters.push(`coalesce(q.review_status,'pending')=$${params.length}`);
+  }
+  const base = `with cutoff as (
+    select least(coalesce(max(metric_date),current_date),date_trunc('month',$1::date)+interval '1 month'-interval '1 day')::date data_cutoff
+    from public.gsc_url_daily_metrics
+  ), event_rows as (
+    select e.id::text work_event_id,e.content_url_id::text,e.url,e.project,e.member_name,e.work_type,e.work_date::text,
+      e.unit_value,e.status work_status,e.performance_readiness_state,e.performance_readiness_issues,e.exclusion_reason,
+      coalesce(q.review_status,'pending') review_status,q.quality_pct,q.admin_note review_notes,q.reviewed_at,
+      metrics.latest_gsc_metric_date,metrics.clicks,metrics.impressions,metrics.ctr,metrics.position,
+      metrics.previous_clicks,metrics.previous_impressions,
+      case when metrics.previous_clicks>0 then ((metrics.clicks-metrics.previous_clicks)/metrics.previous_clicks)*100 else null end click_growth_pct,
+      case when metrics.previous_impressions>0 then ((metrics.impressions-metrics.previous_impressions)/metrics.previous_impressions)*100 else null end impression_growth_pct,
+      metrics.observed_days,metrics.expected_days,
+      case when metrics.expected_days>0 then round(metrics.observed_days*100.0/metrics.expected_days,2) else null end coverage_pct,
+      case
+        when metrics.has_fetch_error then 'fetch_error'
+        when metrics.expected_days<7 then 'too_new'
+        when metrics.observed_days=0 then 'missing'
+        when metrics.impressions=0 then 'observed_zero'
+        else 'observed' end data_state
+    from public.url_work_events e
+    join public.content_urls c on c.id=e.content_url_id
+    left join public.url_work_quality_reviews q on q.work_event_id=e.id
+    cross join cutoff
+    left join lateral (
+      select max(g.metric_date)::text latest_gsc_metric_date,
+        coalesce(sum(g.clicks) filter(where g.metric_date>=date_trunc('month',$1::date) and g.metric_date<=cutoff.data_cutoff and g.data_status<>'unknown'),0)::numeric clicks,
+        coalesce(sum(g.impressions) filter(where g.metric_date>=date_trunc('month',$1::date) and g.metric_date<=cutoff.data_cutoff and g.data_status<>'unknown'),0)::numeric impressions,
+        case when sum(g.impressions) filter(where g.metric_date>=date_trunc('month',$1::date) and g.metric_date<=cutoff.data_cutoff and g.data_status<>'unknown')>0
+          then sum(g.clicks) filter(where g.metric_date>=date_trunc('month',$1::date) and g.metric_date<=cutoff.data_cutoff and g.data_status<>'unknown')
+            /sum(g.impressions) filter(where g.metric_date>=date_trunc('month',$1::date) and g.metric_date<=cutoff.data_cutoff and g.data_status<>'unknown') else null end ctr,
+        avg(g.position) filter(where g.metric_date>=date_trunc('month',$1::date) and g.metric_date<=cutoff.data_cutoff and g.data_status='observed') position,
+        coalesce(sum(g.clicks) filter(where g.metric_date>=date_trunc('month',$1::date)-interval '1 month' and g.metric_date<date_trunc('month',$1::date) and g.data_status<>'unknown'),0)::numeric previous_clicks,
+        coalesce(sum(g.impressions) filter(where g.metric_date>=date_trunc('month',$1::date)-interval '1 month' and g.metric_date<date_trunc('month',$1::date) and g.data_status<>'unknown'),0)::numeric previous_impressions,
+        count(distinct g.metric_date) filter(where g.metric_date>=greatest(date_trunc('month',$1::date)::date,e.work_date) and g.metric_date<=cutoff.data_cutoff and g.data_status in ('observed','observed_zero'))::int observed_days,
+        greatest(0,cutoff.data_cutoff-greatest(date_trunc('month',$1::date)::date,e.work_date)+1)::int expected_days,
+        coalesce(bool_or(g.error_message is not null or g.error_code is not null) filter(where g.metric_date>=date_trunc('month',$1::date) and g.metric_date<=cutoff.data_cutoff),false) has_fetch_error
+      from public.gsc_url_daily_metrics g where ${normalizedSqlUrl("g.canonical_url")}=${normalizedSqlUrl("c.url")}
+    ) metrics on true
+    where ${filters.join(" and ")}
+  )`;
+  const outerFilters: string[] = [];
+  if (input.gscState) {
+    params.push(input.gscState);
+    outerFilters.push(`data_state=$${params.length}`);
+  }
+  const outerWhere = outerFilters.length ? `where ${outerFilters.join(" and ")}` : "";
+  const countResult = await query<any>(`${base} select count(*)::int count,coalesce(sum(unit_value),0)::numeric work_units,
+    count(*) filter(where review_status='approved')::int approved_reviews,
+    count(*) filter(where review_status='pending')::int pending_reviews from event_rows ${outerWhere}`, params);
+  const rowParams = [...params, pageSize, (page - 1) * pageSize];
+  const rows = await query<any>(`${base} select * from event_rows ${outerWhere}
+    order by work_date desc,project,url limit $${params.length + 1} offset $${params.length + 2}`, rowParams);
+  const options = await query<any>(`select
+    coalesce(json_agg(distinct e.project) filter(where nullif(e.project,'') is not null),'[]'::json) projects,
+    coalesce(json_agg(distinct e.work_type) filter(where nullif(e.work_type,'') is not null),'[]'::json) work_types
+    from public.url_work_events e where e.member_name=$1 and e.is_countable=true`, [input.memberName]);
+  const total = Number(countResult.rows[0]?.count ?? 0);
+  return { rows: rows.rows, total, page, pageSize, pageCount: Math.max(1, Math.ceil(total / pageSize)), summary: {
+    workUnits: Number(countResult.rows[0]?.work_units ?? 0),
+    approvedReviews: Number(countResult.rows[0]?.approved_reviews ?? 0),
+    pendingReviews: Number(countResult.rows[0]?.pending_reviews ?? 0),
+  }, options: options.rows[0] ?? { projects: [], work_types: [] } };
+}

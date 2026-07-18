@@ -6,6 +6,7 @@ import { PerformanceRefreshControl } from "../../../components/unified-workflows
 import { MemberPerformanceSelector } from "../../../components/member-performance-selector";
 import { getPerformanceWorkspace } from "../../../lib/services/performance-service";
 import { listMemberOptions } from "../../../lib/repositories/member-options";
+import { listProjectOptions } from "../../../lib/repositories/project-settings";
 import { viLabel, viReason } from "../../../lib/i18n/vi";
 
 export const dynamic = "force-dynamic";
@@ -13,13 +14,17 @@ const pct = (value: unknown) =>
   value === null || value === undefined ? "Chưa có" : `${Number(value).toFixed(1)}%`;
 
 export default async function MemberPerformance(props: {
-  searchParams?: Promise<{ month?: string; member?: string | string[] }>;
+  searchParams?: Promise<{ month?: string; member?: string | string[]; project?: string }>;
 }) {
   const searchParams = await props.searchParams;
   const session = await getServerSession(authOptions);
   if (!session?.user?.email || !session.user.isAdmin) redirect("/");
   const month = searchParams?.month ?? new Date().toISOString().slice(0, 7);
-  const memberOptions = await listMemberOptions(month, "performance");
+  const [memberOptions, projectOptions] = await Promise.all([
+    listMemberOptions(month, "performance"),
+    listProjectOptions(),
+  ]);
+  const project = searchParams?.project || undefined;
   const available = memberOptions.map((row) => row.memberName);
   const requested = Array.isArray(searchParams?.member)
     ? searchParams.member
@@ -29,7 +34,7 @@ export default async function MemberPerformance(props: {
   const selectedMembers = requested.filter((name) => available.includes(name));
   if (!selectedMembers.length && available[0]) selectedMembers.push(available[0]);
   const data = selectedMembers.length
-    ? await getPerformanceWorkspace({ asOfMonth: month, memberNames: selectedMembers })
+    ? await getPerformanceWorkspace({ asOfMonth: month, memberNames: selectedMembers, project })
     : { asOfMonth: month, summaries: [] };
   const comparison = selectedMembers.length > 1;
   const totalEvents = memberOptions
@@ -46,9 +51,10 @@ export default async function MemberPerformance(props: {
             Thành viên có Content event vẫn xuất hiện kể cả khi chưa refresh GSC.
           </p>
         </header>
-        <form method="get" className="flex items-end gap-3">
+        <form method="get" className="flex flex-wrap items-end gap-3">
           <label className="text-sm">Tháng chốt dữ liệu<input name="month" type="month" defaultValue={month} className="mt-1 block rounded-lg border px-3 py-2" /></label>
           {selectedMembers.map((member) => <input key={member} type="hidden" name="member" value={member} />)}
+          <label className="text-sm">Dự án<select name="project" defaultValue={project ?? ""} className="mt-1 block min-w-48 rounded-lg border px-3 py-2"><option value="">Tất cả</option>{projectOptions.map((row: any) => <option value={row.project} key={row.project}>{row.project}</option>)}</select></label>
           <button className="rounded-lg border px-4 py-2 font-semibold">Đổi tháng</button>
         </form>
         <MemberPerformanceSelector month={month} members={memberOptions} selected={selectedMembers} />
@@ -81,10 +87,11 @@ export default async function MemberPerformance(props: {
             </div>
             <DataTableContainer>
               <table className="min-w-full text-sm">
-                <thead className="bg-slate-100 text-left"><tr><th className="p-3">Project</th><th>Vòng đời</th><th>Event units</th><th>3T</th><th>6T</th><th>Toàn thời gian</th><th>Điểm dự án</th><th>Cửa sổ hiệu lực</th><th>Độ tin cậy</th><th>Độ phủ</th><th>Lý do</th></tr></thead>
+                <thead className="bg-slate-100 text-left"><tr><th className="p-3">Project</th><th>Vòng đời</th><th>Event units</th><th>Tháng hiện tại</th><th>3T</th><th>6T</th><th>Toàn thời gian</th><th>Điểm dự án</th><th>Cửa sổ hiệu lực</th><th>Độ tin cậy</th><th>Độ phủ</th><th>Lý do</th></tr></thead>
                 <tbody>{member.projects.map((project: any) => (
                   <tr className="border-t" key={project.project}>
                     <td className="p-3">{project.project}</td><td>{viLabel(project.lifecycle ?? "Chưa cấu hình")}</td><td>{project.workUnits}</td>
+                    <td>{pct(project.currentMonth?.payable_pct)}</td>
                     {(["3m", "6m", "all_time"] as const).map((key) => <td key={key}>{pct(project.ranges.find((row: any) => row.range_key === key)?.payable_pct)}</td>)}
                     <td>{pct(project.result.score)}</td><td>{viLabel(project.result.effectiveHorizon ?? "Chưa tính")}</td><td>{viLabel(project.result.confidence ?? "unknown")}</td><td>{pct(project.result.coveragePct)}</td><td>{viReason(project.result.fallbackReason ?? project.result.reason ?? "performance_not_refreshed")}</td>
                   </tr>

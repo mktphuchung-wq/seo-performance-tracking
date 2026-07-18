@@ -24,12 +24,14 @@ export function DataTableContainer({ children }: { children: React.ReactNode }) 
 
 export function Shell({ children, email, isAdmin }: { children: React.ReactNode; email?: string | null; isAdmin?: boolean }) {
   const navItems = !email ? [] : isAdmin ? [
+    { href: "/admin", label: "Tổng quan" },
     { href: "/admin/sync", label: "Đồng bộ dữ liệu" },
     { href: "/admin/projects", label: "Cấu hình dự án" },
     { href: "/admin/data-source", label: "Nguồn dữ liệu" },
     { href: "/admin/member-performance", label: "Hiệu suất thành viên" },
     { href: "/admin/member-review", label: "Đánh giá thành viên" },
     { href: "/admin/kpi-close", label: "Chốt KPI" },
+    { href: "/admin/rules", label: "Rules" },
   ] : [
     { href: "/dashboard", label: "Hiệu suất của tôi" },
     { href: "/my-urls", label: "URL của tôi" },

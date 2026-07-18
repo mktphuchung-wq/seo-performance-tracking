@@ -1,47 +1,31 @@
+import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "../../lib/auth";
 import { DataTableContainer, MetricCard, Shell } from "../../components/ui";
 import { resolveMemberNameByEmail } from "../../lib/member-identity";
-import { listMemberCurrentUrls } from "../../lib/repositories/data-source";
-import { viLabel } from "../../lib/i18n/vi";
+import { listMemberUrlWorkspace } from "../../lib/repositories/data-source";
+import { viLabel, viReason } from "../../lib/i18n/vi";
 
 export const dynamic = "force-dynamic";
+const number = (value: unknown) => Number(value ?? 0).toLocaleString("vi-VN");
+const pct = (value: unknown) => value === null || value === undefined ? "N/A" : `${Number(value).toFixed(1)}%`;
 
-export default async function MyUrls(props: {
-  searchParams?: Promise<{ month?: string }>;
-}) {
-  const searchParams = await props.searchParams;
+export default async function MyUrls(props: { searchParams?: Promise<{ month?: string; project?: string; workType?: string; review?: string; gsc?: string; page?: string }> }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) redirect("/");
   if (session.user.isAdmin) redirect("/admin/data-source");
   const memberName = await resolveMemberNameByEmail(session.user.email);
   if (!memberName) redirect("/");
-  const month = searchParams?.month ?? new Date().toISOString().slice(0, 7);
-  const rows = await listMemberCurrentUrls(memberName, month);
-  return (
-    <Shell email={session.user.email}>
-      <div className="space-y-6">
-        <header>
-          <p className="text-sm font-semibold uppercase text-blue-700">Không gian thành viên</p>
-          <h2 className="text-3xl font-bold">URL của tôi — {month}</h2>
-          <p className="mt-2 text-slate-600">Event công việc chuẩn trong tháng, điểm đánh giá và ghi chú của người duyệt.</p>
-        </header>
-        <div className="grid gap-4 md:grid-cols-3">
-          <MetricCard label="Event công việc" value={rows.length} />
-          <MetricCard label="Đã đánh giá" value={rows.filter((row: any) => row.review_status === "approved").length} />
-          <MetricCard label="Đủ điều kiện KPI Nội dung" value={rows.filter((row: any) => row.kpi_ready).length} />
-        </div>
-        <DataTableContainer>
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-100 text-left"><tr><th className="p-3">URL</th><th>Dự án</th><th>Loại</th><th>Ngày</th><th>Trạng thái</th><th>Đánh giá</th><th>Điểm</th><th>Ghi chú</th></tr></thead>
-            <tbody>
-              {rows.map((row: any) => <tr className="border-t" key={row.work_event_id}><td className="max-w-lg truncate p-3 text-blue-700">{row.url}</td><td>{row.project}</td><td>{viLabel(row.work_type)}</td><td>{row.work_date}</td><td>{viLabel(row.work_status)}</td><td>{viLabel(row.review_status ?? "pending")}</td><td>{row.quality_pct === null || row.quality_pct === undefined ? "N/A" : `${Number(row.quality_pct).toFixed(1)}%`}</td><td>{row.review_notes ?? "—"}</td></tr>)}
-              {!rows.length && <tr><td className="p-3 text-slate-500" colSpan={8}>Chưa có event trong tháng.</td></tr>}
-            </tbody>
-          </table>
-        </DataTableContainer>
-      </div>
-    </Shell>
-  );
+  const search = await props.searchParams;
+  const month = search?.month ?? new Date().toISOString().slice(0, 7);
+  const data = await listMemberUrlWorkspace({ memberName, month, project: search?.project || undefined, workType: search?.workType || undefined, reviewState: search?.review || undefined, gscState: search?.gsc || undefined, page: Number(search?.page ?? 1) });
+  const queryFor = (page: number) => { const qs = new URLSearchParams(); Object.entries({ month, project: search?.project, workType: search?.workType, review: search?.review, gsc: search?.gsc }).forEach(([key, value]) => value && qs.set(key, value)); qs.set("page", String(page)); return `?${qs}`; };
+  return <Shell email={session.user.email}><div className="space-y-6">
+    <header><p className="text-sm font-semibold uppercase text-blue-700">Không gian thành viên</p><h2 className="text-3xl font-bold">URL của tôi — {month}</h2><p className="mt-2 text-slate-600">Work unit, feedback và GSC theo đúng tuổi URL. Missing, observed zero, fetch error và URL quá mới luôn tách biệt.</p></header>
+    <form className="flex flex-wrap items-end gap-3 rounded-2xl border bg-white p-4" method="get"><label className="text-sm">Tháng<input className="mt-1 block rounded-lg border px-3 py-2" name="month" type="month" defaultValue={month} /></label><label className="text-sm">Dự án<select className="mt-1 block rounded-lg border px-3 py-2" name="project" defaultValue={search?.project ?? ""}><option value="">Tất cả</option>{data.options.projects.map((value: string) => <option key={value}>{value}</option>)}</select></label><label className="text-sm">Loại công việc<select className="mt-1 block rounded-lg border px-3 py-2" name="workType" defaultValue={search?.workType ?? ""}><option value="">Tất cả</option>{data.options.work_types.map((value: string) => <option value={value} key={value}>{viLabel(value)}</option>)}</select></label><label className="text-sm">Review<select className="mt-1 block rounded-lg border px-3 py-2" name="review" defaultValue={search?.review ?? ""}><option value="">Tất cả</option><option value="approved">Đã duyệt</option><option value="pending">Chờ duyệt</option><option value="excluded">Loại trừ</option></select></label><label className="text-sm">GSC<select className="mt-1 block rounded-lg border px-3 py-2" name="gsc" defaultValue={search?.gsc ?? ""}><option value="">Tất cả</option><option value="observed">Có dữ liệu</option><option value="observed_zero">Observed zero</option><option value="missing">Thiếu dữ liệu</option><option value="fetch_error">Lỗi fetch</option><option value="too_new">URL quá mới</option></select></label><button className="rounded-lg border px-4 py-2 font-semibold">Lọc</button></form>
+    <div className="grid gap-4 md:grid-cols-3"><MetricCard label="Work events" value={number(data.total)} /><MetricCard label="Đã review trên trang" value={number(data.rows.filter((row: any) => row.review_status === "approved").length)} /><MetricCard label="Work units trên trang" value={number(data.rows.reduce((sum: number, row: any) => sum + Number(row.unit_value ?? 0), 0))} /></div>
+    <DataTableContainer><table className="min-w-full text-sm"><thead className="bg-slate-100 text-left"><tr><th className="p-3">URL / dự án</th><th>Work</th><th>Review</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th><th>Growth</th><th>Độ phủ</th><th>Trạng thái dữ liệu</th></tr></thead><tbody>{data.rows.map((row: any) => <tr className="border-t align-top" key={row.work_event_id}><td className="max-w-sm p-3"><a className="block truncate font-medium text-blue-700" href={row.url} rel="noreferrer" target="_blank">{row.url}</a><span className="text-xs text-slate-500">{row.project} · {row.latest_gsc_metric_date ?? "chưa fetch"}</span></td><td>{viLabel(row.work_type)}<br/><span className="text-xs text-slate-500">{row.work_date} · {number(row.unit_value)} unit</span></td><td>{viLabel(row.review_status)}<br/><span className="text-xs text-slate-500">{pct(row.quality_pct)} · {row.review_notes ?? "—"}</span></td><td>{number(row.clicks)}</td><td>{number(row.impressions)}</td><td>{row.ctr === null ? "N/A" : pct(Number(row.ctr) * 100)}</td><td>{row.position === null ? "N/A" : Number(row.position).toFixed(1)}</td><td>{pct(row.impression_growth_pct)}</td><td>{pct(row.coverage_pct)}<br/><span className="text-xs text-slate-500">{row.observed_days}/{row.expected_days} ngày</span></td><td><span className="font-semibold">{viLabel(row.data_state)}</span><br/><span className="text-xs text-slate-500">{viReason(row.exclusion_reason ?? row.data_state)}</span></td></tr>)}{!data.rows.length && <tr><td className="p-4 text-slate-500" colSpan={10}>Không có URL trong bộ lọc.</td></tr>}</tbody></table></DataTableContainer>
+    <nav className="flex items-center justify-between text-sm"><Link aria-disabled={data.page <= 1} className={`rounded-lg border px-3 py-2 ${data.page <= 1 ? "pointer-events-none opacity-40" : ""}`} href={queryFor(data.page - 1)}>Trang trước</Link><span>Trang {data.page}/{data.pageCount} · {number(data.total)} dòng</span><Link aria-disabled={data.page >= data.pageCount} className={`rounded-lg border px-3 py-2 ${data.page >= data.pageCount ? "pointer-events-none opacity-40" : ""}`} href={queryFor(data.page + 1)}>Trang sau</Link></nav>
+  </div></Shell>;
 }

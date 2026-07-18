@@ -14,7 +14,9 @@
 VERCEL_ENV=preview DATABASE_URL="$STAGING_DATABASE_URL" npm run db:migrate:unified -- --apply --verify-idempotent --acknowledge-staging
 ```
 
-The runner applies the Phase 3, KPI v2, unified, and remediation migrations in order. The second pass proves full-chain idempotency, verifies required tables/columns, and rejects changes to Canonical URL/Work event row counts. Verify `/api/health/db` and `/api/health/cache`.
+The runner applies the Phase 3, KPI v2, unified, remediation, and `20260718_rule_registry.sql` migrations in order. The second pass proves full-chain idempotency, verifies required tables/columns, and rejects changes to Canonical URL/Work event row counts. Verify `/api/health/db` and `/api/health/cache`.
+
+If Neon reports `branches limit exceeded`, stop before deployment. Do not point Preview at the primary branch, delete an existing branch, or reuse another feature branch without an explicit owner decision. Free one branch slot or approve a named non-primary branch, then repeat step 1.
 
 ## 3. Configure projects before scoring
 
@@ -42,12 +44,14 @@ The application never writes back to Google Sheets.
 
 1. Save Member x Month target units in `/admin/member-review`.
 2. Approve every eligible URL quality review with evidence where required.
-3. Refresh `/admin/member-performance`; inspect 3M/6M/All Time coverage, confidence, lineage, data-through date, and N/A reasons.
+3. Refresh `/admin/member-performance`; inspect the diagnostic current month plus 3M/6M/All Time coverage, confidence, lineage, data-through date, and N/A reasons. Current month must not change the approved Final Performance formula.
 4. In `/admin/kpi-close`, approve three-component weights for each Member x Month. Applied weights must total 100%; disabled Social + Video must be 0%.
 5. Calculate the selected member preview.
 6. Enter Social + Video evidence only when enabled, or keep it disabled/N/A.
 7. Export audit JSON and finalize only after controllable components are complete.
 8. Probe that locked target/config/result rows reject mutation. Reopen with an authorized reason and confirm a new version.
+9. Open `/admin`, apply the same month/project/member filters used for sign-off, download the self-contained HTML report, and reconcile its totals with the dashboard.
+10. Open `/admin/rules`; verify active/upcoming versions, effective dates, reasons, approvers, and audit history for Performance, Work units, Quality, and Final KPI.
 
 ## 6. Reconciliation and sign-off
 
@@ -70,5 +74,6 @@ The provider is absent unless all guards pass and is rejected when `VERCEL_ENV` 
 ## 8. Rollback
 
 - Set `UNIFIED_APP_ENABLED=false` and retain audit history.
+- Keep `UNIFIED_PRODUCTION_WRITE_ENABLED=false` until PM/Finance sign-off; it is the write kill switch during Preview acceptance.
 - Use down migrations only while their guarded tables/lineage remain empty.
 - Never run the destructive baseline, delete locked snapshots, or rewrite an approved historical month.

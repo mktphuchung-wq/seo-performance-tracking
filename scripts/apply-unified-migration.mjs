@@ -75,6 +75,7 @@ const migrationFiles = [
   "20260716_project_performance_rules.sql",
   "20260716_review_remediation_v2.sql",
   "20260716_review_remediation_identity_email.sql",
+  "20260718_rule_registry.sql",
 ];
 const requiredColumns = [
   ["content_urls", "normalized_domain"],

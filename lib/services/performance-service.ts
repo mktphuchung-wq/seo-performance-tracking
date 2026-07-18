@@ -132,25 +132,57 @@ export async function getPerformanceWorkspace(input: {
   asOfMonth: string;
   memberName?: string;
   memberNames?: string[];
+  project?: string;
 }) {
   const month = asMonth(input.asOfMonth);
-  const params: any[] = [month];
-  let memberFilter = "";
   const selectedMembers = input.memberNames?.length
     ? input.memberNames
     : input.memberName
       ? [input.memberName]
       : [];
+  const rangeParams: any[] = [month];
+  const rangeFilters = ["r.as_of_month=$1"];
+  const workParams: any[] = [month];
+  const workFilters = [
+    "e.content_kpi_eligible=true",
+    "e.is_countable=true",
+    "coalesce(e.unified_source_state,'active')='active'",
+    "e.work_date>=date_trunc('month',$1::date)",
+    "e.work_date<date_trunc('month',$1::date)+interval '1 month'",
+  ];
+  const currentParams: any[] = [month];
+  const currentFilters = ["r.month_key=$1"];
   if (selectedMembers.length) {
-    params.push(selectedMembers);
-    memberFilter = " and m.canonical_name=any($2::text[])";
+    rangeParams.push(selectedMembers);
+    rangeFilters.push(`m.canonical_name=any($${rangeParams.length}::text[])`);
+    workParams.push(selectedMembers);
+    workFilters.push(`e.member_name=any($${workParams.length}::text[])`);
+    currentParams.push(selectedMembers);
+    currentFilters.push(`r.member_name=any($${currentParams.length}::text[])`);
   }
-  const [ranges, settings, workUnits] = await Promise.all([
+  if (input.project) {
+    rangeParams.push(input.project);
+    rangeFilters.push(`p.canonical_name=$${rangeParams.length}`);
+    workParams.push(input.project);
+    workFilters.push(`e.project=$${workParams.length}`);
+    currentParams.push(input.project);
+    currentFilters.push(`r.project=$${currentParams.length}`);
+  }
+  const [ranges, currentMonth, settings, workUnits] = await Promise.all([
     query<any>(
       `select r.*,p.canonical_name as project,m.canonical_name as member_name from public.performance_range_results r
       join public.projects p on p.id=r.project_id join public.members m on m.id=r.member_id
-      where r.as_of_month=$1${memberFilter} order by m.canonical_name,p.canonical_name,r.range_key`,
-      params,
+      where ${rangeFilters.join(" and ")} order by m.canonical_name,p.canonical_name,r.range_key`,
+      rangeParams,
+    ),
+    query<any>(
+      `select distinct on (r.project,r.member_name) r.project,r.member_name,'current_month'::text range_key,
+        r.raw_pct,r.payable_pct,r.coverage_pct,r.confidence,r.status,r.source_cohort,r.rule_version,
+        r.data_as_of::text,r.calculated_at,r.diagnostics,r.override_reason
+      from public.performance_project_member_month_results r
+      where ${currentFilters.join(" and ")}
+      order by r.project,r.member_name,r.calculated_at desc,r.id desc`,
+      currentParams,
     ),
     query<any>(
       `select p.id::text,p.canonical_name,s.performance_weight_3m_pct,s.performance_weight_6m_pct,
@@ -161,15 +193,13 @@ export async function getPerformanceWorkspace(input: {
     ),
     query<any>(
       `select e.member_name,e.project,sum(e.unit_value)::numeric as work_units
-      from public.url_work_events e join public.members m on m.id=e.member_id
-      where e.content_kpi_eligible=true and e.is_countable=true and coalesce(e.unified_source_state,'active')='active'
-        and e.work_date>=date_trunc('month',$1::date)
-        and e.work_date<date_trunc('month',$1::date)+interval '1 month'${memberFilter}
+      from public.url_work_events e
+      where ${workFilters.join(" and ")}
       group by e.member_name,e.project order by e.member_name,e.project`,
-      params,
+      workParams,
     ),
   ]);
-  const projectRows = ranges.rows;
+  const projectRows = [...ranges.rows, ...currentMonth.rows];
   const members = [
     ...new Set([
       ...projectRows.map((row: any) => row.member_name),
@@ -224,6 +254,7 @@ export async function getPerformanceWorkspace(input: {
         result,
         settingsVersion: setting?.version ?? null,
         lifecycle: setting?.lifecycle ?? null,
+        currentMonth: projectRanges.find((row: any) => row.range_key === "current_month") ?? null,
       };
     });
     const memberResult = rollupProjectsByEligibleWorkUnits(
